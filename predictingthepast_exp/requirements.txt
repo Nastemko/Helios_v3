@@ -1,0 +1,8 @@
+absl-py>=2.2.0
+flax>=0.10.4
+jax>=0.4.35
+jaxlib>=0.4.35
+ml-collections>=1.0.0
+numpy>=2.2.4
+pillow>=10.3.0
+tqdm>=4.67.1
