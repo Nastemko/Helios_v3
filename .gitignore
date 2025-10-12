@@ -1,0 +1,138 @@
+# Python / Backend
+backend/venv/
+backend/env/
+backend/.venv/
+backend/__pycache__/
+backend/**/__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+
+# Environment files
+backend/.env
+backend/.env.local
+backend/.env.production
+.env
+.env.local
+
+# Database files
+backend/*.db
+backend/*.sqlite
+backend/*.sqlite3
+backend/helios_local.db
+
+# Log files
+backend/*.log
+backend/logs/
+*.log
+
+# Aeneas model files (too large for git - 2GB+)
+backend/models/*.pkl
+backend/models/*.json
+backend/models/iphi*.pkl
+backend/models/ithaca*.pkl
+backend/models/aeneas*.pkl
+backend/models/led*.pkl
+# Allow keeping the models directory structure
+!backend/models/.gitkeep
+
+# CLTK data (downloaded models)
+**/.cltk_data/
+**/cltk_data/
+
+# Frontend / Node
+frontend/node_modules/
+frontend/dist/
+frontend/build/
+frontend/.vite/
+frontend/.cache/
+frontend/coverage/
+frontend/*.log
+frontend/npm-debug.log*
+frontend/yarn-debug.log*
+frontend/yarn-error.log*
+frontend/pnpm-debug.log*
+frontend/lerna-debug.log*
+
+# Frontend environment
+frontend/.env
+frontend/.env.local
+frontend/.env.production
+
+# IDE / Editor
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+*.sublime-project
+*.sublime-workspace
+.project
+.classpath
+.c9/
+*.launch
+.settings/
+*.tmproj
+
+# OS specific
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+desktop.ini
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+.hypothesis/
+.mypy_cache/
+.dmypy.json
+dmypy.json
+
+# Distribution / packaging
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+pip-wheel-metadata/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# Jupyter Notebook
+.ipynb_checkpoints
+
+# Temporary files
+*.tmp
+*.temp
+tmp/
+temp/
+
+# Backup files
+*.bak
+*.backup
+*~
+
+# Don't ignore these important files
+!.gitkeep
+!.env.example
+!README.md
+

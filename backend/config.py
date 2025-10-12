@@ -1,0 +1,42 @@
+"""Application configuration"""
+from pydantic_settings import BaseSettings, SettingsConfigDict
+
+
+class Settings(BaseSettings):
+    """Application settings loaded from environment variables"""
+    
+    # Application
+    APP_NAME: str = "Helios API"
+    DEBUG: bool = False
+    
+    # Database (SQLite for local development, PostgreSQL for production)
+    DATABASE_URL: str = "sqlite:///./helios_local.db"
+    
+    # Security
+    SECRET_KEY: str = "dev-secret-key-change-in-production"
+    ALGORITHM: str = "HS256"
+    ACCESS_TOKEN_EXPIRE_MINUTES: int = 60 * 24 * 7  # 1 week
+    
+    # Google OAuth
+    GOOGLE_CLIENT_ID: str = ""
+    GOOGLE_CLIENT_SECRET: str = ""
+    GOOGLE_REDIRECT_URI: str = "http://localhost:8000/api/auth/callback/google"
+    
+    # CORS
+    CORS_ORIGINS: list[str] = ["http://localhost:3000", "http://localhost:5173"]
+    
+    # Aeneas models
+    MODELS_DIR: str = "./models"
+    
+    # Perseus texts
+    PERSEUS_DATA_DIR: str = "../canonical-greekLit/data"
+    
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        env_file_encoding="utf-8",
+        case_sensitive=True
+    )
+
+
+settings = Settings()
+

@@ -1,0 +1,41 @@
+# FastAPI and server
+fastapi>=0.104.0
+uvicorn[standard]>=0.24.0
+python-multipart>=0.0.6
+
+# Database
+sqlalchemy>=2.0.0
+alembic>=1.12.0
+psycopg2-binary>=2.9.9
+
+# Validation and settings
+pydantic>=2.4.0
+pydantic-settings>=2.0.0
+
+# Authentication
+python-jose[cryptography]>=3.3.0
+passlib[bcrypt]>=1.7.4
+authlib>=1.2.1
+
+# HTTP client
+httpx>=0.25.0
+
+# XML parsing
+lxml>=4.9.3
+
+# Morphological Analysis
+cltk>=1.1.6
+
+# Aeneas dependencies (from predictingthepast_exp)
+absl-py>=2.2.0
+flax>=0.10.4
+jax>=0.4.35
+jaxlib>=0.4.35
+ml-collections>=1.0.0
+numpy>=2.2.4
+pillow>=10.3.0
+tqdm>=4.67.1
+
+# Utilities
+python-dotenv>=1.0.0
+
