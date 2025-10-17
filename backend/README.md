@@ -17,6 +17,28 @@ source venv/bin/activate  # On Windows: venv\Scripts\activate
 pip install -r requirements.txt
 ```
 
+### Installation with uv
+
+1.  **Install uv**
+
+    ```bash
+    python3 -m pip install uv
+    ```
+
+2.  **Create Virtual Environment**
+
+    ```bash
+    uv venv .venv
+    source .venv/bin/activate
+    ```
+
+3.  **Install Dependencies**
+
+    ```bash
+    uv pip install -e .[dev]
+    ```
+
+
 ### 3. Configure Environment
 
 ```bash
@@ -60,9 +82,7 @@ curl -o models/iphi_emb_xid153143996.pkl \
 ### Development
 
 ```bash
-python main.py
-# Or
-uvicorn main:app --reload
+fastapi dev src/main.py
 ```
 
 The API will be available at http://localhost:8000
@@ -74,11 +94,10 @@ Visit http://localhost:8000/docs for interactive API documentation (Swagger UI)
 ## Project Structure
 
 ```
-backend/
+backend/src/
 ├── main.py              # FastAPI application entry point
 ├── config.py            # Configuration and settings
 ├── database.py          # Database connection and session
-├── requirements.txt     # Python dependencies
 ├── models/              # SQLAlchemy models
 │   ├── user.py
 │   ├── text.py
