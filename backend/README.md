@@ -42,7 +42,7 @@ curl -o models/iphi_emb_xid153143996.pkl \
 ### Development
 
 ```bash
-fastapi dev src/main.py
+uv run fastapi dev src/main.py
 ```
 
 The API will be available at http://localhost:8000
@@ -142,4 +142,3 @@ pytest
 ## Production Deployment
 
 See `../PRD/implementation_plan_v1.md` for deployment instructions.
-

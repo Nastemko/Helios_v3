@@ -69,7 +69,7 @@ cd backend
 # Create virtual environment and install dependencies
 uv sync
 # Parse and populate texts
-python scripts/populate_texts.py --limit 10  # Start with 10 texts for testing
+uv run python scripts/populate_texts.py --limit 10  # Start with 10 texts for testing
 
 # Start backend server
 uv run fastapi dev main.py
@@ -315,4 +315,3 @@ For issues or questions:
 **Status:** MVP Complete - Ready for pilot testing
 
 Built with ❤️ for classics students and researchers
-
