@@ -4,62 +4,22 @@ FastAPI backend for the Helios classical texts application.
 
 ## Setup
 
-### 1. Create Virtual Environment
-
-```bash
-python -m venv venv
-source venv/bin/activate  # On Windows: venv\Scripts\activate
-```
-
-### 2. Install Dependencies
-
-```bash
-pip install -r requirements.txt
-```
-
-### Installation with uv
+### 1. Install Dependencies
 
 1.  **Install uv**
 
     ```bash
-    python3 -m pip install uv
+    curl -LsSf https://astral.sh/uv/install.sh | sh
     ```
 
-2.  **Create Virtual Environment**
+2. **Synchronise the environment**
 
     ```bash
-    uv venv .venv
-    source .venv/bin/activate
-    ```
-
-3.  **Install Dependencies**
-
-    ```bash
-    uv pip install -e .[dev]
+    uv sync
     ```
 
 
-### 3. Configure Environment
-
-```bash
-cp .env.example .env
-# Edit .env with your configuration
-```
-
-### 4. Set Up Database
-
-```bash
-# Create PostgreSQL database
-createdb helios
-
-# Or using psql:
-psql -c "CREATE DATABASE helios;"
-
-# Run migrations (when alembic is set up)
-alembic upgrade head
-```
-
-### 5. Download Aeneas Models (Optional)
+### 2. Download Aeneas Models (Optional)
 
 For AI features, download the Greek model:
 
