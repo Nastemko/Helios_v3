@@ -18,12 +18,11 @@ class MorphologyService:
         try:
             logger.info("Initializing CLTK for Ancient Greek...")
             # This will download models (~500MB-1GB) on first run
-            # suppress_banner=True prevents interactive prompts
-            self.greek_nlp = NLP(language="grc", suppress_banner=True)
+            self.greek_nlp = NLP(language_code="grc")
             logger.info("Greek NLP initialized successfully")
             
             logger.info("Initializing CLTK for Latin...")
-            self.latin_nlp = NLP(language="lat", suppress_banner=True)
+            self.latin_nlp = NLP(language_code="lat")
             logger.info("Latin NLP initialized successfully")
             
             self.initialized = True
