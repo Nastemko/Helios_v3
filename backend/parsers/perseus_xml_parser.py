@@ -182,10 +182,10 @@ class PerseusXMLParser:
         textparts = body.findall(f".//{self.TEI_NS}div[@type='textpart']")
         
         if textparts:
-            # Text is divided into books/chapters
+            # Text is divided into books/chapters/sections
             for textpart in textparts:
                 subtype = textpart.get('subtype', '')
-                book_num = textpart.get('n', '')
+                section_num = textpart.get('n', '')
                 
                 # Find all lines within this textpart
                 lines = textpart.findall(f".//{self.TEI_NS}l")
@@ -195,13 +195,28 @@ class PerseusXMLParser:
                     
                     if content:
                         segments.append({
-                            'book': book_num,
+                            'book': section_num,
                             'line': line_num,
-                            'reference': f"{book_num}.{line_num}" if book_num else line_num,
+                            'reference': f"{section_num}.{line_num}" if section_num else line_num,
                             'content': content,
                             'sequence': sequence
                         })
                         sequence += 1
+                
+                # If no lines found, check for paragraphs within this textpart
+                if not lines:
+                    paras = textpart.findall(f".//{self.TEI_NS}p")
+                    for para in paras:
+                        content = self._extract_text_content(para)
+                        if content:
+                            segments.append({
+                                'book': section_num,
+                                'line': '',
+                                'reference': section_num,
+                                'content': content,
+                                'sequence': sequence
+                            })
+                            sequence += 1
         else:
             # Text without explicit textparts - try to find all lines
             lines = body.findall(f".//{self.TEI_NS}l")
