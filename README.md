@@ -52,6 +52,7 @@ Helios integrates the Perseus Digital Library with Google DeepMind's Aeneas AI m
 - Node.js 18+
 - PostgreSQL 14+
 - Git
+- uv
 
 ### 1. Clone Repository
 
@@ -65,28 +66,13 @@ cd Helios_v3
 ```bash
 cd backend
 
-# Create virtual environment
-python -m venv venv
-source venv/bin/activate  # On Windows: venv\Scripts\activate
-
-# Install dependencies
-pip install -r requirements.txt
-
-# Configure environment
-cp .env.example .env
-# Edit .env with your database and OAuth credentials
-
-# Create database
-createdb helios
-
-# Run database migrations (when alembic is configured)
-# alembic upgrade head
-
+# Create virtual environment and install dependencies
+uv sync
 # Parse and populate texts
-python scripts/populate_texts.py --limit 10  # Start with 10 texts for testing
+uv run python scripts/populate_texts.py --limit 10  # Start with 10 texts for testing
 
 # Start backend server
-python main.py
+uv run fastapi dev main.py
 ```
 
 Backend will be available at `http://localhost:8000`
@@ -329,4 +315,3 @@ For issues or questions:
 **Status:** MVP Complete - Ready for pilot testing
 
 Built with ❤️ for classics students and researchers
-

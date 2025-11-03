@@ -4,40 +4,22 @@ FastAPI backend for the Helios classical texts application.
 
 ## Setup
 
-### 1. Create Virtual Environment
+### 1. Install Dependencies
 
-```bash
-python -m venv venv
-source venv/bin/activate  # On Windows: venv\Scripts\activate
-```
+1.  **Install uv**
 
-### 2. Install Dependencies
+    ```bash
+    curl -LsSf https://astral.sh/uv/install.sh | sh
+    ```
 
-```bash
-pip install -r requirements.txt
-```
+2. **Synchronise the environment**
 
-### 3. Configure Environment
+    ```bash
+    uv sync
+    ```
 
-```bash
-cp .env.example .env
-# Edit .env with your configuration
-```
 
-### 4. Set Up Database
-
-```bash
-# Create PostgreSQL database
-createdb helios
-
-# Or using psql:
-psql -c "CREATE DATABASE helios;"
-
-# Run migrations (when alembic is set up)
-alembic upgrade head
-```
-
-### 5. Download Aeneas Models (Optional)
+### 2. Download Aeneas Models (Optional)
 
 For AI features, download the Greek model:
 
@@ -60,9 +42,7 @@ curl -o models/iphi_emb_xid153143996.pkl \
 ### Development
 
 ```bash
-python main.py
-# Or
-uvicorn main:app --reload
+uv run fastapi dev src/main.py
 ```
 
 The API will be available at http://localhost:8000
@@ -74,11 +54,10 @@ Visit http://localhost:8000/docs for interactive API documentation (Swagger UI)
 ## Project Structure
 
 ```
-backend/
+backend/src/
 ├── main.py              # FastAPI application entry point
 ├── config.py            # Configuration and settings
 ├── database.py          # Database connection and session
-├── requirements.txt     # Python dependencies
 ├── models/              # SQLAlchemy models
 │   ├── user.py
 │   ├── text.py
@@ -163,4 +142,3 @@ pytest
 ## Production Deployment
 
 See `../PRD/implementation_plan_v1.md` for deployment instructions.
-
