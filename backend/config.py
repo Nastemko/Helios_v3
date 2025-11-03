@@ -31,6 +31,20 @@ class Settings(BaseSettings):
     # Perseus texts
     PERSEUS_DATA_DIR: str = "../canonical-greekLit/data"
     
+    # Ollama LLM Settings
+    OLLAMA_BASE_URL: str = "http://localhost:11434"
+    OLLAMA_MODEL: str = "llama3.2:8b"
+    OLLAMA_EMBEDDING_MODEL: str = "nomic-embed-text"
+    OLLAMA_TIMEOUT: int = 120  # 2 minutes for inference
+    LLM_ENABLED: bool = True
+    
+    # PostgreSQL Settings (for production)
+    POSTGRES_HOST: str = "localhost"
+    POSTGRES_PORT: int = 5432
+    POSTGRES_DB: str = "helios"
+    POSTGRES_USER: str = "heliosuser"
+    POSTGRES_PASSWORD: str = ""
+    
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",

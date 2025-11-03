@@ -1,7 +1,7 @@
 import axios from 'axios';
 import type { Text, TextDetail, TextSegment, WordAnalysis, Annotation, User, AeneasStatus } from '../types';
 
-const API_BASE_URL = import.meta.env.VITE_API_URL || '';
+const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
 
 // Create axios instance
 const api = axios.create({
@@ -83,8 +83,7 @@ export const annotationApi = {
 // Auth API
 export const authApi = {
   loginGoogle: () => {
-    // Use full URL for OAuth redirect (can't use proxy for full page redirect)
-    window.location.href = `http://localhost:8000/api/auth/login/google`;
+    window.location.href = `${API_BASE_URL}/api/auth/login/google`;
   },
   
   me: () =>

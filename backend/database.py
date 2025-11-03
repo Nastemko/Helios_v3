@@ -6,16 +6,27 @@ from sqlalchemy.pool import QueuePool
 
 from config import settings
 
+# Determine if using PostgreSQL
+is_postgres = settings.DATABASE_URL.startswith("postgresql")
+
 # Create database engine with connection pooling
-engine = create_engine(
-    settings.DATABASE_URL,
-    poolclass=QueuePool,
-    pool_size=20,  # Number of connections to keep open
-    max_overflow=40,  # Additional connections under load
-    pool_timeout=30,
-    pool_recycle=3600,  # Recycle connections after 1 hour
-    echo=settings.DEBUG,  # Log SQL queries in debug mode
-)
+engine_kwargs = {
+    "poolclass": QueuePool,
+    "pool_size": 20,
+    "max_overflow": 40,
+    "pool_timeout": 30,
+    "pool_recycle": 3600,
+    "echo": settings.DEBUG,
+}
+
+# Add PostgreSQL-specific connection args
+if is_postgres:
+    engine_kwargs["connect_args"] = {
+        "options": "-c timezone=utc",
+        "connect_timeout": 10,
+    }
+
+engine = create_engine(settings.DATABASE_URL, **engine_kwargs)
 
 # Session factory
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
