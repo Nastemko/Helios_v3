@@ -1,49 +1,50 @@
 # Backend Dockerfile - Ubuntu base
 FROM ubuntu:24.04
 
-# Set environment variables
+# Set environment variables for Python and debian non-interactive mode
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
-    PIP_NO_CACHE_DIR=1 \
     DEBIAN_FRONTEND=noninteractive
 
-# Install Python and dependencies
+# Install system dependencies, download and install uv in a single layer to optimize image size.
+# uv is moved to a system-wide binary path to be available to all users.
 RUN apt-get update && apt-get install -y \
     python3.12 \
     python3.12-venv \
-    python3-pip \
     curl \
     git \
-    && rm -rf /var/lib/apt/lists/*
+    && rm -rf /var/lib/apt/lists/* \
+    && curl -LsSf https://astral.sh/uv/install.sh | sh \
+    && mv /root/.local/bin/uv /usr/local/bin/uv
 
-# Create app user
-RUN useradd -m -u 1000 helios && \
+# Create a non-root user for security and create the application directory
+RUN useradd -m -u 1100 helios && \
     mkdir -p /app && \
     chown -R helios:helios /app
 
-# Set working directory
+# Set the working directory for subsequent commands
 WORKDIR /app
 
-# Copy requirements first for better caching
-COPY --chown=helios:helios requirements.txt .
+# Copy dependency definition files first to leverage Docker's layer caching.
+# This layer is only rebuilt when pyproject.toml or uv.lock change.
+COPY --chown=helios:helios pyproject.toml uv.lock ./
 
-# Install Python dependencies
-RUN python3.12 -m pip install --upgrade pip && \
-    python3.12 -m pip install -r requirements.txt
+# Install Python dependencies using uv.
+# This uses the system's Python interpreter, which is fine for a container.
+RUN uv sync
 
-# Copy application code
+# Copy the rest of the application source code into the container
 COPY --chown=helios:helios . .
 
-# Switch to non-root user
+# Switch to the non-root user to run the application
 USER helios
 
-# Expose port
+# Expose the port the application will run on
 EXPOSE 8000
 
-# Health check
+# Add a health check to ensure the application is running correctly
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
     CMD curl -f http://localhost:8000/health || exit 1
 
-# Run the application
-CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "2"]
-
+# The command to run the application using uvicorn
+CMD ["uv", "run", "uvicorn", "src.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "2"]
