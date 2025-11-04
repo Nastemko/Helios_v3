@@ -34,7 +34,7 @@ COPY --chown=helios:helios pyproject.toml uv.lock ./
 RUN uv sync
 
 # Copy the rest of the application source code into the container
-COPY --chown=helios:helios . .
+COPY --chown=helios:helios src .
 
 # Switch to the non-root user to run the application
 USER helios
@@ -47,4 +47,4 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
     CMD curl -f http://localhost:8000/health || exit 1
 
 # The command to run the application using uvicorn
-CMD ["uv", "run", "uvicorn", "src.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "2"]
+CMD ["uv", "run", "uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "2"]
