@@ -9,9 +9,9 @@ from jose import jwt, JWTError
 
 from src.utils.security import (
     verify_password,
-    get_password_hash,
+    hash_password,
     create_access_token,
-    verify_access_token
+    verify_token
 )
 from src.config import settings
 
@@ -22,7 +22,7 @@ class TestPasswordHashing:
     def test_password_hashing_and_verification(self):
         """Test that passwords are properly hashed and can be verified."""
         password = "SecurePassword123!"
-        hashed = get_password_hash(password)
+        hashed = hash_password(password)
         
         # Hash should be different from original
         assert hashed != password
@@ -49,7 +49,7 @@ class TestPasswordHashing:
     def test_empty_password(self):
         """Test handling of empty password."""
         password = ""
-        hashed = get_password_hash(password)
+        hashed = hash_password(password)
         assert verify_password(password, hashed) is True
         assert verify_password("not_empty", hashed) is False
 
@@ -72,7 +72,7 @@ class TestJWTTokens:
         assert len(token) > 0
         
         # Verify token
-        decoded = verify_access_token(token)
+        decoded = verify_token(token)
         assert decoded is not None
         assert decoded["sub"] == "user123"
         assert decoded["email"] == "test@example.com"
@@ -88,7 +88,7 @@ class TestJWTTokens:
         token = create_access_token(payload)
         
         # Token should fail verification due to expiration
-        decoded = verify_access_token(token)
+        decoded = verify_token(token)
         assert decoded is None
     
     def test_invalid_jwt_token_handling(self):
@@ -111,7 +111,7 @@ class TestJWTTokens:
         }
         
         token = create_access_token(payload, expires_delta=expires_delta)
-        decoded = verify_access_token(token)
+        decoded = verify_token(token)
         
         assert decoded is not None
         assert decoded["sub"] == "user456"
