@@ -33,7 +33,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.12'  # Using 3.12 since 3.13 may not be available in CI
+          python-version: '3.13'
       
       - name: Install uv
         run: |
@@ -51,7 +51,7 @@ jobs:
       - name: Install dependencies
         working-directory: ./backend
         run: |
-          uv sync --extra dev
+          uv sync --group dev
       
       - name: Run backend unit tests
         working-directory: ./backend
