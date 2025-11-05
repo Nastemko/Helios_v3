@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session
 from database import SessionLocal, engine, Base
 from models.text import Text, TextSegment
 from parsers.perseus_xml_parser import PerseusXMLParser
-from config import settings
+from src.config import settings
 
 logging.basicConfig(
     level=logging.INFO,

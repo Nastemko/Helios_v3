@@ -27,7 +27,7 @@ except ImportError as e:
     AENEAS_AVAILABLE = False
     logging.warning(f"Aeneas dependencies not available: {e}")
 
-from config import settings
+from src.config import settings
 
 logger = logging.getLogger(__name__)
 

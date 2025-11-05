@@ -5,7 +5,7 @@ from sqlalchemy.orm import Session
 from authlib.integrations.starlette_client import OAuth
 from pydantic import BaseModel
 
-from config import settings
+from src.config import settings
 from database import get_db
 from models.user import User
 from utils.security import create_access_token

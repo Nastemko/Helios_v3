@@ -8,7 +8,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
 from starlette.middleware.sessions import SessionMiddleware
 
-from config import settings
+from src.config import settings
 from database import engine, Base
 from middleware.performance import performance_middleware
 
