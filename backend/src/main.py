@@ -101,7 +101,7 @@ async def root():
 
 
 # Import and include routers
-from routers import texts, auth, annotations, analysis, aeneas
+from src.routers import texts, auth, annotations, analysis, aeneas
 
 app.include_router(texts.router)
 app.include_router(auth.router)
