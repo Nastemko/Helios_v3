@@ -2,7 +2,7 @@
 from sqlalchemy import Column, Integer, String, Boolean, JSON, ForeignKey, Text as TextType, Index
 from sqlalchemy.orm import relationship
 
-from database import Base
+from src.database import Base
 
 
 class Text(Base):

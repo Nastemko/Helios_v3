@@ -9,8 +9,8 @@ from fastapi.middleware.trustedhost import TrustedHostMiddleware
 from starlette.middleware.sessions import SessionMiddleware
 
 from src.config import settings
-from database import engine, Base
-from middleware.performance import performance_middleware
+from src.database import engine, Base
+from src.middleware.performance import performance_middleware
 
 # Configure logging
 logging.basicConfig(
@@ -62,7 +62,7 @@ async def startup_event():
 
     # Initialize Morphology service
     logger.info("Initializing CLTK morphology service...")
-    from services.morphology import get_morphology_service
+    from src.services.morphology import get_morphology_service
     morphology_service = get_morphology_service()
     logger.info(f"Morphology service initialized: {morphology_service.initialized}")
 
@@ -70,7 +70,7 @@ async def startup_event():
     models_dir = Path(settings.MODELS_DIR)
     logger.info(f"Initializing Aeneas service with models from {models_dir}")
 
-    from services.aeneas_service import initialize_aeneas_service
+    from src.services.aeneas_service import initialize_aeneas_service
 
     initialize_aeneas_service(models_dir)
 

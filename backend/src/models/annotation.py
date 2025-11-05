@@ -3,7 +3,7 @@ from sqlalchemy import Column, Integer, String, ForeignKey, Text as TextType, Da
 from sqlalchemy.sql import func
 from sqlalchemy.orm import relationship
 
-from database import Base
+from src.database import Base
 
 
 class Annotation(Base):

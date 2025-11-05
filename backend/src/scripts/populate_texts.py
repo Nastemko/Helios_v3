@@ -7,9 +7,9 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from sqlalchemy.orm import Session
-from database import SessionLocal, engine, Base
-from models.text import Text, TextSegment
-from parsers.perseus_xml_parser import PerseusXMLParser
+from src.database import SessionLocal, engine, Base
+from src.models.text import Text, TextSegment
+from src.parsers.perseus_xml_parser import PerseusXMLParser
 from src.config import settings
 
 logging.basicConfig(

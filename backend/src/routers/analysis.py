@@ -3,7 +3,7 @@ from fastapi import APIRouter, Depends
 from pydantic import BaseModel
 from typing import Optional
 
-from services.morphology import MorphologyService, get_morphology_service
+from src.services.morphology import MorphologyService, get_morphology_service
 
 router = APIRouter(prefix="/api/analyze", tags=["analysis"])
 

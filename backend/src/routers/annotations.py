@@ -4,10 +4,10 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
 
-from database import get_db
-from models.user import User
-from models.annotation import Annotation
-from middleware.auth import get_current_user
+from src.database import get_db
+from src.models.user import User
+from src.models.annotation import Annotation
+from src.middleware.auth import get_current_user
 
 router = APIRouter(prefix="/api/annotations", tags=["annotations"])
 
@@ -57,7 +57,7 @@ async def create_annotation(
     User must be authenticated. The annotation will be associated with the current user.
     """
     # Verify text exists
-    from models.text import Text, TextSegment
+    from src.models.text import Text, TextSegment
     
     text = db.query(Text).filter(Text.id == annotation.text_id).first()
     if not text:
@@ -217,7 +217,7 @@ async def get_text_annotations_summary(
     from sqlalchemy import func
     
     # Verify text exists
-    from models.text import Text
+    from src.models.text import Text
     text = db.query(Text).filter(Text.id == text_id).first()
     if not text:
         raise HTTPException(status_code=404, detail="Text not found")

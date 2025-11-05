@@ -3,7 +3,7 @@ from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel, Field
 from typing import Optional
 
-from services.aeneas_service import AeneasService, get_aeneas_service
+from src.services.aeneas_service import AeneasService, get_aeneas_service
 
 router = APIRouter(prefix="/api/aeneas", tags=["aeneas"])
 

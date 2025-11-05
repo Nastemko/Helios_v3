@@ -22,12 +22,20 @@ Object.defineProperty(window, 'matchMedia', {
   }),
 });
 
-// Mock localStorage
+// Mock localStorage with actual storage
+const storage: { [key: string]: string } = {};
+
 const localStorageMock = {
-  getItem: (_key: string) => null,
-  setItem: (_key: string, _value: string) => {},
-  removeItem: (_key: string) => {},
-  clear: () => {},
+  getItem: (key: string) => storage[key] || null,
+  setItem: (key: string, value: string) => {
+    storage[key] = value;
+  },
+  removeItem: (key: string) => {
+    delete storage[key];
+  },
+  clear: () => {
+    Object.keys(storage).forEach(key => delete storage[key]);
+  },
 };
 
 Object.defineProperty(window, 'localStorage', {

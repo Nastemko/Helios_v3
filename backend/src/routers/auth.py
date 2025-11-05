@@ -6,10 +6,10 @@ from authlib.integrations.starlette_client import OAuth
 from pydantic import BaseModel
 
 from src.config import settings
-from database import get_db
-from models.user import User
-from utils.security import create_access_token
-from middleware.auth import get_current_user
+from src.database import get_db
+from src.models.user import User
+from src.utils.security import create_access_token
+from src.middleware.auth import get_current_user
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 
@@ -162,7 +162,7 @@ async def auth_status(request: Request, db: Session = Depends(get_db)):
     
     Returns user info if authenticated, otherwise returns null.
     """
-    from middleware.auth import get_current_user_optional
+    from src.middleware.auth import get_current_user_optional
     
     try:
         # Try to get current user without raising error
@@ -173,7 +173,7 @@ async def auth_status(request: Request, db: Session = Depends(get_db)):
         credentials: Optional[HTTPAuthorizationCredentials] = await security(request)
         
         if credentials:
-            from utils.security import verify_token
+            from src.utils.security import verify_token
             payload = verify_token(credentials.credentials)
             
             if payload:

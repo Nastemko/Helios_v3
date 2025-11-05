@@ -5,8 +5,8 @@ from sqlalchemy.orm import Session
 from sqlalchemy import or_
 from pydantic import BaseModel
 
-from database import get_db
-from models.text import Text, TextSegment
+from src.database import get_db
+from src.models.text import Text, TextSegment
 
 router = APIRouter(prefix="/api/texts", tags=["texts"])
 
