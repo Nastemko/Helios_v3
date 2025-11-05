@@ -124,7 +124,7 @@ jobs:
       
       - name: Build frontend
         working-directory: ./frontend
-        run: vite build
+        run: npm run build
       
       - name: Check build size
         working-directory: ./frontend
