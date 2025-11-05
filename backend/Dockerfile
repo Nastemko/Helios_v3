@@ -25,6 +25,9 @@ RUN useradd -m -u 1100 helios && \
 # Set the working directory for subsequent commands
 WORKDIR /app
 
+# Switch to the non-root user to run the application
+USER helios
+
 # Copy dependency definition files first to leverage Docker's layer caching.
 # This layer is only rebuilt when pyproject.toml or uv.lock change.
 COPY --chown=helios:helios pyproject.toml uv.lock ./
@@ -35,9 +38,6 @@ RUN uv sync
 
 # Copy the rest of the application source code into the container
 COPY --chown=helios:helios src .
-
-# Switch to the non-root user to run the application
-USER helios
 
 # Expose the port the application will run on
 EXPOSE 8000
