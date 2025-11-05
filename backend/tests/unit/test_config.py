@@ -79,7 +79,8 @@ class TestEnvironmentVariables:
     
     def test_cors_origins_override(self, monkeypatch):
         """Test overriding CORS origins via environment."""
-        test_origins = "http://localhost:3000,http://localhost:5173,https://example.com"
+        # Pydantic expects JSON array format for list fields
+        test_origins = '["http://localhost:3000","http://localhost:5173","https://example.com"]'
         monkeypatch.setenv("CORS_ORIGINS", test_origins)
         
         settings = Settings()
