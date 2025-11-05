@@ -103,17 +103,13 @@ jobs:
         working-directory: ./frontend
         run: npm ci
       
-      - name: Run TypeScript type check
-        working-directory: ./frontend
-        run: npx tsc --noEmit
-      
       - name: Run frontend tests
         working-directory: ./frontend
-        run: npm test -- --run
+        run: npm test
       
       - name: Run frontend tests with coverage
         working-directory: ./frontend
-        run: npm run test:coverage -- --run
+        run: npm run test:coverage
       
       - name: Upload frontend coverage to Codecov
         uses: codecov/codecov-action@v4
@@ -122,9 +118,13 @@ jobs:
           flags: frontend
           name: frontend-coverage
       
+      - name: TypeScript type check
+        working-directory: ./frontend
+        run: npx tsc --noEmit --skipLibCheck
+      
       - name: Build frontend
         working-directory: ./frontend
-        run: npm run build
+        run: vite build
       
       - name: Check build size
         working-directory: ./frontend

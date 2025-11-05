@@ -4,12 +4,6 @@
 
 import { describe, it, expect } from 'vitest';
 import { render, screen } from '@testing-library/react';
-import { BrowserRouter } from 'react-router-dom';
-
-// Helper to render with router
-const renderWithRouter = (ui: React.ReactElement) => {
-  return render(<BrowserRouter>{ui}</BrowserRouter>);
-};
 
 describe('Text Display Component Tests', () => {
   it('should render a simple text component', () => {
