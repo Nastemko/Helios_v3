@@ -27,8 +27,11 @@ dependencies = [
     "jax >= 0.8.0",
 ]
 
-[project.optional-dependencies]
-dev = ["pytest"]
-
 [tool.setuptools]
 package-dir = {"" = "src"}
+
+[dependency-groups]
+dev = [
+    "black>=25.9.0",
+    "pytest>=8.4.2",
+]
