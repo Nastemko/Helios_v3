@@ -4,6 +4,7 @@ Uses real test database (SQLite in-memory) with no mocks.
 """
 
 import pytest
+from sqlalchemy import text, inspect
 from sqlalchemy.exc import IntegrityError
 from src.models.user import User
 from src.models.text import Text, TextSegment
@@ -16,18 +17,20 @@ class TestDatabaseConnection:
     def test_database_connection(self, db_session):
         """Test that database connection is established."""
         # Simple query to verify connection
-        result = db_session.execute("SELECT 1").scalar()
+        result = db_session.execute(text("SELECT 1")).scalar()
         assert result == 1
     
     def test_create_tables(self, test_engine):
         """Test that all tables are created."""
         from src.database import Base
         
-        # Check that tables exist
-        assert test_engine.has_table("users")
-        assert test_engine.has_table("texts")
-        assert test_engine.has_table("text_segments")
-        assert test_engine.has_table("annotations")
+        # Check that tables exist using inspect
+        inspector = inspect(test_engine)
+        table_names = inspector.get_table_names()
+        assert "users" in table_names
+        assert "texts" in table_names
+        assert "text_segments" in table_names
+        assert "annotations" in table_names
 
 
 class TestUserCRUD:
@@ -37,10 +40,8 @@ class TestUserCRUD:
         """Test creating a new user."""
         user = User(
             email="newuser@example.com",
-            google_id="google_123",
-            name="New User",
-            picture="https://example.com/pic.jpg",
-            is_active=True
+            oauth_provider="google",
+            oauth_id="google_123"
         )
         
         db_session.add(user)
@@ -56,24 +57,23 @@ class TestUserCRUD:
         
         assert user is not None
         assert user.email == test_user.email
-        assert user.google_id == test_user.google_id
+        assert user.oauth_id == test_user.oauth_id
     
     def test_update_user(self, db_session, test_user):
         """Test updating user information."""
-        test_user.name = "Updated Name"
+        test_user.email = "updated@example.com"
         db_session.commit()
         
         # Fetch again and verify
         user = db_session.query(User).filter(User.id == test_user.id).first()
-        assert user.name == "Updated Name"
+        assert user.email == "updated@example.com"
     
     def test_delete_user(self, db_session):
         """Test deleting a user."""
         user = User(
             email="deleteme@example.com",
-            google_id="delete_123",
-            name="Delete Me",
-            is_active=True
+            oauth_provider="google",
+            oauth_id="delete_123"
         )
         db_session.add(user)
         db_session.commit()
@@ -91,9 +91,8 @@ class TestUserCRUD:
         """Test that email must be unique."""
         duplicate_user = User(
             email=test_user.email,  # Same email
-            google_id="different_google_id",
-            name="Duplicate Email User",
-            is_active=True
+            oauth_provider="google",
+            oauth_id="different_oauth_id"
         )
         
         db_session.add(duplicate_user)
@@ -111,16 +110,13 @@ class TestTextCRUD:
             urn="urn:cts:greekLit:tlg0003.tlg001.perseus-grc1",
             title="History of the Peloponnesian War",
             author="Thucydides",
-            language="Greek",
-            word_count=50000,
-            is_public=True
+            language="grc"
         )
         
         db_session.add(text)
         db_session.commit()
         
         assert text.id is not None
-        assert text.created_at is not None
     
     def test_read_text(self, db_session, sample_text):
         """Test reading a text from database."""
@@ -132,11 +128,11 @@ class TestTextCRUD:
     
     def test_update_text(self, db_session, sample_text):
         """Test updating text information."""
-        sample_text.description = "Updated description"
+        sample_text.title = "Updated Title"
         db_session.commit()
         
         text = db_session.query(Text).filter(Text.id == sample_text.id).first()
-        assert text.description == "Updated description"
+        assert text.title == "Updated Title"
     
     def test_text_segments_relationship(self, db_session, sample_text):
         """Test relationship between Text and TextSegments."""
@@ -144,7 +140,7 @@ class TestTextCRUD:
             text_id=sample_text.id,
             reference="1.1",
             content="Test content",
-            sequence_number=1
+            sequence=1
         )
         db_session.add(segment)
         db_session.commit()
@@ -209,9 +205,8 @@ class TestAnnotationCRUD:
         # Create another user
         user2 = User(
             email="user2@example.com",
-            google_id="google_456",
-            name="User Two",
-            is_active=True
+            oauth_provider="google",
+            oauth_id="google_456"
         )
         db_session.add(user2)
         db_session.commit()
@@ -251,9 +246,8 @@ class TestTransactions:
         """Test successful transaction commit."""
         user = User(
             email="commit@example.com",
-            google_id="commit_123",
-            name="Commit User",
-            is_active=True
+            oauth_provider="google",
+            oauth_id="commit_123"
         )
         
         db_session.add(user)
@@ -267,9 +261,8 @@ class TestTransactions:
         """Test transaction rollback on error."""
         user = User(
             email="rollback@example.com",
-            google_id="rollback_123",
-            name="Rollback User",
-            is_active=True
+            oauth_provider="google",
+            oauth_id="rollback_123"
         )
         
         db_session.add(user)

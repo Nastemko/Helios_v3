@@ -73,10 +73,8 @@ def test_user(db_session: Session) -> User:
     """Create a test user in the database."""
     user = User(
         email="test@example.com",
-        google_id="test_google_id_123",
-        name="Test User",
-        picture="https://example.com/picture.jpg",
-        is_active=True
+        oauth_provider="google",
+        oauth_id="test_google_id_123"
     )
     db_session.add(user)
     db_session.commit()
@@ -109,10 +107,7 @@ def sample_text(db_session: Session) -> Text:
         urn="urn:cts:greekLit:tlg0012.tlg001.perseus-grc2",
         title="Iliad",
         author="Homer",
-        language="Greek",
-        description="The Iliad by Homer",
-        word_count=150000,
-        is_public=True
+        language="grc"
     )
     db_session.add(text)
     db_session.commit()
@@ -127,7 +122,7 @@ def sample_segment(db_session: Session, sample_text: Text) -> TextSegment:
         text_id=sample_text.id,
         reference="1.1",
         content="μῆνιν ἄειδε θεὰ Πηληϊάδεω Ἀχιλῆος",
-        sequence_number=1
+        sequence=1
     )
     db_session.add(segment)
     db_session.commit()
@@ -159,25 +154,19 @@ def multiple_texts(db_session: Session) -> list[Text]:
             urn="urn:cts:greekLit:tlg0012.tlg001.perseus-grc2",
             title="Iliad",
             author="Homer",
-            language="Greek",
-            word_count=150000,
-            is_public=True
+            language="grc"
         ),
         Text(
             urn="urn:cts:greekLit:tlg0012.tlg002.perseus-grc2",
             title="Odyssey",
             author="Homer",
-            language="Greek",
-            word_count=120000,
-            is_public=True
+            language="grc"
         ),
         Text(
             urn="urn:cts:latinLit:phi0690.phi003.perseus-lat2",
             title="Aeneid",
             author="Vergil",
-            language="Latin",
-            word_count=100000,
-            is_public=True
+            language="lat"
         ),
     ]
     for text in texts:

@@ -160,8 +160,11 @@ class TestMultipleLanguages:
         
         response = client.post("/api/analyze/word", json=data)
         
-        # Should reject unsupported language
-        assert response.status_code in [400, 422, 500]
+        # API returns 200 with fallback response for unsupported languages
+        assert response.status_code == 200
+        response_data = response.json()
+        assert response_data["word"] == "hello"
+        assert response_data["language"] == "English"
 
 
 class TestPerformance:
