@@ -227,9 +227,8 @@ class TestAnnotationPermissions:
         # Create another user
         user2 = User(
             email="user2@example.com",
-            google_id="google_789",
-            name="User Two",
-            is_active=True
+            oauth_provider="google",
+            oauth_id="google_789"
         )
         db_session.add(user2)
         db_session.commit()

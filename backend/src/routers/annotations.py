@@ -37,12 +37,22 @@ class AnnotationResponse(BaseModel):
     created_at: str
     updated_at: Optional[str] = None
     
+    @classmethod
+    def from_annotation(cls, annotation: Annotation) -> 'AnnotationResponse':
+        """Create response from annotation model with datetime serialization"""
+        return cls(
+            id=annotation.id,
+            user_id=annotation.user_id,
+            text_id=annotation.text_id,
+            segment_id=annotation.segment_id,
+            word=annotation.word,
+            note=annotation.note,
+            created_at=annotation.created_at.isoformat() if annotation.created_at else "",
+            updated_at=annotation.updated_at.isoformat() if annotation.updated_at else None
+        )
+    
     class Config:
         from_attributes = True
-        json_encoders = {
-            # Handle datetime serialization
-            'datetime': lambda v: v.isoformat() if v else None
-        }
 
 
 @router.post("/", response_model=AnnotationResponse, status_code=201)
@@ -87,7 +97,7 @@ async def create_annotation(
     db.commit()
     db.refresh(db_annotation)
     
-    return AnnotationResponse.from_orm(db_annotation)
+    return AnnotationResponse.from_annotation(db_annotation)
 
 
 @router.get("/", response_model=List[AnnotationResponse])
@@ -124,7 +134,7 @@ async def list_annotations(
     # Apply pagination
     annotations = query.offset(skip).limit(limit).all()
     
-    return [AnnotationResponse.from_orm(ann) for ann in annotations]
+    return [AnnotationResponse.from_annotation(ann) for ann in annotations]
 
 
 @router.get("/{annotation_id}", response_model=AnnotationResponse)
@@ -146,7 +156,7 @@ async def get_annotation(
     if not annotation:
         raise HTTPException(status_code=404, detail="Annotation not found")
     
-    return AnnotationResponse.from_orm(annotation)
+    return AnnotationResponse.from_annotation(annotation)
 
 
 @router.put("/{annotation_id}", response_model=AnnotationResponse)
@@ -175,7 +185,7 @@ async def update_annotation(
     db.commit()
     db.refresh(annotation)
     
-    return AnnotationResponse.from_orm(annotation)
+    return AnnotationResponse.from_annotation(annotation)
 
 
 @router.delete("/{annotation_id}", status_code=204)

@@ -3,7 +3,7 @@ from typing import Optional, List
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 from sqlalchemy import or_
-from pydantic import BaseModel
+from pydantic import BaseModel, model_validator
 
 from src.database import get_db
 from src.models.text import Text, TextSegment
@@ -20,7 +20,14 @@ class TextResponse(BaseModel):
     title: str
     language: str
     is_fragment: bool
-    text_metadata: dict = {}
+    text_metadata: Optional[dict] = None
+    
+    @model_validator(mode='after')
+    def ensure_text_metadata_dict(self):
+        """Ensure text_metadata is always a dict, never None"""
+        if self.text_metadata is None:
+            self.text_metadata = {}
+        return self
     
     class Config:
         from_attributes = True
