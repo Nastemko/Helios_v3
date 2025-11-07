@@ -1,4 +1,4 @@
-# Frontend Dockerfile - Multi-stage build with Ubuntu base
+# Frontend Dockerfile - Multi-stage build
 
 # Stage 1: Build stage
 FROM ubuntu:24.04 AS builder
@@ -30,28 +30,14 @@ COPY . .
 # Build the application
 RUN npm run build
 
-# Stage 2: Production stage with nginx
-FROM ubuntu:24.04
+# Stage 2: Production stage with Caddy
+FROM caddy:2-alpine
 
-# Install nginx
-RUN apt-get update && apt-get install -y \
-    nginx \
-    curl \
-    && rm -rf /var/lib/apt/lists/*
-
-# Create nginx user if it doesn't exist
-RUN groupadd -r nginx || true && \
-    useradd -r -g nginx nginx || true
+# Copy Caddy configuration
+COPY Caddyfile /etc/caddy/Caddyfile
 
 # Copy built assets from builder
-COPY --from=builder /app/dist /usr/share/nginx/html
-
-# Copy nginx configuration
-COPY nginx.conf /etc/nginx/nginx.conf
-
-# Create nginx directories and set permissions
-RUN mkdir -p /var/cache/nginx /var/log/nginx /var/run && \
-    chown -R nginx:nginx /var/cache/nginx /var/log/nginx /var/run /usr/share/nginx/html
+COPY --from=builder /app/dist /usr/share/caddy/html
 
 # Expose port
 EXPOSE 80
@@ -59,10 +45,3 @@ EXPOSE 80
 # Health check
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
     CMD curl -f http://localhost/ || exit 1
-
-# Switch to non-root user
-USER nginx
-
-# Start nginx
-CMD ["nginx", "-g", "daemon off;"]
-
