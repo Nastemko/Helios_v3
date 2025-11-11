@@ -7,6 +7,10 @@ FROM ubuntu:24.04 AS builder
 ENV DEBIAN_FRONTEND=noninteractive \
     NODE_VERSION=24
 
+# Allow VITE_API_URL to be passed as a build argument and set as an environment variable
+ARG VITE_API_URL
+ENV VITE_API_URL=${VITE_API_URL}
+
 # Install Node.js 20
 RUN apt-get update && apt-get install -y \
     curl \
