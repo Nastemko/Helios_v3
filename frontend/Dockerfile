@@ -33,6 +33,9 @@ RUN npm run build
 # Stage 2: Production stage with Caddy
 FROM caddy:2-alpine
 
+# Install curl for health checks
+RUN apk add --no-cache curl
+
 # Copy Caddy configuration
 COPY Caddyfile /etc/caddy/Caddyfile
 
