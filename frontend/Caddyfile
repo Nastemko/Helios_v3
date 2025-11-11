@@ -1,0 +1,47 @@
+{
+        admin off
+        persist_config off
+        auto_https off
+
+        log {
+                format json
+        }
+
+        servers {
+                trusted_proxies static private_ranges 100.0.0.0/8 # trust railway's proxy
+        }
+}
+
+:8888 {
+        log {
+                format json
+        }
+
+        respond /health 200
+
+        # Security headers
+        header {
+                # Prevent some browsers from MIME-sniffing a response away from the declared Content-Type
+                X-Content-Type-Options "nosniff"
+                # Remove Server header
+                -Server
+        }
+
+        # serve from the '/usr/share/caddy/html' folder (Vite builds into the 'dist' folder)
+        root * /usr/share/caddy/html
+
+        # Handle static files
+        file_server {
+                hide .git
+                hide .env*
+        }
+
+        # Compression with more formats
+        encode {
+                gzip
+                zstd
+        }
+
+        # Try files with HTML extension and handle SPA routing
+        try_files {path} {path}.html {path}/index.html /index.html
+}

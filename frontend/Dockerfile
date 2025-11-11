@@ -5,7 +5,7 @@ FROM ubuntu:24.04 AS builder
 
 # Set environment variables
 ENV DEBIAN_FRONTEND=noninteractive \
-    NODE_VERSION=20
+    NODE_VERSION=24
 
 # Install Node.js 20
 RUN apt-get update && apt-get install -y \
@@ -40,8 +40,8 @@ COPY Caddyfile /etc/caddy/Caddyfile
 COPY --from=builder /app/dist /usr/share/caddy/html
 
 # Expose port
-EXPOSE 80
+EXPOSE 8888
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
-    CMD curl -f http://localhost/ || exit 1
+    CMD curl -f http://localhost:8888/health || exit 1
