@@ -3,14 +3,17 @@
 import logging
 from pathlib import Path
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
 from starlette.middleware.sessions import SessionMiddleware
 
 from config import settings
-from database import engine, Base
+from database import Base, engine
 from middleware.performance import performance_middleware
+
+# Import and include routers
+from routers import aeneas, analysis, annotations, auth, texts
 
 # Configure logging
 logging.basicConfig(
@@ -63,6 +66,7 @@ async def startup_event():
     # Initialize Morphology service
     logger.info("Initializing CLTK morphology service...")
     from services.morphology import get_morphology_service
+
     morphology_service = get_morphology_service()
     logger.info(f"Morphology service initialized: {morphology_service.initialized}")
 
@@ -100,14 +104,16 @@ async def root():
     }
 
 
-# Import and include routers
-from routers import texts, auth, annotations, analysis, aeneas
-
 app.include_router(texts.router)
 app.include_router(auth.router)
 app.include_router(annotations.router)
 app.include_router(analysis.router)
 app.include_router(aeneas.router)
+
+
+@app.get("/debug/headers")
+async def debug_headers(request: Request):
+    return dict(request.headers)
 
 
 if __name__ == "__main__":
