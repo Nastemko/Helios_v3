@@ -21,7 +21,6 @@ class TestConfig(unittest.TestCase):
             "ACCESS_TOKEN_EXPIRE_MINUTES": "30",
             "GOOGLE_CLIENT_ID": "test-google-id-from-env",
             "GOOGLE_CLIENT_SECRET": "test-google-secret-from-env",
-            "GOOGLE_REDIRECT_URI": "http://localhost:8080/callback/google",
             # pydantic_settings can parse comma-separated strings into a list
             "CORS_ORIGINS": '["http://test.com", "http://anothertest.com"]',
             "MODELS_DIR": "/test/models",
@@ -59,9 +58,6 @@ class TestConfig(unittest.TestCase):
         self.assertEqual(settings.GOOGLE_CLIENT_ID, "test-google-id-from-env")
         self.assertEqual(settings.GOOGLE_CLIENT_SECRET, "test-google-secret-from-env")
         self.assertEqual(
-            settings.GOOGLE_REDIRECT_URI, "http://localhost:8080/callback/google"
-        )
-        self.assertEqual(
             settings.CORS_ORIGINS, ["http://test.com", "http://anothertest.com"]
         )
         self.assertEqual(settings.MODELS_DIR, "/test/models")
@@ -94,10 +90,7 @@ class TestConfig(unittest.TestCase):
             self.assertEqual(settings.ACCESS_TOKEN_EXPIRE_MINUTES, 60 * 24 * 7)
             self.assertEqual(settings.GOOGLE_CLIENT_ID, "")
             self.assertEqual(settings.GOOGLE_CLIENT_SECRET, "")
-            self.assertEqual(
-                settings.GOOGLE_REDIRECT_URI,
-                "http://localhost:8000/api/auth/callback/google",
-            )
+
             self.assertEqual(
                 settings.CORS_ORIGINS,
                 ["http://localhost:3000", "http://localhost:5173"],
