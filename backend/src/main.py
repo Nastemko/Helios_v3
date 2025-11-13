@@ -3,9 +3,8 @@
 import logging
 from pathlib import Path
 
-from fastapi import FastAPI, Request
+from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.middleware.trustedhost import TrustedHostMiddleware
 from starlette.middleware.sessions import SessionMiddleware
 
 from config import settings
@@ -109,11 +108,6 @@ app.include_router(auth.router)
 app.include_router(annotations.router)
 app.include_router(analysis.router)
 app.include_router(aeneas.router)
-
-
-@app.get("/debug/headers")
-async def debug_headers(request: Request):
-    return dict(request.headers)
 
 
 if __name__ == "__main__":
