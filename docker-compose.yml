@@ -1,0 +1,115 @@
+version: '3.8'
+
+services:
+  # PostgreSQL with pgvector
+  postgres:
+    image: pgvector/pgvector:pg16
+    container_name: helios-postgres
+    environment:
+      POSTGRES_DB: helios
+      POSTGRES_USER: heliosuser
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-changeme}
+      POSTGRES_INITDB_ARGS: "-E UTF8"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./backend/scripts/init_db.sql:/docker-entrypoint-initdb.d/init_db.sql:ro
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U heliosuser -d helios"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - helios-network
+    restart: unless-stopped
+
+  # Backend (FastAPI)
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: helios-backend
+    environment:
+      DATABASE_URL: postgresql://heliosuser:${POSTGRES_PASSWORD:-changeme}@postgres:5432/helios
+      OLLAMA_BASE_URL: http://ollama:11434
+      OLLAMA_MODEL: llama3.2:8b
+      OLLAMA_EMBEDDING_MODEL: nomic-embed-text
+      SECRET_KEY: ${SECRET_KEY:-your-secret-key-change-in-production}
+      DEBUG: ${DEBUG:-False}
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:5173,http://localhost:80}
+    volumes:
+      - ./backend:/app
+      - backend_logs:/app/logs
+    ports:
+      - "8000:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      ollama:
+        condition: service_started
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    networks:
+      - helios-network
+    restart: unless-stopped
+
+  # Frontend (React/Vite with nginx)
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: helios-frontend
+    ports:
+      - "80:80"
+    depends_on:
+      - backend
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    networks:
+      - helios-network
+    restart: unless-stopped
+
+  # Ollama (LLM service)
+  # Note: This is a placeholder. Ollama needs to be installed on the host
+  # or run with GPU support. For now, configure it to connect to host Ollama.
+  ollama:
+    image: ollama/ollama:latest
+    container_name: helios-ollama
+    volumes:
+      - ollama_data:/root/.ollama
+    ports:
+      - "11434:11434"
+    environment:
+      OLLAMA_HOST: 0.0.0.0
+    networks:
+      - helios-network
+    restart: unless-stopped
+    # Uncomment if you have GPU support
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices:
+    #         - driver: nvidia
+    #           count: 1
+    #           capabilities: [gpu]
+
+networks:
+  helios-network:
+    driver: bridge
+
+volumes:
+  postgres_data:
+    driver: local
+  ollama_data:
+    driver: local
+  backend_logs:
+    driver: local
+
