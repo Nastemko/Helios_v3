@@ -23,8 +23,6 @@ class WordAnalysisResponse(BaseModel):
     pos: str
     morphology: dict
     definitions: list[str]
-    lexicon_url: str
-    perseus_url: Optional[str] = None
 
 
 @router.post("/word", response_model=WordAnalysisResponse)
@@ -53,19 +51,4 @@ async def analyze_word(
     )
     
     return WordAnalysisResponse(**result)
-
-
-@router.get("/lexicon-url")
-async def get_lexicon_url(
-    lemma: str,
-    language: str,
-    morphology_service: MorphologyService = Depends(get_morphology_service)
-):
-    """
-    Get lexicon URL for a lemma
-    
-    Useful for generating direct links to online lexicons.
-    """
-    url = morphology_service.get_lexicon_url(lemma, language)
-    return {"lemma": lemma, "language": language, "url": url}
 

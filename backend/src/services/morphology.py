@@ -129,9 +129,7 @@ class MorphologyService:
                 "lemma": lemma,
                 "pos": pos_display,
                 "morphology": morphology,
-                "definitions": [f"See Logeion for detailed definitions of {lemma}"],
-                "lexicon_url": f"https://logeion.uchicago.edu/{lemma}",
-                "perseus_url": f"https://www.perseus.tufts.edu/hopper/morph?l={word}&la=greek",
+                "definitions": [],
             }
 
         except Exception as e:
@@ -200,9 +198,7 @@ class MorphologyService:
                 "lemma": lemma,
                 "pos": pos_display,
                 "morphology": morphology,
-                "definitions": [f"See Logeion for detailed definitions of {lemma}"],
-                "lexicon_url": f"https://logeion.uchicago.edu/{lemma}",
-                "perseus_url": f"https://www.perseus.tufts.edu/hopper/morph?l={word}&la=latin",
+                "definitions": [],
             }
 
         except Exception as e:
@@ -238,16 +234,8 @@ class MorphologyService:
             "morphology": {
                 "note": f"CLTK morphological analysis unavailable. Using fallback mode."
             },
-            "definitions": [
-                f"Click the lexicon link below to see definitions for this {lang_name} word"
-            ],
-            "lexicon_url": f"https://logeion.uchicago.edu/{word}",
-            "perseus_url": f"https://www.perseus.tufts.edu/hopper/morph?l={word}&la={'greek' if language == 'grc' else 'latin'}",
+            "definitions": [],
         }
-
-    def get_lexicon_url(self, lemma: str, language: str) -> str:
-        """Generate lexicon URL for a lemma"""
-        return f"https://logeion.uchicago.edu/{lemma}"
 
 
 # Global service instance
