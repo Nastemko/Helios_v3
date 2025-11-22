@@ -1,12 +1,15 @@
 import { useState } from 'react';
 import { useParams } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
-import { textApi } from '../services/api';
+import { textApi, studyApi } from '../services/api';
 import WordAnalysisPanel from '../components/WordAnalysisPanel';
-import type { TextSegment } from '../types';
+import Notepad from '../components/Notepad';
+import HighlightableText from '../components/HighlightableText';
+import type { TextSegment, Highlight } from '../types';
 
 export default function TextReader() {
   const { urn } = useParams<{ urn: string }>();
+  const [showNotepad, setShowNotepad] = useState(false);
   const [selectedWord, setSelectedWord] = useState<{
     word: string;
     language: string;
@@ -17,6 +20,12 @@ export default function TextReader() {
     queryKey: ['text', urn],
     queryFn: () => textApi.get(urn!),
     enabled: !!urn,
+  });
+
+  const { data: highlights } = useQuery({
+    queryKey: ['highlights', data?.data.text.id],
+    queryFn: () => studyApi.getHighlights({ text_id: data?.data.text.id }),
+    enabled: !!data?.data.text.id,
   });
 
   const handleWordClick = (word: string, segmentId: number) => {
@@ -32,6 +41,7 @@ export default function TextReader() {
       segmentId,
     });
   };
+
 
   if (isLoading) {
     return (
@@ -81,17 +91,13 @@ export default function TextReader() {
                   {segment.reference}
                 </div>
                 <div className="flex-1">
-                  <div className="text-lg leading-relaxed greek-text">
-                    {segment.content.split(/\s+/).map((word, idx) => (
-                      <span
-                        key={idx}
-                        onClick={() => handleWordClick(word, segment.id)}
-                        className="cursor-pointer hover:bg-blue-100 hover:shadow-sm px-1 py-0.5 rounded transition-colors inline-block"
-                      >
-                        {word}{' '}
-                      </span>
-                    ))}
-                  </div>
+                  <HighlightableText
+                    textId={text.id}
+                    segmentId={segment.id}
+                    content={segment.content}
+                    highlights={highlights?.data.filter((h: Highlight) => h.segment_id === segment.id) || []}
+                    onWordClick={(word) => handleWordClick(word, segment.id)}
+                  />
                 </div>
               </div>
             ))}
@@ -115,6 +121,22 @@ export default function TextReader() {
           onClose={() => setSelectedWord(null)}
         />
       )}
+
+      {/* Notepad Toggle */}
+      <button
+        onClick={() => setShowNotepad(!showNotepad)}
+        className="fixed bottom-8 right-8 w-12 h-12 bg-yellow-400 hover:bg-yellow-500 rounded-full shadow-lg flex items-center justify-center text-2xl z-40 transition-transform hover:scale-110"
+        title="Toggle Notepad"
+      >
+        📝
+      </button>
+
+      {/* Notepad */}
+      <Notepad
+        textId={text.id}
+        isOpen={showNotepad}
+        onClose={() => setShowNotepad(false)}
+      />
     </div>
   );
 }

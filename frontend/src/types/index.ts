@@ -38,8 +38,6 @@ export interface WordAnalysis {
   pos: string;
   morphology: Record<string, string>;
   definitions: string[];
-  lexicon_url: string;
-  perseus_url?: string;
 }
 
 export interface Annotation {
@@ -51,6 +49,27 @@ export interface Annotation {
   note: string;
   created_at: string;
   updated_at?: string;
+}
+
+export interface StudentNote {
+  id: number;
+  user_id: number;
+  text_id?: number;
+  content: string;
+  created_at: string;
+  updated_at?: string;
+}
+
+export interface Highlight {
+  id: number;
+  user_id: number;
+  text_id: number;
+  segment_id: number;
+  start_offset: number;
+  end_offset: number;
+  selected_text: string;
+  color: string;
+  created_at: string;
 }
 
 export interface AeneasStatus {

@@ -120,31 +120,6 @@ export default function WordAnalysisPanel({ word, language, segmentId, textId, o
                 </ul>
               </div>
             )}
-            
-            {/* Lexicon Link */}
-            <div>
-              <a
-                href={analysis.data.lexicon_url}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="block w-full py-2 px-4 bg-blue-600 text-white text-center rounded-lg hover:bg-blue-700 transition font-medium"
-              >
-                View Full Lexicon Entry →
-              </a>
-            </div>
-
-            {analysis.data.perseus_url && (
-              <div>
-                <a
-                  href={analysis.data.perseus_url}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="block w-full py-2 px-4 bg-gray-100 text-gray-700 text-center rounded-lg hover:bg-gray-200 transition text-sm"
-                >
-                  Perseus Morphology →
-                </a>
-              </div>
-            )}
           </>
         ) : (
           <div className="text-center py-8 text-gray-500">
