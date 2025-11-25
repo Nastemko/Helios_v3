@@ -28,6 +28,7 @@ class Settings(BaseSettings):
 
     # Aeneas models
     MODELS_DIR: str = "./models"
+    AENEAS_ENABLED: bool = False
 
     # Perseus texts
     PERSEUS_DATA_DIR: str = "../canonical-greekLit/data"

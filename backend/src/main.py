@@ -12,7 +12,7 @@ from database import Base, engine
 from middleware.performance import performance_middleware
 
 # Import and include routers
-from routers import aeneas, analysis, annotations, auth, texts, study
+from routers import analysis, annotations, auth, texts, study
 
 # Configure logging
 logging.basicConfig(
@@ -20,6 +20,18 @@ logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
 )
 logger = logging.getLogger(__name__)
+
+# Conditional imports for optional features
+aeneas_router = None
+if settings.AENEAS_ENABLED:
+    try:
+        from routers import aeneas
+
+        aeneas_router = aeneas.router
+    except Exception as exc:
+        logger.warning("Aeneas router disabled due to import error: %s", exc)
+        aeneas_router = None
+
 
 # Create FastAPI app
 app = FastAPI(
@@ -69,13 +81,14 @@ async def startup_event():
     morphology_service = get_morphology_service()
     logger.info(f"Morphology service initialized: {morphology_service.initialized}")
 
-    # Initialize Aeneas service
-    models_dir = Path(settings.MODELS_DIR)
-    logger.info(f"Initializing Aeneas service with models from {models_dir}")
+    # Initialize Aeneas service if enabled
+    if settings.AENEAS_ENABLED and aeneas_router is not None:
+        models_dir = Path(settings.MODELS_DIR)
+        logger.info(f"Initializing Aeneas service with models from {models_dir}")
 
-    from services.aeneas_service import initialize_aeneas_service
+        from services.aeneas_service import initialize_aeneas_service
 
-    initialize_aeneas_service(models_dir)
+        initialize_aeneas_service(models_dir)
 
     logger.info(f"{settings.APP_NAME} started successfully")
 
@@ -107,7 +120,8 @@ app.include_router(texts.router)
 app.include_router(auth.router)
 app.include_router(annotations.router)
 app.include_router(analysis.router)
-app.include_router(aeneas.router)
+if settings.AENEAS_ENABLED and aeneas_router is not None:
+    app.include_router(aeneas_router)
 app.include_router(study.router)
 
 
