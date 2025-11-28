@@ -10,6 +10,7 @@ React + TypeScript frontend for the Helios classical texts application.
 - 📝 Personal annotations and notes
 - 🔐 Google OAuth authentication
 - 🎨 Modern, responsive UI with Tailwind CSS
+- 🤖 Highlight-based tutor suggestions (LLM, optional)
 
 ## Setup
 
@@ -59,7 +60,9 @@ frontend/
 ├── src/
 │   ├── components/       # Reusable UI components
 │   │   ├── Layout.tsx
-│   │   └── WordAnalysisPanel.tsx
+│   │   ├── WordAnalysisPanel.tsx
+│   │   └── highlighting/
+│   │       └── HighlightPopover.tsx
 │   ├── pages/            # Page components
 │   │   ├── Home.tsx
 │   │   ├── Login.tsx
@@ -69,6 +72,8 @@ frontend/
 │   │   └── AuthContext.tsx
 │   ├── services/         # API services
 │   │   └── api.ts
+│   ├── hooks/            # React hooks
+│   │   └── useTranslationSuggestion.ts
 │   ├── types/            # TypeScript types
 │   │   └── index.ts
 │   ├── App.tsx           # Main app component
@@ -103,6 +108,7 @@ Users authenticate via Google OAuth. The backend handles the OAuth flow and retu
 - Analysis appears in a side panel
 - Links to external lexicons (Logeion, Perseus)
 - Personal annotations saved per user
+- Highlight text to open the Ask Tutor popover (if `VITE_ENABLE_TUTOR` is `true`)
 
 ### Word Analysis
 
@@ -149,6 +155,7 @@ netlify deploy --prod --dir=dist
 ## Environment Variables
 
 - `VITE_API_URL` - Backend API URL (default: `http://localhost:8000`)
+- `VITE_ENABLE_TUTOR` - Set to `false` to hide the highlight-based tutor UI (defaults to `true`)
 
 ## Browser Support
 
