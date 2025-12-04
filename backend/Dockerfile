@@ -44,7 +44,7 @@ EXPOSE 8000
 
 # Add a health check to ensure the application is running correctly
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
-    CMD curl -f http://localhost:8000/health || exit 1
+    CMD curl -f http://127.0.0.1:8000/health || exit 1
 
 # The command to run the application using uvicorn
 CMD ["uv", "run", "uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "2", "--proxy-headers", "--forwarded-allow-ips", "*"]
