@@ -9,9 +9,10 @@ interface Props {
   segmentId: number;
   textId: number;
   onClose: () => void;
+  embedded?: boolean;
 }
 
-export default function WordAnalysisPanel({ word, language, segmentId, textId, onClose }: Props) {
+export default function WordAnalysisPanel({ word, language, segmentId, textId, onClose, embedded }: Props) {
   const [note, setNote] = useState('');
   const [showNoteForm, setShowNoteForm] = useState(false);
   const queryClient = useQueryClient();
@@ -57,8 +58,8 @@ export default function WordAnalysisPanel({ word, language, segmentId, textId, o
   ) || [];
 
   return (
-    <div className="w-96 border-l bg-white overflow-y-auto shadow-lg">
-      <div className="sticky top-0 bg-white border-b z-10">
+    <div className={embedded ? "h-full overflow-y-auto" : "w-96 border-l bg-white overflow-y-auto shadow-lg"}>
+      <div className={embedded ? "sticky top-0 bg-gray-50 border-b z-10" : "sticky top-0 bg-white border-b z-10"}>
         <div className="flex justify-between items-center p-4">
           <h2 className="text-xl font-bold greek-text">{word}</h2>
           <button

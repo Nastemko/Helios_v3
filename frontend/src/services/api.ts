@@ -107,6 +107,12 @@ export const authApi = {
     window.location.href = `${API_BASE_URL}/api/auth/login/google`;
   },
 
+  // Dev login for local testing without OAuth
+  devLogin: () =>
+    api.post<{ access_token: string; token_type: string; user: User }>(
+      "/api/auth/dev-login",
+    ),
+
   me: () => api.get<User>("/api/auth/me"),
 
   logout: () => {
