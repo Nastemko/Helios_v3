@@ -88,40 +88,57 @@ class MorphologyService:
             morphology = {}
 
             def safe_get_feature(obj, attr_name):
-                """Safely get a morphological feature, handling lists and exceptions"""
+                """Safely get a morphological feature, handling CLTK types"""
                 try:
                     if hasattr(obj, attr_name):
                         value = getattr(obj, attr_name, None)
-                        if value:
-                            # If it's a list, join the values
-                            if isinstance(value, list):
-                                return ", ".join(str(v) for v in value)
-                            return str(value)
+                        if value is None:
+                            return None
+                        # Handle CLTK MorphosyntacticFeature and similar objects
+                        if hasattr(value, 'name'):
+                            return str(value.name)
+                        if hasattr(value, 'tag'):
+                            return str(value.tag)
+                        # If it's a list, extract names/tags
+                        if isinstance(value, list):
+                            parts = []
+                            for v in value:
+                                if hasattr(v, 'name'):
+                                    parts.append(str(v.name))
+                                elif hasattr(v, 'tag'):
+                                    parts.append(str(v.tag))
+                                else:
+                                    parts.append(str(v))
+                            return ", ".join(parts) if parts else None
+                        return str(value)
                 except Exception:
                     pass
                 return None
 
-            # Extract all possible morphological features
-            for feature in [
-                "case",
-                "number",
-                "gender",
-                "tense",
-                "mood",
-                "voice",
-                "person",
-                "degree",
-            ]:
-                value = safe_get_feature(word_obj, feature)
-                if value:
-                    morphology[feature] = value
+            # Extract morphological features from CLTK's UDFeatureTagSet
+            # CLTK stores features in word.features.features as a list of UDFeatureTag objects
+            if hasattr(word_obj, 'features') and word_obj.features:
+                feature_set = word_obj.features
+                # Access the list of feature tags
+                if hasattr(feature_set, 'features'):
+                    feature_list = feature_set.features
+                    for f in feature_list:
+                        # Each UDFeatureTag has key (e.g., "Case") and value_label (e.g., "Genitive")
+                        if hasattr(f, 'key') and hasattr(f, 'value_label'):
+                            key = str(f.key).lower()
+                            value = str(f.value_label)
+                            if value and value.lower() not in ['none', 'unknown', '_']:
+                                morphology[key] = value
 
-            # Get lemma and POS
+            # Get lemma and POS (CLTK uses 'upos' for Universal POS)
             lemma = safe_get_feature(word_obj, "lemma") or word
-            pos = safe_get_feature(word_obj, "pos") or "unknown"
+            pos = safe_get_feature(word_obj, "upos") or safe_get_feature(word_obj, "pos") or "unknown"
 
             # Format POS for readability
             pos_display = self._format_pos(pos)
+
+            # Build definitions based on morphology
+            definitions = self._build_definitions(lemma, pos_display, morphology, "grc")
 
             return {
                 "word": word,
@@ -129,9 +146,9 @@ class MorphologyService:
                 "lemma": lemma,
                 "pos": pos_display,
                 "morphology": morphology,
-                "definitions": [f"See Logeion for detailed definitions of {lemma}"],
-                "lexicon_url": f"https://logeion.uchicago.edu/{lemma}",
-                "perseus_url": f"https://www.perseus.tufts.edu/hopper/morph?l={word}&la=greek",
+                "definitions": definitions,
+                "lexicon_url": "",  # Removed external links per user request
+                "perseus_url": "",  # Removed external links per user request
             }
 
         except Exception as e:
@@ -163,36 +180,48 @@ class MorphologyService:
             morphology = {}
 
             def safe_get_feature(obj, attr_name):
-                """Safely get a morphological feature, handling lists and exceptions"""
+                """Safely get a morphological feature, handling CLTK types"""
                 try:
                     if hasattr(obj, attr_name):
                         value = getattr(obj, attr_name, None)
-                        if value:
-                            if isinstance(value, list):
-                                return ", ".join(str(v) for v in value)
-                            return str(value)
+                        if value is None:
+                            return None
+                        if hasattr(value, 'name'):
+                            return str(value.name)
+                        if hasattr(value, 'tag'):
+                            return str(value.tag)
+                        if isinstance(value, list):
+                            parts = []
+                            for v in value:
+                                if hasattr(v, 'name'):
+                                    parts.append(str(v.name))
+                                elif hasattr(v, 'tag'):
+                                    parts.append(str(v.tag))
+                                else:
+                                    parts.append(str(v))
+                            return ", ".join(parts) if parts else None
+                        return str(value)
                 except Exception:
                     pass
                 return None
 
-            # Extract all possible morphological features
-            for feature in [
-                "case",
-                "number",
-                "gender",
-                "tense",
-                "mood",
-                "voice",
-                "person",
-                "degree",
-            ]:
-                value = safe_get_feature(word_obj, feature)
-                if value:
-                    morphology[feature] = value
+            # Extract morphological features from CLTK's UDFeatureTagSet
+            if hasattr(word_obj, 'features') and word_obj.features:
+                feature_set = word_obj.features
+                if hasattr(feature_set, 'features'):
+                    feature_list = feature_set.features
+                    for f in feature_list:
+                        if hasattr(f, 'key') and hasattr(f, 'value_label'):
+                            key = str(f.key).lower()
+                            value = str(f.value_label)
+                            if value and value.lower() not in ['none', 'unknown', '_']:
+                                morphology[key] = value
 
             lemma = safe_get_feature(word_obj, "lemma") or word
-            pos = safe_get_feature(word_obj, "pos") or "unknown"
+            pos = safe_get_feature(word_obj, "upos") or safe_get_feature(word_obj, "pos") or "unknown"
             pos_display = self._format_pos(pos)
+
+            definitions = self._build_definitions(lemma, pos_display, morphology, "lat")
 
             return {
                 "word": word,
@@ -200,9 +229,9 @@ class MorphologyService:
                 "lemma": lemma,
                 "pos": pos_display,
                 "morphology": morphology,
-                "definitions": [f"See Logeion for detailed definitions of {lemma}"],
-                "lexicon_url": f"https://logeion.uchicago.edu/{lemma}",
-                "perseus_url": f"https://www.perseus.tufts.edu/hopper/morph?l={word}&la=latin",
+                "definitions": definitions,
+                "lexicon_url": "",  # Removed external links per user request
+                "perseus_url": "",  # Removed external links per user request
             }
 
         except Exception as e:
@@ -222,8 +251,72 @@ class MorphologyService:
             "INTJ": "Interjection",
             "ART": "Article",
             "PART": "Particle",
+            "DET": "Determiner",
+            "NUM": "Numeral",
+            "AUX": "Auxiliary",
+            "SCONJ": "Subordinating Conjunction",
+            "CCONJ": "Coordinating Conjunction",
+            "PROPN": "Proper Noun",
         }
         return pos_map.get(pos.upper(), pos.capitalize() if pos else "Unknown")
+
+    def _build_definitions(self, lemma: str, pos: str, morphology: dict, language: str) -> List[str]:
+        """Build descriptive definitions based on morphological analysis"""
+        definitions = []
+        lang_name = "Greek" if language == "grc" else "Latin"
+        
+        # Build a grammatical form string like Perseus: "noun sg masc gen"
+        form_parts = []
+        
+        # Start with POS
+        if pos and pos.lower() != "unknown":
+            form_parts.append(pos.lower())
+        
+        # Add morphological details in a standard order
+        if morphology:
+            # Number (singular, plural, dual)
+            number = morphology.get("number", "")
+            if number:
+                # Abbreviate for cleaner display
+                num_abbrev = {"singular": "sg", "plural": "pl", "dual": "dual"}
+                form_parts.append(num_abbrev.get(number.lower(), number.lower()))
+            
+            # Gender (masculine, feminine, neuter)
+            gender = morphology.get("gender", "")
+            if gender:
+                gen_abbrev = {"masculine": "masc", "feminine": "fem", "neuter": "neut"}
+                form_parts.append(gen_abbrev.get(gender.lower(), gender.lower()))
+            
+            # Case (nominative, genitive, dative, accusative, vocative)
+            case = morphology.get("case", "")
+            if case:
+                case_abbrev = {
+                    "nominative": "nom", "genitive": "gen", "dative": "dat",
+                    "accusative": "acc", "vocative": "voc", "ablative": "abl"
+                }
+                form_parts.append(case_abbrev.get(case.lower(), case.lower()))
+            
+            # Verb forms
+            tense = morphology.get("tense", "")
+            if tense:
+                form_parts.append(tense.lower())
+            
+            mood = morphology.get("mood", "")
+            if mood:
+                form_parts.append(mood.lower())
+            
+            voice = morphology.get("voice", "")
+            if voice:
+                form_parts.append(voice.lower())
+            
+            person = morphology.get("person", "")
+            if person:
+                form_parts.append(f"{person}p")
+        
+        if form_parts:
+            definitions.append(" ".join(form_parts))
+        
+        return definitions if definitions else [f"{lang_name} word"]
 
     def _fallback_response(self, word: str, language: str) -> Dict:
         """Return fallback response when CLTK is unavailable"""
@@ -234,15 +327,13 @@ class MorphologyService:
             "word": word,
             "language": language,
             "lemma": word,
-            "pos": "unknown",
-            "morphology": {
-                "note": f"CLTK morphological analysis unavailable. Using fallback mode."
-            },
+            "pos": "Unknown",
+            "morphology": {},
             "definitions": [
-                f"Click the lexicon link below to see definitions for this {lang_name} word"
+                f"{lang_name} word - detailed morphological analysis is loading or unavailable"
             ],
-            "lexicon_url": f"https://logeion.uchicago.edu/{word}",
-            "perseus_url": f"https://www.perseus.tufts.edu/hopper/morph?l={word}&la={'greek' if language == 'grc' else 'latin'}",
+            "lexicon_url": "",  # Removed external links per user request
+            "perseus_url": "",  # Removed external links per user request
         }
 
     def get_lexicon_url(self, lemma: str, language: str) -> str:
