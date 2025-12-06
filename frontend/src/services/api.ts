@@ -7,6 +7,7 @@ import type {
   Annotation,
   User,
   AeneasStatus,
+  TranslationSuggestion,
 } from "../types";
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || "http://localhost:8000";
@@ -106,6 +107,12 @@ export const authApi = {
     window.location.href = `${API_BASE_URL}/api/auth/login/google`;
   },
 
+  // Dev login for local testing without OAuth
+  devLogin: () =>
+    api.post<{ access_token: string; token_type: string; user: User }>(
+      "/api/auth/dev-login",
+    ),
+
   me: () => api.get<User>("/api/auth/me"),
 
   logout: () => {
@@ -115,6 +122,18 @@ export const authApi = {
 
   status: () =>
     api.get<{ authenticated: boolean; user: User | null }>("/api/auth/status"),
+};
+
+// Tutor API
+export const tutorApi = {
+  suggestTranslation: (data: {
+    text_id: number;
+    segment_id: number;
+    selection: string;
+    translation_draft?: string;
+    language?: string;
+    metadata?: Record<string, any>;
+  }) => api.post<TranslationSuggestion>("/api/tutor/suggest-translation", data),
 };
 
 export default api;

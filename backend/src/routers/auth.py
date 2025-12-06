@@ -155,6 +155,50 @@ async def logout():
     return {"message": "Logged out successfully"}
 
 
+@router.post("/dev-login", response_model=TokenResponse)
+async def dev_login(db: Session = Depends(get_db)):
+    """
+    Development-only login endpoint for testing without OAuth.
+    
+    Creates or retrieves a test user and returns a JWT token.
+    Only available in development mode (DEBUG=True or no GOOGLE_CLIENT_ID).
+    """
+    # Only allow in development mode
+    if settings.GOOGLE_CLIENT_ID and not settings.DEBUG:
+        raise HTTPException(
+            status_code=403, 
+            detail="Dev login is only available in development mode"
+        )
+    
+    # Find or create dev user
+    dev_email = "dev@helios.local"
+    dev_oauth_id = "dev-user-123"
+    
+    user = db.query(User).filter(
+        User.oauth_provider == 'dev',
+        User.oauth_id == dev_oauth_id
+    ).first()
+    
+    if not user:
+        user = User(
+            email=dev_email,
+            oauth_provider='dev',
+            oauth_id=dev_oauth_id
+        )
+        db.add(user)
+        db.commit()
+        db.refresh(user)
+    
+    # Generate JWT token
+    access_token = create_access_token(data={"sub": str(user.id)})
+    
+    return TokenResponse(
+        access_token=access_token,
+        token_type="bearer",
+        user=UserResponse.from_orm(user)
+    )
+
+
 @router.get("/status")
 async def auth_status(request: Request, db: Session = Depends(get_db)):
     """

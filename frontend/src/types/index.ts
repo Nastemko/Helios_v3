@@ -62,3 +62,14 @@ export interface AeneasStatus {
   message: string;
 }
 
+export interface TranslationSuggestion {
+  translation: string;
+  literal_gloss?: string | null;
+  rationale: string;
+  confidence: number;
+  source_language: string;
+  segment_reference: string;
+  context_excerpt: string;
+  metadata: Record<string, any>;
+}
+
