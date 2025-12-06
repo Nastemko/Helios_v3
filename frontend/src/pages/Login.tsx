@@ -28,17 +28,28 @@ export default function Login() {
 
   if (isLoading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-blue-50 to-indigo-100">
-        <div className="text-xl">Loading...</div>
+      <div className="min-h-screen flex items-center justify-center bg-helios-cream">
+        <div className="text-xl text-helios-teal">Loading...</div>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-blue-50 to-indigo-100">
-      <div className="bg-white p-8 rounded-2xl shadow-xl max-w-md w-full">
+    <div className="min-h-screen flex items-center justify-center bg-helios-cream">
+      {/* Decorative background pattern */}
+      <div className="absolute inset-0 opacity-5">
+        <div className="absolute top-1/4 left-1/4 w-96 h-96 bg-helios-gold rounded-full blur-3xl"></div>
+        <div className="absolute bottom-1/4 right-1/4 w-96 h-96 bg-helios-teal rounded-full blur-3xl"></div>
+      </div>
+      
+      <div className="relative bg-white p-10 rounded-2xl shadow-xl max-w-md w-full border border-helios-cream-dark">
         <div className="text-center mb-8">
-          <h1 className="text-5xl font-bold mb-2">☀️ Helios</h1>
+          <img 
+            src="/helios-logo.png" 
+            alt="Helios" 
+            className="w-32 h-32 mx-auto mb-6 drop-shadow-md"
+          />
+          <h1 className="text-4xl font-bold mb-2 text-helios-teal">Helios</h1>
           <p className="text-gray-600">
             Your digital companion for classical languages
           </p>
@@ -51,7 +62,7 @@ export default function Login() {
           
           <button
             onClick={login}
-            className="w-full flex items-center justify-center gap-3 bg-white border-2 border-gray-300 rounded-lg py-3 px-4 hover:bg-gray-50 hover:border-gray-400 transition duration-200"
+            className="w-full flex items-center justify-center gap-3 bg-white border-2 border-gray-200 rounded-xl py-3 px-4 hover:bg-helios-cream hover:border-helios-gold transition duration-200"
           >
             <svg className="w-5 h-5" viewBox="0 0 24 24">
               <path
@@ -77,7 +88,7 @@ export default function Login() {
           {/* Dev Login - for local development */}
           <div className="relative">
             <div className="absolute inset-0 flex items-center">
-              <div className="w-full border-t border-gray-200"></div>
+              <div className="w-full border-t border-helios-cream-dark"></div>
             </div>
             <div className="relative flex justify-center text-sm">
               <span className="px-2 bg-white text-gray-500">or for development</span>
@@ -87,10 +98,10 @@ export default function Login() {
           <button
             onClick={handleDevLogin}
             disabled={isDevLoggingIn}
-            className="w-full flex items-center justify-center gap-2 bg-amber-500 hover:bg-amber-600 text-white rounded-lg py-3 px-4 transition duration-200 disabled:opacity-50"
+            className="w-full flex items-center justify-center gap-2 bg-helios-gold hover:bg-helios-gold-light text-helios-teal-dark rounded-xl py-3 px-4 transition duration-200 disabled:opacity-50 font-medium"
           >
             <span className="text-lg">🔧</span>
-            <span className="font-medium">
+            <span>
               {isDevLoggingIn ? 'Logging in...' : 'Dev Login (No OAuth)'}
             </span>
           </button>
@@ -107,4 +118,3 @@ export default function Login() {
     </div>
   );
 }
-
