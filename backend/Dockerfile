@@ -9,8 +9,8 @@ ENV PYTHONUNBUFFERED=1 \
 # Install system dependencies, download and install uv in a single layer to optimize image size.
 # uv is moved to a system-wide binary path to be available to all users.
 RUN apt-get update && apt-get install -y \
-    python3.13 \
-    python3.13-venv \
+    python3.12 \
+    python3.12-venv \
     curl \
     git \
     && rm -rf /var/lib/apt/lists/* \
