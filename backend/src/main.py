@@ -62,6 +62,20 @@ async def startup_event():
     logger.info("Creating database tables...")
     Base.metadata.create_all(bind=engine)
 
+    # Populate database with Greek texts if not already populated
+    logger.info("Checking for Greek text population...")
+    from scripts.populate_on_startup import populate_on_startup
+
+    try:
+        stats = await populate_on_startup()
+        if stats["inserted"] > 0:
+            logger.info(f"Populated database with {stats['inserted']} Greek texts")
+        elif stats["skipped"] > 0:
+            logger.info(f"Database already contains {stats['skipped']} texts")
+    except Exception as e:
+        logger.error(f"Error during text population: {e}")
+        # Continue startup even if population fails
+
     # Initialize Morphology service
     logger.info("Initializing CLTK morphology service...")
     from services.morphology import get_morphology_service

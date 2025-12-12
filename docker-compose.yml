@@ -38,9 +38,13 @@ services:
       SECRET_KEY: ${SECRET_KEY:-your-secret-key-change-in-production}
       DEBUG: ${DEBUG:-False}
       CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:5173,http://localhost:80}
+      # Override the data path for docker-compose development
+      PERSEUS_DATA_DIR: /app/data/canonical-greekLit/data
     volumes:
       - ./backend:/app
       - backend_logs:/app/logs
+      # Mount the canonical Greek literature data for development
+      - ./canonical-greekLit:/app/data/canonical-greekLit:ro
     ports:
       - "8000:8000"
     depends_on:

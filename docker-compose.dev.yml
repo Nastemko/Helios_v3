@@ -32,11 +32,15 @@ services:
       SECRET_KEY: dev-secret-key-not-for-production
       DEBUG: "True"
       CORS_ORIGINS: http://localhost:5173,http://localhost:80
+      # Data path for Greek texts
+      PERSEUS_DATA_DIR: /app/data/canonical-greekLit/data
     volumes:
       # Mount source code for hot-reloading
       - ./backend:/app
       - /app/__pycache__
       - /app/.venv
+      # Mount the canonical Greek literature data
+      - ./canonical-greekLit:/app/data/canonical-greekLit:ro
     ports:
       - "8000:8000"
     command: uv run uvicorn main:app --host 0.0.0.0 --port 8000 --reload --app-dir src

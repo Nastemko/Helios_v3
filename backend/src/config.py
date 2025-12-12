@@ -30,7 +30,9 @@ class Settings(BaseSettings):
     MODELS_DIR: str = "./models"
 
     # Perseus texts
-    PERSEUS_DATA_DIR: str = "../canonical-greekLit/data"
+    # In Docker: /app/data/canonical-greekLit/data
+    # Local development: ../canonical-greekLit/data
+    PERSEUS_DATA_DIR: str = "/app/data/canonical-greekLit/data"
 
     # Ollama LLM Settings
     OLLAMA_BASE_URL: str = "http://localhost:11434"
