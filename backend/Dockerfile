@@ -41,6 +41,7 @@ COPY --chown=helios:helios src .
 
 # Copy the Greek text data files
 # These are the Perseus canonical Greek literature XML files
+RUN mkdir -p /app/data/canonical-greekLit
 COPY --chown=helios:helios data/canonical-greekLit /app/data/canonical-greekLit
 
 # Expose the port the application will run on
