@@ -12,7 +12,7 @@ from database import Base, engine
 from middleware.performance import performance_middleware
 
 # Import and include routers
-from routers import analysis, annotations, auth, texts, study
+from routers import aeneas, analysis, annotations, auth, texts, tutor
 
 # Configure logging
 logging.basicConfig(
@@ -20,18 +20,6 @@ logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
 )
 logger = logging.getLogger(__name__)
-
-# Conditional imports for optional features
-aeneas_router = None
-if settings.AENEAS_ENABLED:
-    try:
-        from routers import aeneas
-
-        aeneas_router = aeneas.router
-    except Exception as exc:
-        logger.warning("Aeneas router disabled due to import error: %s", exc)
-        aeneas_router = None
-
 
 # Create FastAPI app
 app = FastAPI(
@@ -74,6 +62,20 @@ async def startup_event():
     logger.info("Creating database tables...")
     Base.metadata.create_all(bind=engine)
 
+    # Populate database with Greek texts if not already populated
+    logger.info("Checking for Greek text population...")
+    from scripts.populate_on_startup import populate_on_startup
+
+    try:
+        stats = await populate_on_startup()
+        if stats["inserted"] > 0:
+            logger.info(f"Populated database with {stats['inserted']} Greek texts")
+        elif stats["skipped"] > 0:
+            logger.info(f"Database already contains {stats['skipped']} texts")
+    except Exception as e:
+        logger.error(f"Error during text population: {e}")
+        # Continue startup even if population fails
+
     # Initialize Morphology service
     logger.info("Initializing CLTK morphology service...")
     from services.morphology import get_morphology_service
@@ -81,14 +83,13 @@ async def startup_event():
     morphology_service = get_morphology_service()
     logger.info(f"Morphology service initialized: {morphology_service.initialized}")
 
-    # Initialize Aeneas service if enabled
-    if settings.AENEAS_ENABLED and aeneas_router is not None:
-        models_dir = Path(settings.MODELS_DIR)
-        logger.info(f"Initializing Aeneas service with models from {models_dir}")
+    # Initialize Aeneas service
+    models_dir = Path(settings.MODELS_DIR)
+    logger.info(f"Initializing Aeneas service with models from {models_dir}")
 
-        from services.aeneas_service import initialize_aeneas_service
+    from services.aeneas_service import initialize_aeneas_service
 
-        initialize_aeneas_service(models_dir)
+    initialize_aeneas_service(models_dir)
 
     logger.info(f"{settings.APP_NAME} started successfully")
 
@@ -120,9 +121,8 @@ app.include_router(texts.router)
 app.include_router(auth.router)
 app.include_router(annotations.router)
 app.include_router(analysis.router)
-if settings.AENEAS_ENABLED and aeneas_router is not None:
-    app.include_router(aeneas_router)
-app.include_router(study.router)
+app.include_router(aeneas.router)
+app.include_router(tutor.router)
 
 
 if __name__ == "__main__":

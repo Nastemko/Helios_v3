@@ -7,8 +7,7 @@ import type {
   Annotation,
   User,
   AeneasStatus,
-  StudentNote,
-  Highlight,
+  TranslationSuggestion,
 } from "../types";
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || "http://localhost:8000";
@@ -102,41 +101,17 @@ export const annotationApi = {
     api.get(`/api/annotations/text/${text_id}/summary`),
 };
 
-// Study Tools API
-export const studyApi = {
-  // Notes
-  createNote: (data: { text_id?: number; content: string }) =>
-    api.post<StudentNote>("/api/study/notes", data),
-
-  getNotes: (text_id?: number) =>
-    api.get<StudentNote[]>("/api/study/notes", { params: { text_id } }),
-
-  updateNote: (id: number, content: string) =>
-    api.put<StudentNote>(`/api/study/notes/${id}`, { content }),
-
-  deleteNote: (id: number) => api.delete(`/api/study/notes/${id}`),
-
-  // Highlights
-  createHighlight: (data: {
-    text_id: number;
-    segment_id: number;
-    start_offset: number;
-    end_offset: number;
-    selected_text: string;
-    color?: string;
-  }) => api.post<Highlight>("/api/study/highlights", data),
-
-  getHighlights: (params?: { text_id?: number; segment_id?: number }) =>
-    api.get<Highlight[]>("/api/study/highlights", { params }),
-
-  deleteHighlight: (id: number) => api.delete(`/api/study/highlights/${id}`),
-};
-
 // Auth API
 export const authApi = {
   loginGoogle: () => {
     window.location.href = `${API_BASE_URL}/api/auth/login/google`;
   },
+
+  // Dev login for local testing without OAuth
+  devLogin: () =>
+    api.post<{ access_token: string; token_type: string; user: User }>(
+      "/api/auth/dev-login",
+    ),
 
   me: () => api.get<User>("/api/auth/me"),
 
@@ -147,6 +122,18 @@ export const authApi = {
 
   status: () =>
     api.get<{ authenticated: boolean; user: User | null }>("/api/auth/status"),
+};
+
+// Tutor API
+export const tutorApi = {
+  suggestTranslation: (data: {
+    text_id: number;
+    segment_id: number;
+    selection: string;
+    translation_draft?: string;
+    language?: string;
+    metadata?: Record<string, any>;
+  }) => api.post<TranslationSuggestion>("/api/tutor/suggest-translation", data),
 };
 
 export default api;

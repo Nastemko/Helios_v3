@@ -67,10 +67,13 @@ backend/src/
 │   ├── auth.py
 │   ├── analysis.py
 │   ├── aeneas.py
-│   └── annotations.py
+│   ├── annotations.py
+│   └── tutor.py
 ├── services/            # Business logic
 │   ├── morphology.py
-│   └── aeneas_service.py
+│   ├── aeneas_service.py
+│   ├── llm.py
+│   └── tutor.py
 ├── parsers/             # Data parsers
 │   └── perseus_xml_parser.py
 ├── middleware/          # Middleware
@@ -100,6 +103,9 @@ backend/src/
 
 ### Word Analysis
 - `POST /api/analyze/word` - Analyze Greek/Latin word
+
+### Tutor (LLM)
+- `POST /api/tutor/suggest-translation` - Request a contextual translation suggestion (requires `LLM_ENABLED=True`)
 
 ### Aeneas AI
 - `POST /api/aeneas/restore` - Restore damaged text
@@ -138,6 +144,15 @@ alembic downgrade -1
 ```bash
 pytest
 ```
+
+## LLM Configuration
+
+The tutor endpoints depend on the generic LLM provider defined in `services/llm.py`. Key settings:
+
+- `LLM_ENABLED` – toggle to disable/enable tutor endpoints (defaults to `True`).
+- `OLLAMA_BASE_URL`, `OLLAMA_MODEL`, `OLLAMA_TIMEOUT` – control the default Ollama provider.
+
+When `LLM_ENABLED` is `False`, the backend returns HTTP 503 for `/api/tutor/*`, and the frontend hides highlight interactions when `VITE_ENABLE_TUTOR=false`.
 
 ## Production Deployment
 

@@ -7,6 +7,7 @@ interface AuthContextType {
   isLoading: boolean;
   isAuthenticated: boolean;
   login: () => void;
+  devLogin: () => Promise<void>;
   logout: () => Promise<void>;
 }
 
@@ -74,6 +75,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     authApi.loginGoogle();
   };
 
+  const devLogin = async () => {
+    const response = await authApi.devLogin();
+    const { access_token, user } = response.data;
+    localStorage.setItem('auth_token', access_token);
+    setUser(user);
+  };
+
   const logout = async () => {
     try {
       await authApi.logout();
@@ -89,6 +97,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         isLoading,
         isAuthenticated: !!user,
         login,
+        devLogin,
         logout,
       }}
     >

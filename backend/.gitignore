@@ -64,3 +64,6 @@ alembic/versions/*.pyc
 .DS_Store
 Thumbs.db
 
+# Copied data for Docker builds (not needed in git - use the canonical-greekLit folder at project root)
+data/
+

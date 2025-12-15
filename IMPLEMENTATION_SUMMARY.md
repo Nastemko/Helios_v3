@@ -262,6 +262,21 @@ To be measured during pilot:
 - Offline mode
 - Advanced search features
 
+## 🤖 LLM Translation Suggestions (V2.0)
+
+Latest branch delivers the "Ask Tutor" workflow:
+
+- **Backend:** new `/api/tutor/suggest-translation` endpoint, `TutorService`, and Ollama-backed `LLMProvider` with graceful fallbacks + pytest coverage.
+- **Frontend:** highlight-based popover in `TextReader`, React Query mutation hook, and environment flag `VITE_ENABLE_TUTOR` for feature gating.
+- **DX:** Updated README docs and configuration guidance for `LLM_ENABLED`, `OLLAMA_*`, and UI fallbacks when tutors are disabled.
+
+### Manual QA Checklist
+1. **LLM enabled happy path** – Select multi-word passage, trigger Ask Tutor, verify translation + rationale render and confidence percentage updates.
+2. **LLM disabled** – Set `LLM_ENABLED=false` (and/or `VITE_ENABLE_TUTOR=false`), confirm `/api/tutor` returns 503 and UI displays “Tutor suggestions are disabled”.
+3. **Provider error** – Point provider to invalid host, ensure popover surfaces the error message bubble (red alert) without crashing.
+4. **Large selection clamp** – Highlight >600 chars to confirm request succeeds and backend trims input (response still arrives, no server error).
+5. **Copy interaction** – Use “Copy” button on suggestion and verify clipboard contents match the rendered translation.
+
 ## 📚 Documentation
 
 All documentation complete:
