@@ -1,8 +1,9 @@
 """API endpoints for user annotations"""
 from typing import List, Optional
+from datetime import datetime
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
-from pydantic import BaseModel
+from pydantic import BaseModel, field_serializer
 
 from database import get_db
 from models.user import User
@@ -34,15 +35,14 @@ class AnnotationResponse(BaseModel):
     segment_id: int
     word: str
     note: str
-    created_at: str
-    updated_at: Optional[str] = None
+    created_at: datetime
+    updated_at: Optional[datetime] = None
     
-    class Config:
-        from_attributes = True
-        json_encoders = {
-            # Handle datetime serialization
-            'datetime': lambda v: v.isoformat() if v else None
-        }
+    model_config = {"from_attributes": True}
+    
+    @field_serializer('created_at', 'updated_at')
+    def serialize_datetime(self, value: Optional[datetime]) -> Optional[str]:
+        return value.isoformat() if value else None
 
 
 @router.post("/", response_model=AnnotationResponse, status_code=201)
@@ -87,7 +87,7 @@ async def create_annotation(
     db.commit()
     db.refresh(db_annotation)
     
-    return AnnotationResponse.from_orm(db_annotation)
+    return AnnotationResponse.model_validate(db_annotation)
 
 
 @router.get("/", response_model=List[AnnotationResponse])
@@ -124,7 +124,7 @@ async def list_annotations(
     # Apply pagination
     annotations = query.offset(skip).limit(limit).all()
     
-    return [AnnotationResponse.from_orm(ann) for ann in annotations]
+    return [AnnotationResponse.model_validate(ann) for ann in annotations]
 
 
 @router.get("/{annotation_id}", response_model=AnnotationResponse)
