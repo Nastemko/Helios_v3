@@ -1,4 +1,4 @@
-version: '3.8'
+version: "3.8"
 
 # Development configuration with hot-reloading
 # Usage: docker-compose -f docker-compose.dev.yml up
@@ -21,8 +21,8 @@ services:
 
   backend:
     build:
-      context: ./backend
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: ./backend/Dockerfile
     container_name: helios-backend-dev
     environment:
       DATABASE_URL: postgresql://heliosuser:devpassword@postgres:5432/helios_dev
@@ -74,4 +74,3 @@ networks:
 
 volumes:
   postgres_dev_data:
-
