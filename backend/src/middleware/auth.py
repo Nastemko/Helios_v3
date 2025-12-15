@@ -4,15 +4,17 @@ from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from sqlalchemy.orm import Session
 
+from config import settings
 from database import get_db
 from models.user import User
 from utils.security import verify_token
 
-security = HTTPBearer()
+# In dev mode, don't auto-error on missing credentials
+security = HTTPBearer(auto_error=not settings.DEBUG)
 
 
 async def get_current_user(
-    credentials: HTTPAuthorizationCredentials = Depends(security),
+    credentials: Optional[HTTPAuthorizationCredentials] = Depends(security),
     db: Session = Depends(get_db)
 ) -> User:
     """
@@ -31,11 +33,26 @@ async def get_current_user(
     import logging
     logger = logging.getLogger(__name__)
     
+    # DEV MODE: Bypass authentication if DEBUG is true and no credentials are provided
+    if settings.DEBUG and not credentials:
+        logger.info("DEV MODE: No credentials provided, using dev user")
+        dev_user = db.query(User).filter(User.email == "dev@helios.local").first()
+        if not dev_user:
+            dev_user = User(email="dev@helios.local", oauth_provider="dev", oauth_id="dev_id")
+            db.add(dev_user)
+            db.commit()
+            db.refresh(dev_user)
+            logger.info("DEV MODE: Created dev user")
+        return dev_user
+    
     credentials_exception = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
         detail="Could not validate credentials",
         headers={"WWW-Authenticate": "Bearer"},
     )
+    
+    if not credentials:
+        raise credentials_exception
     
     token = credentials.credentials
     logger.info(f"Received token (length {len(token)}): {token[:50]}..." if len(token) > 50 else f"Received token: {token}")

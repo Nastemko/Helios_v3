@@ -8,7 +8,7 @@ class Settings(BaseSettings):
 
     # Application
     APP_NAME: str = "Helios API"
-    DEBUG: bool = False
+    DEBUG: bool = True  # Set to False in production
 
     # Database (SQLite for local development, PostgreSQL for production)
     DATABASE_URL: str = "sqlite:///./helios_local.db"
@@ -23,8 +23,17 @@ class Settings(BaseSettings):
     GOOGLE_CLIENT_SECRET: str = ""
     GOOGLE_REDIRECT_URI: str = "http://localhost:8000/api/auth/callback/google"
 
-    # CORS
-    CORS_ORIGINS: list[str] = ["http://localhost:3000", "http://localhost:3001", "http://localhost:5173"]
+    # CORS - include multiple ports for development flexibility
+    CORS_ORIGINS: list[str] = [
+        "http://localhost:3000",
+        "http://localhost:3001",
+        "http://localhost:3002",
+        "http://localhost:5173",
+        "http://127.0.0.1:3000",
+        "http://127.0.0.1:3001",
+        "http://127.0.0.1:3002",
+        "http://127.0.0.1:5173",
+    ]
 
     # Aeneas models
     MODELS_DIR: str = "./models"

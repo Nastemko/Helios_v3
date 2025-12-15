@@ -90,6 +90,23 @@ export default function TextReader() {
     });
   };
 
+  // Handler for when user clicks a note in the Notes tab
+  const handleNoteClick = (word: string, segmentId: number) => {
+    if (!text) return;
+    
+    setSelectedWord({
+      word,
+      language: text.language,
+      segmentId,
+    });
+    
+    // Scroll to the segment
+    const segmentElement = document.querySelector(`[data-segment-id="${segmentId}"]`);
+    if (segmentElement) {
+      segmentElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
+  };
+
   if (isLoading) {
     return (
       <div className="flex h-full items-center justify-center">
@@ -306,7 +323,8 @@ export default function TextReader() {
       <ToolsPanel 
         selectedWord={selectedWord} 
         textId={text.id} 
-        onCloseWord={() => setSelectedWord(null)} 
+        onCloseWord={() => setSelectedWord(null)}
+        onNoteClick={handleNoteClick}
       />
     </div>
   );
