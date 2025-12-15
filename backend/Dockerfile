@@ -37,12 +37,12 @@ COPY --chown=helios:helios pyproject.toml uv.lock ./
 RUN uv sync
 
 # Copy the rest of the application source code into the container
-COPY --chown=helios:helios src .
+COPY --chown=helios:helios ./src .
 
 # Copy the Greek text data files
 # These are the Perseus canonical Greek literature XML files
 RUN mkdir -p /app/data/canonical-greekLit
-COPY --chown=helios:helios data/canonical-greekLit /app/data/canonical-greekLit
+COPY --chown=helios:helios ./data/canonical-greekLit /app/data/canonical-greekLit
 
 # Expose the port the application will run on
 EXPOSE 8000
