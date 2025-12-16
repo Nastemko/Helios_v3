@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import WordAnalysisPanel from './WordAnalysisPanel';
 import { annotationApi } from '../services/api';
@@ -75,13 +75,14 @@ export default function ToolsPanel({ selectedWord, textId, onCloseWord, onNoteCl
 
   const allAnnotations = annotations?.data || [];
 
-  // If a word is selected, switch to morphology tab and expand if collapsed
-  if (selectedWord && activeTab !== 'morphology') {
-    setActiveTab('morphology');
-  }
-  if (selectedWord && isCollapsed) {
-    setIsCollapsed(false);
-  }
+  // When a NEW word is selected, switch to morphology tab and expand if collapsed
+  // This only triggers when selectedWord changes, not on every render
+  useEffect(() => {
+    if (selectedWord) {
+      setActiveTab('morphology');
+      setIsCollapsed(false);
+    }
+  }, [selectedWord?.word, selectedWord?.segmentId]);
 
   // Collapsed state - just show a thin bar with expand button
   if (isCollapsed) {
