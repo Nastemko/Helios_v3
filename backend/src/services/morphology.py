@@ -1,15 +1,11 @@
 """Morphological analysis service for Greek and Latin words using CLTK"""
 
 import logging
-import os
 from typing import Dict, List, Optional
 
 from cltk import NLP
 
 logger = logging.getLogger(__name__)
-
-BACKEND = "ollama"
-MODEL = os.getenv("OLLAMA_MODEL", "llama3.2:8b")
 
 
 class MorphologyService:
@@ -24,11 +20,11 @@ class MorphologyService:
         try:
             logger.info("Initializing CLTK for Ancient Greek...")
             # This will download models (~500MB-1GB) on first run
-            self.greek_nlp = NLP(language_code="grc", backend=BACKEND, model=MODEL)
+            self.greek_nlp = NLP(language_code="grc")
             logger.info("Greek NLP initialized successfully")
 
             logger.info("Initializing CLTK for Latin...")
-            self.latin_nlp = NLP(language_code="lat", backend=BACKEND, model=MODEL)
+            self.latin_nlp = NLP(language_code="lat")
             logger.info("Latin NLP initialized successfully")
 
             self.initialized = True
