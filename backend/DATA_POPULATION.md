@@ -42,9 +42,6 @@ docker-compose -f docker-compose.dev.yml up
 Before building the production Docker image, run the copy script:
 
 ```bash
-# From the project root
-./backend/scripts/copy_greek_texts.sh
-
 # Then build the Docker image
 cd backend
 docker build -t helios-backend .
