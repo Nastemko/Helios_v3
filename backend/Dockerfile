@@ -1,4 +1,6 @@
 # Backend Dockerfile - Ubuntu base
+# NOTE: This Dockerfile expects to be built from the repo ROOT directory, not backend/
+# Build with: docker build -f backend/Dockerfile .
 FROM ubuntu:24.04
 
 # Set environment variables for Python and debian non-interactive mode
@@ -30,18 +32,19 @@ USER helios
 
 # Copy dependency definition files first to leverage Docker's layer caching.
 # This layer is only rebuilt when pyproject.toml or uv.lock change.
-COPY --chown=helios:helios pyproject.toml uv.lock ./
+# Paths are relative to repo root since that's where Docker context is set
+COPY --chown=helios:helios backend/pyproject.toml backend/uv.lock ./
 
 # Install Python dependencies using uv.
 # This uses the system's Python interpreter, which is fine for a container.
 RUN uv sync
 
 # Copy the rest of the application source code into the container
-COPY --chown=helios:helios src .
+COPY --chown=helios:helios backend/src .
 
 # Copy the Greek text data files
-# These are the Perseus canonical Greek literature XML files
-COPY --chown=helios:helios data/canonical-greekLit /app/data/canonical-greekLit
+# These are the Perseus canonical Greek literature XML files (at repo root)
+COPY --chown=helios:helios canonical-greekLit /app/data/canonical-greekLit
 
 # Expose the port the application will run on
 EXPOSE 8000
