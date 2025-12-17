@@ -1,4 +1,4 @@
-version: '3.8'
+version: "3.8"
 
 services:
   # PostgreSQL with pgvector
@@ -27,8 +27,8 @@ services:
   # Backend (FastAPI)
   backend:
     build:
-      context: ./backend
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: ./backend/Dockerfile
     container_name: helios-backend
     environment:
       DATABASE_URL: postgresql://heliosuser:${POSTGRES_PASSWORD:-changeme}@postgres:5432/helios
@@ -116,4 +116,3 @@ volumes:
     driver: local
   backend_logs:
     driver: local
-

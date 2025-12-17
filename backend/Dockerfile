@@ -32,19 +32,19 @@ USER helios
 
 # Copy dependency definition files first to leverage Docker's layer caching.
 # This layer is only rebuilt when pyproject.toml or uv.lock change.
-# Paths are relative to repo root since that's where Docker context is set
-COPY --chown=helios:helios backend/pyproject.toml backend/uv.lock ./
+COPY --chown=helios:helios ./backend/pyproject.toml ./backend/uv.lock ./
 
 # Install Python dependencies using uv.
 # This uses the system's Python interpreter, which is fine for a container.
 RUN uv sync
 
 # Copy the rest of the application source code into the container
-COPY --chown=helios:helios backend/src .
+COPY --chown=helios:helios ./backend/src .
 
 # Copy the Greek text data files
-# These are the Perseus canonical Greek literature XML files (at repo root)
-COPY --chown=helios:helios canonical-greekLit /app/data/canonical-greekLit
+# These are the Perseus canonical Greek literature XML files
+RUN mkdir -p /app/data/canonical-greekLit
+COPY --chown=helios:helios ./canonical-greekLit /app/data/canonical-greekLit
 
 # Expose the port the application will run on
 EXPOSE 8000
