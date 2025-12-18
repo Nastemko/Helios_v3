@@ -39,7 +39,9 @@ export default function WordAnalysisPanel({ word, language, segmentId, textId, o
         note: noteText,
       }),
     onSuccess: () => {
+      // Invalidate both query keys so WordAnalysisPanel and ToolsPanel both refresh
       queryClient.invalidateQueries({ queryKey: ['annotations'] });
+      queryClient.invalidateQueries({ queryKey: ['text-annotations', textId] });
       setNote('');
       setShowNoteForm(false);
     },
@@ -50,6 +52,7 @@ export default function WordAnalysisPanel({ word, language, segmentId, textId, o
     mutationFn: (id: number) => annotationApi.delete(id),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['annotations'] });
+      queryClient.invalidateQueries({ queryKey: ['text-annotations', textId] });
     },
   });
 

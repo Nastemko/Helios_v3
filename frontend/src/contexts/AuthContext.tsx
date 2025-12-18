@@ -2,6 +2,9 @@ import { createContext, useContext, useEffect, useState, ReactNode } from 'react
 import { authApi } from '../services/api';
 import type { User } from '../types';
 
+// DEV MODE: Set to false for production with Google OAuth
+const DEV_MODE = true;
+
 interface AuthContextType {
   user: User | null;
   isLoading: boolean;
@@ -19,6 +22,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     const initAuth = async () => {
+      // DEV MODE: Automatically set a dev user without authentication
+      if (DEV_MODE) {
+        console.warn('[Auth] DEV MODE: Using mock user, skipping authentication');
+        setUser({ id: 1, email: 'dev@helios.local', created_at: new Date().toISOString() });
+        setIsLoading(false);
+        return;
+      }
+
       // Check for auth token in URL (after OAuth redirect)
       const params = new URLSearchParams(window.location.search);
       const token = params.get('token');
@@ -72,6 +83,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const login = () => {
+    if (DEV_MODE) {
+      console.log('[Auth] DEV MODE: Login bypassed');
+      setUser({ id: 1, email: 'dev@helios.local', created_at: new Date().toISOString() });
+      return;
+    }
     authApi.loginGoogle();
   };
 

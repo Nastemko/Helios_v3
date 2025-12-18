@@ -19,6 +19,8 @@ class User(Base):
     
     # Relationships
     annotations = relationship("Annotation", back_populates="user", cascade="all, delete-orphan")
+    notes = relationship("StudentNote", back_populates="user", cascade="all, delete-orphan")
+    highlights = relationship("Highlight", back_populates="user", cascade="all, delete-orphan")
     
     def __repr__(self):
         return f"<User(id={self.id}, email='{self.email}')>"

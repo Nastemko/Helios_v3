@@ -8,6 +8,8 @@ import type {
   User,
   AeneasStatus,
   TranslationSuggestion,
+  StudentNote,
+  Highlight,
 } from "../types";
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || "http://localhost:8000";
@@ -99,6 +101,38 @@ export const annotationApi = {
 
   getTextSummary: (text_id: number) =>
     api.get(`/api/annotations/text/${text_id}/summary`),
+};
+
+// Study API (notes and highlights)
+export const studyApi = {
+  // Notes
+  getNotes: (textId?: number) =>
+    api.get<StudentNote[]>("/api/study/notes", {
+      params: textId ? { text_id: textId } : {},
+    }),
+
+  createNote: (data: { content: string; text_id?: number }) =>
+    api.post<StudentNote>("/api/study/notes", data),
+
+  updateNote: (id: number, content: string) =>
+    api.put<StudentNote>(`/api/study/notes/${id}`, { content }),
+
+  deleteNote: (id: number) => api.delete(`/api/study/notes/${id}`),
+
+  // Highlights
+  getHighlights: (params?: { text_id?: number; segment_id?: number }) =>
+    api.get<Highlight[]>("/api/study/highlights", { params }),
+
+  createHighlight: (data: {
+    text_id: number;
+    segment_id: number;
+    start_offset: number;
+    end_offset: number;
+    selected_text: string;
+    color?: string;
+  }) => api.post<Highlight>("/api/study/highlights", data),
+
+  deleteHighlight: (id: number) => api.delete(`/api/study/highlights/${id}`),
 };
 
 // Auth API
