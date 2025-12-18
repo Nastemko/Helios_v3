@@ -39,22 +39,15 @@ export default function SourcesSidebar() {
     <aside className="w-64 bg-gray-50 border-r border-gray-200 flex flex-col shrink-0">
       <div className="p-4 border-b border-gray-200 flex justify-between items-center bg-white">
         <h2 className="font-semibold text-sm uppercase tracking-wider text-gray-500">Sources</h2>
-        <div className="flex items-center gap-1">
-          <button className="p-1 hover:bg-gray-100 rounded text-helios-teal" title="Add Source">
-            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 4v16m8-8H4" />
-            </svg>
-          </button>
-          <button
-            onClick={() => setIsCollapsed(true)}
-            className="p-1 hover:bg-gray-100 rounded text-gray-400 hover:text-gray-600"
-            title="Collapse Panel"
-          >
-            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M11 19l-7-7 7-7m8 14l-7-7 7-7" />
-            </svg>
-          </button>
-        </div>
+        <button
+          onClick={() => setIsCollapsed(true)}
+          className="p-1 hover:bg-gray-100 rounded text-gray-400 hover:text-gray-600"
+          title="Collapse Panel"
+        >
+          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M11 19l-7-7 7-7m8 14l-7-7 7-7" />
+          </svg>
+        </button>
       </div>
       
       <div className="p-2 border-b border-gray-200 bg-white">
@@ -97,13 +90,6 @@ export default function SourcesSidebar() {
           );
         })}
 
-        {/* Upload Box Placeholder */}
-        <div className="mt-4 border-2 border-dashed border-gray-300 rounded-lg p-4 text-center hover:border-helios-teal hover:bg-helios-teal/5 cursor-pointer transition-colors">
-          <svg className="w-6 h-6 mx-auto text-gray-400 mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
-          </svg>
-          <span className="text-xs text-gray-600 font-medium">Upload Source</span>
-        </div>
       </div>
     </aside>
   );
