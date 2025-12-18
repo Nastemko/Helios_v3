@@ -120,7 +120,7 @@ export default function TextReader() {
 
   if (!data?.data || !text) {
     return (
-       <div className="flex h-full">
+       <div className="flex h-full w-full">
             <SourcesSidebar />
             <div className="flex-1 flex items-center justify-center bg-gray-50">
                 <div className="bg-white border border-red-200 rounded-lg p-6 text-center shadow-sm">
@@ -221,7 +221,7 @@ export default function TextReader() {
   };
 
   return (
-    <div className="flex h-full">
+    <div className="flex h-full w-full">
       {/* Left Panel: Sources */}
       <SourcesSidebar />
 
