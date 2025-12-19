@@ -42,12 +42,6 @@ export default function TextReader() {
   const segments = data?.data?.segments ?? [];
   const text = data?.data?.text;
 
-  const segmentMap = useMemo(() => {
-    const map = new Map<number, TextSegment>();
-    segments.forEach((segment) => map.set(segment.id, segment));
-    return map;
-  }, [segments]);
-
   const translationErrorMessage = useMemo(() => {
     if (!translationError) return null;
     const detail =
