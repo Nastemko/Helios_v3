@@ -1,20 +1,12 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useMemo, useRef, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { textApi } from '../services/api';
 import SourcesSidebar from '../components/SourcesSidebar';
 import ToolsPanel from '../components/ToolsPanel';
-import HighlightPopover from '../components/highlighting/HighlightPopover';
-import { useTranslationSuggestion } from '../hooks/useTranslationSuggestion';
-import type { TextSegment } from '../types';
-
-type HighlightSelection = {
-  selection: string;
-  segmentId: number;
-  reference: string;
-  position: { top: number; left: number };
-  containerWidth: number;
-};
+import TranslationAssistToggle from '../components/TranslationAssistToggle';
+import { useTranslationAssist } from '../hooks/useTranslationAssist';
+import type { TextSegment, TranslationCard } from '../types';
 
 export default function TextReader() {
   const { urn } = useParams<{ urn: string }>();
@@ -23,34 +15,22 @@ export default function TextReader() {
     language: string;
     segmentId: number;
   } | null>(null);
-  const [highlightSelection, setHighlightSelection] = useState<HighlightSelection | null>(null);
+  const [aiModeActive, setAiModeActive] = useState(false);
+  const [translationCards, setTranslationCards] = useState<TranslationCard[]>([]);
   const textContainerRef = useRef<HTMLDivElement>(null);
-  const tutorFlag = String(import.meta.env.VITE_ENABLE_TUTOR ?? 'true').toLowerCase();
-  const tutorFeatureEnabled = tutorFlag !== 'false' && tutorFlag !== '0';
 
   const {
-    mutate: requestTranslationSuggestion,
-    data: tutorSuggestion,
-    isPending: isTutorPending,
-    reset: resetTutorSuggestion,
-    error: tutorError,
-  } = useTranslationSuggestion();
+    mutate: requestTranslation,
+    isPending: isTranslating,
+    error: translationError,
+  } = useTranslationAssist();
 
-  useEffect(() => {
-    if (!tutorFeatureEnabled) {
-      setHighlightSelection(null);
-      resetTutorSuggestion();
-    }
-  }, [tutorFeatureEnabled, resetTutorSuggestion]);
-
-  const clearHighlight = () => {
-    setHighlightSelection(null);
-    resetTutorSuggestion();
+  const clearSelection = useCallback(() => {
     const selection = window.getSelection();
     if (selection?.removeAllRanges) {
       selection.removeAllRanges();
     }
-  };
+  }, []);
   
   const { data, isLoading } = useQuery({
     queryKey: ['text', urn],
@@ -62,22 +42,16 @@ export default function TextReader() {
   const segments = data?.data?.segments ?? [];
   const text = data?.data?.text;
 
-  const segmentMap = useMemo(() => {
-    const map = new Map<number, TextSegment>();
-    segments.forEach((segment) => map.set(segment.id, segment));
-    return map;
-  }, [segments]);
-
-  const tutorErrorMessage = useMemo(() => {
-    if (!tutorError) return null;
+  const translationErrorMessage = useMemo(() => {
+    if (!translationError) return null;
     const detail =
-      (tutorError.response?.data as { detail?: string } | undefined)?.detail;
-    return detail ?? tutorError.message;
-  }, [tutorError]);
+      (translationError.response?.data as { detail?: string } | undefined)?.detail;
+    return detail ?? translationError.message;
+  }, [translationError]);
 
   const handleWordClick = (word: string, segmentId: number) => {
     if (!text) return;
-    clearHighlight();
+    clearSelection();
     
     // Clean punctuation from word
     const cleanWord = word.replace(/[.,;:!?·\[\]()]/g, '').trim();
@@ -133,91 +107,58 @@ export default function TextReader() {
     );
   }
 
-  const getSegmentElement = (node: Node | null): HTMLElement | null => {
-    if (!node) return null;
-    if (node instanceof HTMLElement) {
-      return node.closest('[data-segment-id]');
-    }
-    if (node.parentElement) {
-      return node.parentElement.closest('[data-segment-id]');
-    }
-    return null;
-  };
+  // Handle AI translation when text is selected in AI mode
+  const handleTextSelection = () => {
+    if (!aiModeActive || !textContainerRef.current || !text) return;
 
-  const handleTextHighlight = () => {
-    if (!tutorFeatureEnabled || !textContainerRef.current) return;
     const selection = window.getSelection();
-    if (!selection) return;
-
-    if (selection.isCollapsed) {
-      clearHighlight();
-      return;
-    }
+    if (!selection || selection.isCollapsed) return;
 
     const rawText = selection.toString().replace(/\s+/g, ' ').trim();
-    if (!rawText) {
-      clearHighlight();
+    if (!rawText) return;
+
+    // Validate length (max ~600 chars / 1 paragraph)
+    if (rawText.length > 600) {
+      alert('Please select a shorter passage (max ~1 paragraph).');
+      clearSelection();
       return;
     }
 
-    const segmentElement =
-      getSegmentElement(selection.anchorNode) ??
-      getSegmentElement(selection.focusNode);
-
-    if (!segmentElement) return;
-
-    const segmentIdAttr = segmentElement.getAttribute('data-segment-id');
-    if (!segmentIdAttr) return;
-
-    const segmentId = Number(segmentIdAttr);
-    if (Number.isNaN(segmentId)) return;
-
-    const reference =
-      segmentElement.getAttribute('data-segment-reference') ??
-      segmentMap.get(segmentId)?.reference ??
-      '';
-
-    if (selection.rangeCount === 0) return;
-
-    const container = textContainerRef.current;
-    const range = selection.getRangeAt(0);
-    const rangeRect = range.getBoundingClientRect();
-    const containerRect = container.getBoundingClientRect();
-
-    const top =
-      rangeRect.bottom - containerRect.top + container.scrollTop + 8;
-    const left =
-      rangeRect.left - containerRect.left + container.scrollLeft;
-
-    setHighlightSelection({
-      selection: rawText,
-      segmentId,
-      reference,
-      position: { top, left },
-      containerWidth: container.clientWidth,
-    });
-    resetTutorSuggestion();
+    // Send to translation API
+    requestTranslation(
+      { text: rawText, language: text.language },
+      {
+        onSuccess: (result) => {
+          // Add to translation cards
+          const newCard: TranslationCard = {
+            id: `card-${Date.now()}`,
+            source_text: result.source_text,
+            translation: result.translation,
+            literal_gloss: result.literal_gloss,
+            rationale: result.rationale,
+            confidence: result.confidence,
+            language: result.language,
+            created_at: new Date().toISOString(),
+          };
+          setTranslationCards((prev) => [newCard, ...prev]);
+          clearSelection();
+        },
+        onError: () => {
+          clearSelection();
+        },
+      }
+    );
   };
 
-  const handleAskTutor = () => {
-    if (!highlightSelection) return;
-
-    requestTranslationSuggestion({
-      text_id: text.id,
-      segment_id: highlightSelection.segmentId,
-      selection: highlightSelection.selection,
-      language: text.language,
-      metadata: {
-        segment_reference: highlightSelection.reference,
-        selection_length: highlightSelection.selection.length,
-      },
-    });
-  };
-
-  const handleScroll = () => {
-    if (highlightSelection) {
-      clearHighlight();
+  const handleAiToggle = () => {
+    setAiModeActive((prev) => !prev);
+    if (aiModeActive) {
+      clearSelection();
     }
+  };
+
+  const handleDeleteCard = (cardId: string) => {
+    setTranslationCards((prev) => prev.filter((c) => c.id !== cardId));
   };
 
   return (
@@ -235,17 +176,27 @@ export default function TextReader() {
                 <svg className="w-4 h-4 flex-shrink-0 text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 5l7 7-7 7"></path></svg>
                 <span className="text-gray-900 font-medium truncate">{text.title}</span>
             </div>
-            <div className="flex items-center gap-2 shrink-0">
-                {/* Zoom controls could go here */}
+            <div className="flex items-center gap-3 shrink-0">
+                {/* AI Translation Toggle */}
+                <TranslationAssistToggle
+                  isActive={aiModeActive}
+                  onToggle={handleAiToggle}
+                  isLoading={isTranslating}
+                />
+                {/* Error toast */}
+                {translationErrorMessage && (
+                  <span className="text-xs text-red-600 bg-red-50 px-2 py-1 rounded">
+                    {translationErrorMessage}
+                  </span>
+                )}
             </div>
         </div>
 
         {/* Scrollable Text Area */}
         <div
-            className="flex-1 overflow-y-auto relative"
+            className={`flex-1 overflow-y-auto relative ${aiModeActive ? 'cursor-crosshair' : ''}`}
             ref={textContainerRef}
-            onMouseUp={handleTextHighlight}
-            onScroll={handleScroll}
+            onMouseUp={handleTextSelection}
         >
             <div className="max-w-3xl mx-auto px-8 py-12">
                 {/* Header Content */}
@@ -302,19 +253,15 @@ export default function TextReader() {
                 )}
             </div>
 
-            {/* Popover for Tutor */}
-            {tutorFeatureEnabled && highlightSelection && (
-            <HighlightPopover
-                selection={highlightSelection.selection}
-                reference={highlightSelection.reference}
-                position={highlightSelection.position}
-                containerWidth={highlightSelection.containerWidth}
-                onAskTutor={handleAskTutor}
-                onClose={clearHighlight}
-                isLoading={isTutorPending}
-                suggestion={tutorSuggestion}
-                errorMessage={tutorErrorMessage}
-            />
+            {/* AI Mode indicator */}
+            {aiModeActive && (
+              <div className="fixed bottom-6 left-1/2 -translate-x-1/2 bg-gradient-to-r from-helios-teal to-helios-teal-dark text-white px-4 py-2 rounded-full shadow-lg text-sm flex items-center gap-2 z-40">
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09z" />
+                </svg>
+                <span>Select text to translate</span>
+                {isTranslating && <span className="animate-pulse">...</span>}
+              </div>
             )}
         </div>
       </div>
@@ -325,6 +272,8 @@ export default function TextReader() {
         textId={text.id} 
         onCloseWord={() => setSelectedWord(null)}
         onNoteClick={handleNoteClick}
+        translationCards={translationCards}
+        onDeleteCard={handleDeleteCard}
       />
     </div>
   );

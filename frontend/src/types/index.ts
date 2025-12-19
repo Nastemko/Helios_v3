@@ -82,14 +82,30 @@ export interface AeneasStatus {
   message: string;
 }
 
-export interface TranslationSuggestion {
+// Translation Assist types
+export interface TranslationResult {
+  source_text: string;
   translation: string;
   literal_gloss?: string | null;
   rationale: string;
   confidence: number;
-  source_language: string;
-  segment_reference: string;
-  context_excerpt: string;
-  metadata: Record<string, any>;
+  language: string;
+}
+
+export interface TranslationCard {
+  id: string;
+  source_text: string;
+  translation: string;
+  literal_gloss?: string | null;
+  rationale: string;
+  confidence: number;
+  language: string;
+  created_at: string;
+}
+
+export interface TranslateAssistStatus {
+  enabled: boolean;
+  model: string | null;
+  max_chars: number;
 }
 

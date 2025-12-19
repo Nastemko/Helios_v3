@@ -12,7 +12,7 @@ from database import Base, engine
 from middleware.performance import performance_middleware
 
 # Import and include routers
-from routers import aeneas, analysis, annotations, auth, texts, tutor
+from routers import aeneas, analysis, annotations, auth, texts, translate_assist
 
 # Configure logging
 logging.basicConfig(
@@ -122,7 +122,7 @@ app.include_router(auth.router)
 app.include_router(annotations.router)
 app.include_router(analysis.router)
 app.include_router(aeneas.router)
-app.include_router(tutor.router)
+app.include_router(translate_assist.router)
 
 
 if __name__ == "__main__":
