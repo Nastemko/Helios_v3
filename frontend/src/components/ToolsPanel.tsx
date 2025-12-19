@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import WordAnalysisPanel from './WordAnalysisPanel';
 import { annotationApi } from '../services/api';
-import type { Annotation } from '../types';
+import type { Annotation, TranslationCard } from '../types';
 
 interface Props {
   selectedWord: {
@@ -13,9 +13,11 @@ interface Props {
   textId: number;
   onCloseWord: () => void;
   onNoteClick?: (word: string, segmentId: number) => void;
+  translationCards?: TranslationCard[];
+  onDeleteCard?: (cardId: string) => void;
 }
 
-export default function ToolsPanel({ selectedWord, textId, onCloseWord, onNoteClick }: Props) {
+export default function ToolsPanel({ selectedWord, textId, onCloseWord, onNoteClick, translationCards = [], onDeleteCard }: Props) {
   const [activeTab, setActiveTab] = useState<'morphology' | 'notes'>('morphology');
   const [isCollapsed, setIsCollapsed] = useState(false);
   const [editingNoteId, setEditingNoteId] = useState<number | null>(null);
@@ -169,101 +171,165 @@ export default function ToolsPanel({ selectedWord, textId, onCloseWord, onNoteCl
         </div>
 
         {/* Notes View */}
-        <div className={activeTab === 'notes' ? 'flex flex-col h-full' : 'hidden'}>
-          {annotationsLoading ? (
-            <div className="text-center py-12">
-              <div className="inline-block animate-spin rounded-full h-8 w-8 border-4 border-helios-teal border-t-transparent"></div>
-              <p className="mt-2 text-sm text-gray-500">Loading notes...</p>
-            </div>
-          ) : allAnnotations.length > 0 ? (
-            <div className="p-4 space-y-3">
-              <p className="text-xs text-gray-500 uppercase font-semibold mb-3">
-                Your Notes ({allAnnotations.length})
-              </p>
-              {allAnnotations.map((annotation: Annotation) => (
-                <div 
-                  key={annotation.id} 
-                  className="bg-white rounded-lg border border-gray-200 shadow-sm overflow-hidden"
-                >
-                  {/* Note Header - Clickable Word */}
-                  <button
-                    onClick={() => handleNoteClick(annotation)}
-                    className="w-full px-3 py-2 bg-gray-50 border-b border-gray-100 flex items-center justify-between hover:bg-gray-100 transition-colors"
+        <div className={activeTab === 'notes' ? 'flex flex-col h-full overflow-y-auto' : 'hidden'}>
+          <div className="p-4 space-y-4">
+            {/* Translation Cards Section */}
+            {translationCards.length > 0 && (
+              <div className="space-y-3">
+                <p className="text-xs text-violet-600 uppercase font-semibold flex items-center gap-1.5">
+                  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09z" />
+                  </svg>
+                  AI Translations ({translationCards.length})
+                </p>
+                {translationCards.map((card) => (
+                  <div 
+                    key={card.id} 
+                    className="bg-gradient-to-br from-violet-50 to-indigo-50 rounded-lg border border-violet-200 shadow-sm overflow-hidden"
                   >
-                    <span className="font-medium text-helios-teal greek-text">
-                      {annotation.word}
-                    </span>
-                    <span className="text-xs text-gray-400">
-                      Line {annotation.segment_id}
-                    </span>
-                  </button>
-                  
-                  {/* Note Content */}
-                  <div className="p-3">
-                    {editingNoteId === annotation.id ? (
-                      <div className="space-y-2">
-                        <textarea
-                          value={editedNote}
-                          onChange={(e) => setEditedNote(e.target.value)}
-                          className="w-full px-2 py-1.5 text-sm border border-gray-300 rounded focus:ring-2 focus:ring-helios-teal focus:border-transparent resize-none"
-                          rows={3}
-                          autoFocus
-                        />
-                        <div className="flex gap-2">
-                          <button
-                            onClick={() => saveEdit(annotation.id)}
-                            disabled={updateAnnotation.isPending}
-                            className="flex-1 py-1.5 text-xs bg-helios-teal text-white rounded hover:bg-helios-teal/90 disabled:bg-gray-300 transition"
-                          >
-                            {updateAnnotation.isPending ? 'Saving...' : 'Save'}
-                          </button>
-                          <button
-                            onClick={cancelEditing}
-                            className="px-3 py-1.5 text-xs bg-gray-200 text-gray-700 rounded hover:bg-gray-300 transition"
-                          >
-                            Cancel
-                          </button>
-                        </div>
-                      </div>
-                    ) : (
-                      <>
-                        <p className="text-sm text-gray-700 mb-2">
-                          {annotation.note}
+                    {/* Source text */}
+                    <div className="px-3 py-2 bg-white/50 border-b border-violet-100">
+                      <p className="text-sm font-medium text-gray-800 greek-text line-clamp-2">
+                        {card.source_text}
+                      </p>
+                    </div>
+                    
+                    {/* Translation content */}
+                    <div className="p-3 space-y-2">
+                      <p className="text-sm text-gray-800 font-medium">
+                        {card.translation}
+                      </p>
+                      
+                      {card.literal_gloss && (
+                        <p className="text-xs text-gray-600">
+                          <span className="font-semibold">Literal:</span> {card.literal_gloss}
                         </p>
-                        <div className="flex items-center justify-between">
-                          <span className="text-xs text-gray-400">
-                            {new Date(annotation.created_at).toLocaleDateString()}
+                      )}
+                      
+                      <p className="text-xs text-gray-600 leading-relaxed">
+                        {card.rationale}
+                      </p>
+                      
+                      <div className="flex items-center justify-between pt-1">
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs text-violet-600 bg-violet-100 px-1.5 py-0.5 rounded">
+                            {Math.round(card.confidence * 100)}% confident
                           </span>
+                          <span className="text-xs text-gray-400">
+                            {new Date(card.created_at).toLocaleTimeString()}
+                          </span>
+                        </div>
+                        {onDeleteCard && (
+                          <button
+                            onClick={() => onDeleteCard(card.id)}
+                            className="text-xs text-gray-400 hover:text-red-600 transition"
+                          >
+                            Dismiss
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* Word Annotations Section */}
+            {annotationsLoading ? (
+              <div className="text-center py-8">
+                <div className="inline-block animate-spin rounded-full h-8 w-8 border-4 border-helios-teal border-t-transparent"></div>
+                <p className="mt-2 text-sm text-gray-500">Loading notes...</p>
+              </div>
+            ) : allAnnotations.length > 0 ? (
+              <div className="space-y-3">
+                <p className="text-xs text-gray-500 uppercase font-semibold">
+                  Your Notes ({allAnnotations.length})
+                </p>
+                {allAnnotations.map((annotation: Annotation) => (
+                  <div 
+                    key={annotation.id} 
+                    className="bg-white rounded-lg border border-gray-200 shadow-sm overflow-hidden"
+                  >
+                    {/* Note Header - Clickable Word */}
+                    <button
+                      onClick={() => handleNoteClick(annotation)}
+                      className="w-full px-3 py-2 bg-gray-50 border-b border-gray-100 flex items-center justify-between hover:bg-gray-100 transition-colors"
+                    >
+                      <span className="font-medium text-helios-teal greek-text">
+                        {annotation.word}
+                      </span>
+                      <span className="text-xs text-gray-400">
+                        Line {annotation.segment_id}
+                      </span>
+                    </button>
+                    
+                    {/* Note Content */}
+                    <div className="p-3">
+                      {editingNoteId === annotation.id ? (
+                        <div className="space-y-2">
+                          <textarea
+                            value={editedNote}
+                            onChange={(e) => setEditedNote(e.target.value)}
+                            className="w-full px-2 py-1.5 text-sm border border-gray-300 rounded focus:ring-2 focus:ring-helios-teal focus:border-transparent resize-none"
+                            rows={3}
+                            autoFocus
+                          />
                           <div className="flex gap-2">
                             <button
-                              onClick={() => startEditing(annotation)}
-                              className="text-xs text-gray-500 hover:text-helios-teal transition"
+                              onClick={() => saveEdit(annotation.id)}
+                              disabled={updateAnnotation.isPending}
+                              className="flex-1 py-1.5 text-xs bg-helios-teal text-white rounded hover:bg-helios-teal/90 disabled:bg-gray-300 transition"
                             >
-                              Edit
+                              {updateAnnotation.isPending ? 'Saving...' : 'Save'}
                             </button>
                             <button
-                              onClick={() => deleteAnnotation.mutate(annotation.id)}
-                              className="text-xs text-gray-500 hover:text-red-600 transition"
+                              onClick={cancelEditing}
+                              className="px-3 py-1.5 text-xs bg-gray-200 text-gray-700 rounded hover:bg-gray-300 transition"
                             >
-                              Delete
+                              Cancel
                             </button>
                           </div>
                         </div>
-                      </>
-                    )}
+                      ) : (
+                        <>
+                          <p className="text-sm text-gray-700 mb-2">
+                            {annotation.note}
+                          </p>
+                          <div className="flex items-center justify-between">
+                            <span className="text-xs text-gray-400">
+                              {new Date(annotation.created_at).toLocaleDateString()}
+                            </span>
+                            <div className="flex gap-2">
+                              <button
+                                onClick={() => startEditing(annotation)}
+                                className="text-xs text-gray-500 hover:text-helios-teal transition"
+                              >
+                                Edit
+                              </button>
+                              <button
+                                onClick={() => deleteAnnotation.mutate(annotation.id)}
+                                className="text-xs text-gray-500 hover:text-red-600 transition"
+                              >
+                                Delete
+                              </button>
+                            </div>
+                          </div>
+                        </>
+                      )}
+                    </div>
                   </div>
-                </div>
-              ))}
-            </div>
-          ) : (
-            <div className="text-center py-12 text-gray-400 px-4">
-              <svg className="w-12 h-12 mx-auto mb-4 text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-              </svg>
-              <p className="mb-2">No notes yet</p>
-              <p className="text-sm">Click a word and use "Add Note" in the Morphology tab to save your first note.</p>
-            </div>
-          )}
+                ))}
+              </div>
+            ) : translationCards.length === 0 ? (
+              <div className="text-center py-12 text-gray-400">
+                <svg className="w-12 h-12 mx-auto mb-4 text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                </svg>
+                <p className="mb-2">No notes yet</p>
+                <p className="text-sm">Click a word and use "Add Note" in the Morphology tab, or use the AI toggle to translate passages.</p>
+              </div>
+            ) : null}
+          </div>
         </div>
 
       </div>

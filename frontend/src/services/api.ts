@@ -7,7 +7,8 @@ import type {
   Annotation,
   User,
   AeneasStatus,
-  TranslationSuggestion,
+  TranslationResult,
+  TranslateAssistStatus,
   StudentNote,
   Highlight,
 } from "../types";
@@ -158,16 +159,12 @@ export const authApi = {
     api.get<{ authenticated: boolean; user: User | null }>("/api/auth/status"),
 };
 
-// Tutor API
-export const tutorApi = {
-  suggestTranslation: (data: {
-    text_id: number;
-    segment_id: number;
-    selection: string;
-    translation_draft?: string;
-    language?: string;
-    metadata?: Record<string, any>;
-  }) => api.post<TranslationSuggestion>("/api/tutor/suggest-translation", data),
+// Translation Assist API
+export const translateAssistApi = {
+  translate: (data: { text: string; language?: string }) =>
+    api.post<TranslationResult>("/api/translate-assist", data),
+
+  status: () => api.get<TranslateAssistStatus>("/api/translate-assist/status"),
 };
 
 export default api;
