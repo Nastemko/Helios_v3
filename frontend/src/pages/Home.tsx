@@ -96,7 +96,7 @@ export default function Home() {
             </div>
             <h3 className="text-xl font-semibold mb-3 text-helios-teal">AI-Powered Insights</h3>
             <p className="text-gray-600 mb-4">
-              Get translation suggestions from our AI tutor and explore texts with
+              Get translation suggestions powered by AI and explore texts with
               intelligent assistance.
             </p>
           </div>

@@ -86,6 +86,16 @@ export default function ToolsPanel({ selectedWord, textId, onCloseWord, onNoteCl
     }
   }, [selectedWord?.word, selectedWord?.segmentId]);
 
+  // When a NEW translation card is added, switch to notes tab and expand
+  const [prevCardCount, setPrevCardCount] = useState(0);
+  useEffect(() => {
+    if (translationCards.length > prevCardCount) {
+      setActiveTab('notes');
+      setIsCollapsed(false);
+    }
+    setPrevCardCount(translationCards.length);
+  }, [translationCards.length, prevCardCount]);
+
   // Collapsed state - just show a thin bar with expand button
   if (isCollapsed) {
     return (
@@ -176,7 +186,7 @@ export default function ToolsPanel({ selectedWord, textId, onCloseWord, onNoteCl
             {/* Translation Cards Section */}
             {translationCards.length > 0 && (
               <div className="space-y-3">
-                <p className="text-xs text-violet-600 uppercase font-semibold flex items-center gap-1.5">
+                <p className="text-xs text-helios-teal uppercase font-semibold flex items-center gap-1.5">
                   <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09z" />
                   </svg>
@@ -185,10 +195,10 @@ export default function ToolsPanel({ selectedWord, textId, onCloseWord, onNoteCl
                 {translationCards.map((card) => (
                   <div 
                     key={card.id} 
-                    className="bg-gradient-to-br from-violet-50 to-indigo-50 rounded-lg border border-violet-200 shadow-sm overflow-hidden"
+                    className="bg-gradient-to-br from-helios-teal/5 to-helios-teal/10 rounded-lg border border-helios-teal/20 shadow-sm overflow-hidden"
                   >
                     {/* Source text */}
-                    <div className="px-3 py-2 bg-white/50 border-b border-violet-100">
+                    <div className="px-3 py-2 bg-white/50 border-b border-helios-teal/10">
                       <p className="text-sm font-medium text-gray-800 greek-text line-clamp-2">
                         {card.source_text}
                       </p>
@@ -212,7 +222,7 @@ export default function ToolsPanel({ selectedWord, textId, onCloseWord, onNoteCl
                       
                       <div className="flex items-center justify-between pt-1">
                         <div className="flex items-center gap-2">
-                          <span className="text-xs text-violet-600 bg-violet-100 px-1.5 py-0.5 rounded">
+                          <span className="text-xs text-helios-teal bg-helios-teal/10 px-1.5 py-0.5 rounded">
                             {Math.round(card.confidence * 100)}% confident
                           </span>
                           <span className="text-xs text-gray-400">

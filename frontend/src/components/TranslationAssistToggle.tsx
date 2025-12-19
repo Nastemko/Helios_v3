@@ -25,7 +25,7 @@ export default function TranslationAssistToggle({
         className={`
           flex items-center justify-center w-9 h-9 rounded-lg transition-all duration-200
           ${isActive
-            ? 'bg-gradient-to-br from-violet-500 to-indigo-600 text-white shadow-md shadow-violet-200'
+            ? 'bg-gradient-to-br from-helios-teal to-helios-teal-dark text-white shadow-md shadow-helios-teal/30'
             : 'bg-gray-100 text-gray-500 hover:bg-gray-200 hover:text-gray-700'
           }
           ${disabled ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}
