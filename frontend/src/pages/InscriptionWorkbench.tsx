@@ -98,7 +98,7 @@ export default function InscriptionWorkbench() {
     inscriptionApi.get(inscription.phi_id).then((res) => {
       setInputText(res.data.text);
       setShowBrowser(false);
-    }).catch((err) => {
+    }).catch((_err) => {
       setError('Failed to load inscription');
     });
   }, []);

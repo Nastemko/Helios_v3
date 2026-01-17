@@ -43,14 +43,6 @@ export default function InscriptionBrowser({ onSelectInscription }: InscriptionB
 
   const inscriptions = inscriptionsData?.data || [];
 
-  // Format year for display
-  const formatYear = (year: number | null): string => {
-    if (year === null) return '';
-    if (year < 0) return `${Math.abs(year)} BC`;
-    if (year > 0) return `${year} AD`;
-    return '1 BC/AD';
-  };
-
   // Handle search with debounce reset
   const handleSearchChange = useCallback((value: string) => {
     setSearch(value);
