@@ -24,7 +24,12 @@ dependencies = [
     "cltk[stanza]>=2.0.2",
     "python-dotenv>=1.0.0",
     "itsdangerous>=2.2.0",
-    "jax >= 0.8.0",
+    "jax>=0.4.35",
+    "jaxlib>=0.4.35",
+    "flax>=0.10.4",
+    "ml-collections>=1.0.0",
+    "pillow>=10.3.0",
+    "tqdm>=4.67.1",
 ]
 
 [tool.setuptools]
