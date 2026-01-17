@@ -1,25 +1,25 @@
 """
-Ithaca Model Service - Stub for future integration
+Ithaca Model Service - Integration with Predicting the Past model
 
-This service will wrap the Ithaca/Predicting the Past model for:
+This service wraps the Ithaca/Aeneas model for:
 - Text restoration (filling in missing characters)
 - Attribution (predicting date and geographic origin)
 - Contextualization (finding similar inscriptions)
-
-The model code is available in: predictingthepast_exp/predictingthepast/
-
-To integrate:
-1. Download model checkpoint, dataset.json, and retrieval.pkl
-2. Load the model using inference_example.py patterns
-3. Implement the methods below to call the model
 """
 
 import logging
+import pickle
+import sys
 from dataclasses import dataclass, field
-from typing import List, Optional, Dict, Any
 from pathlib import Path
+from typing import Any, Dict, List, Optional
 
 logger = logging.getLogger(__name__)
+
+# Add predictingthepast to path
+PREDICTINGTHEPAST_PATH = Path(__file__).parent.parent.parent.parent / "predictingthepast_exp"
+if str(PREDICTINGTHEPAST_PATH) not in sys.path:
+    sys.path.insert(0, str(PREDICTINGTHEPAST_PATH))
 
 
 @dataclass
@@ -86,6 +86,7 @@ class AttributionResult:
 class SimilarInscription:
     """A similar inscription from contextualization"""
     id: str
+    ids_alt: Optional[Dict[str, str]]
     text: str
     location_id: Optional[int]
     date_min: Optional[int]
@@ -104,17 +105,19 @@ class IthacaService:
     """
     Service for Ithaca model inference.
     
-    Currently a stub - will be implemented when model files are available.
+    Loads the model checkpoint and provides methods for restoration,
+    attribution, and contextualization of ancient inscriptions.
     """
     
     def __init__(self):
         self.initialized = False
-        self.model = None
+        self.forward = None
         self.params = None
         self.alphabet = None
         self.region_map = None
         self.dataset = None
         self.retrieval = None
+        self.vocab_char_size = None
         self.language = "greek"
         
     def initialize(
@@ -136,28 +139,58 @@ class IthacaService:
         Returns:
             True if initialization successful
         """
-        logger.info(f"Initializing Ithaca service for {language}...")
-        
-        # TODO: Implement model loading
-        # See predictingthepast_exp/inference_example.py for reference
-        #
-        # Required steps:
-        # 1. Load checkpoint pickle
-        # 2. Extract params, model_config, region_map
-        # 3. Initialize alphabet (GreekAlphabet or LatinAlphabet)
-        # 4. Create forward function
-        # 5. Load dataset and retrieval for contextualization
-        
-        self.language = language
-        self.initialized = False  # Will be True when model is loaded
-        
-        logger.warning("Ithaca model not yet integrated - using stub responses")
-        return False
+        try:
+            logger.info(f"Initializing Ithaca service for {language}...")
+            
+            # Import JAX and model components
+            import jax
+            from predictingthepast.models.model import Model
+            from predictingthepast.util import alphabet as util_alphabet
+            from predictingthepast.eval import inference
+            
+            # Load checkpoint
+            logger.info(f"Loading checkpoint from {checkpoint_path}...")
+            with open(checkpoint_path, 'rb') as f:
+                checkpoint = pickle.load(f)
+            
+            # Extract model components
+            self.params = jax.device_put(checkpoint['params'])
+            model = Model(**checkpoint['model_config'])
+            self.forward = model.apply
+            self.region_map = checkpoint['region_map']
+            self.vocab_char_size = checkpoint['model_config']['vocab_char_size']
+            
+            # Initialize alphabet
+            if language == 'latin':
+                self.alphabet = util_alphabet.LatinAlphabet()
+            elif language == 'greek':
+                self.alphabet = util_alphabet.GreekAlphabet()
+            else:
+                raise ValueError(f'Unknown language: {language}')
+            
+            # Load dataset for contextualization
+            logger.info(f"Loading dataset from {dataset_path}...")
+            self.dataset = inference.load_dataset(str(dataset_path))
+            
+            # Load retrieval embeddings
+            logger.info(f"Loading retrieval embeddings from {retrieval_path}...")
+            self.retrieval = inference.load_retrieval(str(retrieval_path))
+            
+            self.language = language
+            self.initialized = True
+            
+            logger.info("Ithaca service initialized successfully!")
+            return True
+            
+        except Exception as e:
+            logger.error(f"Failed to initialize Ithaca service: {e}")
+            self.initialized = False
+            return False
     
     @property
     def is_available(self) -> bool:
         """Check if the model is ready for inference"""
-        return self.initialized and self.model is not None
+        return self.initialized and self.forward is not None
     
     def restore(
         self,
@@ -187,9 +220,55 @@ class IthacaService:
                 predictions=[]
             )
         
-        # TODO: Implement actual restoration
-        # See predictingthepast_exp/predictingthepast/eval/inference.py restore()
-        raise NotImplementedError("Model not yet integrated")
+        from predictingthepast.eval import inference
+        
+        try:
+            result = inference.restore(
+                text,
+                forward=self.forward,
+                params=self.params,
+                alphabet=self.alphabet,
+                vocab_char_size=self.vocab_char_size,
+                beam_width=beam_width,
+                temperature=temperature,
+                unk_restoration_max_len=max_restoration_len,
+            )
+            
+            # Convert to our dataclass format
+            predictions = [
+                RestorationCandidate(
+                    text=r.text,
+                    restored_indices=r.restored,
+                    score=r.score
+                )
+                for r in result.predictions
+            ]
+            
+            saliency = [
+                {
+                    "text": s.text,
+                    "restored_idx": s.restored_idx,
+                    "saliency": s.saliency
+                }
+                for s in result.prediction_saliency
+            ]
+            
+            return RestorationResult(
+                input_text=result.input_text,
+                top_prediction=result.top_prediction,
+                missing_indices=result.missing,
+                predictions=predictions,
+                prediction_saliency=saliency
+            )
+            
+        except ValueError as e:
+            logger.warning(f"Restoration failed: {e}")
+            return RestorationResult(
+                input_text=text,
+                top_prediction=text,
+                missing_indices=[],
+                predictions=[]
+            )
     
     def attribute(self, text: str) -> AttributionResult:
         """
@@ -211,9 +290,49 @@ class IthacaService:
                 location_saliency=[]
             )
         
-        # TODO: Implement actual attribution
-        # See predictingthepast_exp/predictingthepast/eval/inference.py attribute()
-        raise NotImplementedError("Model not yet integrated")
+        from predictingthepast.eval import inference
+        
+        try:
+            result = inference.attribute(
+                text,
+                forward=self.forward,
+                params=self.params,
+                alphabet=self.alphabet,
+                vocab_char_size=self.vocab_char_size,
+            )
+            
+            # Convert location predictions with names from region_map
+            # region_map['names'] is a list indexed by location_id
+            names_list = self.region_map.get('names', [])
+            locations = []
+            for loc in result.locations[:20]:  # Top 20 locations
+                if loc.location_id < len(names_list):
+                    name = names_list[loc.location_id]
+                else:
+                    name = f"Region {loc.location_id}"
+                locations.append(LocationPrediction(
+                    location_id=loc.location_id,
+                    name=name,
+                    score=loc.score
+                ))
+            
+            return AttributionResult(
+                input_text=result.input_text,
+                locations=locations,
+                year_scores=result.year_scores,
+                date_saliency=result.date_saliency,
+                location_saliency=result.location_saliency
+            )
+            
+        except ValueError as e:
+            logger.warning(f"Attribution failed: {e}")
+            return AttributionResult(
+                input_text=text,
+                locations=[],
+                year_scores=[0.0] * 160,
+                date_saliency=[],
+                location_saliency=[]
+            )
     
     def contextualize(self, text: str, top_k: int = 20) -> ContextualizationResult:
         """
@@ -230,9 +349,40 @@ class IthacaService:
             logger.warning("Ithaca model not available - returning stub response")
             return ContextualizationResult(similar=[])
         
-        # TODO: Implement actual contextualization
-        # See predictingthepast_exp/predictingthepast/eval/inference.py contextualize()
-        raise NotImplementedError("Model not yet integrated")
+        from predictingthepast.eval import inference
+        
+        try:
+            result = inference.contextualize(
+                text,
+                self.dataset,
+                self.retrieval,
+                self.forward,
+                self.params,
+                self.alphabet,
+                self.region_map,
+                include_test=True,
+                top_k=top_k,
+            )
+            
+            # Convert to our format
+            similar = []
+            for i in range(len(result.ids)):
+                similar.append(SimilarInscription(
+                    id=result.ids[i],
+                    ids_alt=result.ids_alt[i] if result.ids_alt else None,
+                    text=result.text[i],
+                    location_id=result.location_ids[i],
+                    date_min=result.date_min[i],
+                    date_max=result.date_max[i],
+                    score=result.score[i],
+                    partner_link=result.partner_link[i] if result.partner_link else None
+                ))
+            
+            return ContextualizationResult(similar=similar)
+            
+        except ValueError as e:
+            logger.warning(f"Contextualization failed: {e}")
+            return ContextualizationResult(similar=[])
 
 
 # Singleton instance
@@ -248,12 +398,37 @@ def get_ithaca_service() -> IthacaService:
 
 
 def initialize_ithaca_service(
-    checkpoint_path: Path,
-    dataset_path: Path,
-    retrieval_path: Path,
+    checkpoint_path: Optional[Path] = None,
+    dataset_path: Optional[Path] = None,
+    retrieval_path: Optional[Path] = None,
     language: str = "greek"
 ) -> bool:
-    """Initialize the Ithaca service with model files"""
+    """
+    Initialize the Ithaca service with model files.
+    
+    If paths are not provided, uses default locations in backend/models/
+    """
     service = get_ithaca_service()
+    
+    # Default paths
+    models_dir = Path(__file__).parent.parent.parent / "models"
+    
+    if checkpoint_path is None:
+        if language == "greek":
+            checkpoint_path = models_dir / "ithaca_153143996_2.pkl"
+        else:
+            checkpoint_path = models_dir / "aeneas_117149994_2.pkl"
+    
+    if dataset_path is None:
+        if language == "greek":
+            dataset_path = models_dir / "iphi.json"
+        else:
+            dataset_path = models_dir / "led.json"
+    
+    if retrieval_path is None:
+        if language == "greek":
+            retrieval_path = models_dir / "iphi_emb_xid153143996.pkl"
+        else:
+            retrieval_path = models_dir / "led_emb_xid117149994.pkl"
+    
     return service.initialize(checkpoint_path, dataset_path, retrieval_path, language)
-

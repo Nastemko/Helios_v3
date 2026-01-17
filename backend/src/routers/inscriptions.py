@@ -2,11 +2,12 @@
 from typing import Optional, List
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
-from sqlalchemy import or_, func, cast, String
+from sqlalchemy import cast, String
 from pydantic import BaseModel
 
 from database import get_db
 from models.text import Text, TextSegment
+from services.ithaca_service import get_ithaca_service, initialize_ithaca_service
 
 router = APIRouter(prefix="/api/inscriptions", tags=["inscriptions"])
 
@@ -299,24 +300,33 @@ async def get_inscription(
 
 
 # ============================================================================
-# STUB ENDPOINTS FOR FUTURE ITHACA MODEL INTEGRATION
+# ITHACA MODEL ENDPOINTS
 # ============================================================================
 
 class RestoreRequest(BaseModel):
     """Request for text restoration"""
     text: str
     temperature: float = 1.0
+    beam_width: int = 100
     max_restoration_len: int = 15
+
+
+class RestorationCandidate(BaseModel):
+    """A single restoration candidate"""
+    text: str
+    restored_indices: List[int]
+    score: float
 
 
 class RestoreResponse(BaseModel):
     """Response from restoration model"""
     input_text: str
     top_prediction: str
-    restored_indices: List[int]
-    alternatives: List[dict]  # [{text, score}]
-    available: bool = False
-    message: str = "Model integration coming soon"
+    missing_indices: List[int]
+    predictions: List[RestorationCandidate]
+    prediction_saliency: List[dict]
+    available: bool
+    message: Optional[str] = None
 
 
 class AttributeRequest(BaseModel):
@@ -324,14 +334,23 @@ class AttributeRequest(BaseModel):
     text: str
 
 
+class LocationPrediction(BaseModel):
+    """A location prediction"""
+    location_id: int
+    name: str
+    score: float
+
+
 class AttributeResponse(BaseModel):
     """Response from attribution model"""
     input_text: str
-    locations: List[dict]  # [{location_id, name, score}]
+    locations: List[LocationPrediction]
     year_scores: List[float]  # 160 values for -800 to +800
     predicted_date_range: dict  # {min, max, confidence}
-    available: bool = False
-    message: str = "Model integration coming soon"
+    date_saliency: List[float]
+    location_saliency: List[float]
+    available: bool
+    message: Optional[str] = None
 
 
 class ContextualizeRequest(BaseModel):
@@ -340,80 +359,197 @@ class ContextualizeRequest(BaseModel):
     top_k: int = 20
 
 
+class SimilarInscription(BaseModel):
+    """A similar inscription"""
+    id: str  # PHI ID as string
+    ids_alt: Optional[dict] = None
+    text: str
+    location_id: Optional[int] = None
+    date_min: Optional[int] = None
+    date_max: Optional[int] = None
+    score: float
+    partner_link: Optional[str] = None
+
+
 class ContextualizeResponse(BaseModel):
     """Response with similar inscriptions"""
-    similar: List[dict]  # [{phi_id, text, region, date_min, date_max, score}]
-    available: bool = False
-    message: str = "Model integration coming soon"
+    similar: List[SimilarInscription]
+    available: bool
+    message: Optional[str] = None
 
 
 @router.post("/restore", response_model=RestoreResponse)
 async def restore_inscription(request: RestoreRequest):
     """
-    [STUB] Restore missing characters in an inscription.
+    Restore missing characters in an inscription.
     
     Use '?' for single missing characters and '#' for unknown-length gaps.
     
-    This endpoint will be connected to the Ithaca model in a future update.
+    Example input: "εδοξεν τηι βουληι και τωι δημωι # αθηναιων"
     """
-    # Return stub response
+    service = get_ithaca_service()
+    
+    if not service.is_available:
+        return RestoreResponse(
+            input_text=request.text,
+            top_prediction=request.text,
+            missing_indices=[],
+            predictions=[],
+            prediction_saliency=[],
+            available=False,
+            message="Model not loaded. Call /api/inscriptions/model/initialize first."
+        )
+    
+    result = service.restore(
+        text=request.text,
+        beam_width=request.beam_width,
+        temperature=request.temperature,
+        max_restoration_len=request.max_restoration_len
+    )
+    
     return RestoreResponse(
-        input_text=request.text,
-        top_prediction=request.text,  # No restoration yet
-        restored_indices=[],
-        alternatives=[],
-        available=False,
-        message="Model integration coming soon. The Ithaca restoration model will be integrated in a future update."
+        input_text=result.input_text,
+        top_prediction=result.top_prediction,
+        missing_indices=result.missing_indices,
+        predictions=[
+            RestorationCandidate(
+                text=p.text,
+                restored_indices=p.restored_indices,
+                score=p.score
+            )
+            for p in result.predictions
+        ],
+        prediction_saliency=result.prediction_saliency,
+        available=True
     )
 
 
 @router.post("/attribute", response_model=AttributeResponse)
 async def attribute_inscription(request: AttributeRequest):
     """
-    [STUB] Predict the date and geographic origin of an inscription.
+    Predict the date and geographic origin of an inscription.
     
-    This endpoint will be connected to the Ithaca model in a future update.
+    Returns:
+    - locations: Top predicted locations with confidence scores
+    - year_scores: Probability distribution over years -800 to +800 (10-year intervals)
+    - predicted_date_range: Most likely date range
+    - saliency maps: Which characters influenced the predictions
     """
-    # Return stub response with empty predictions
+    service = get_ithaca_service()
+    
+    if not service.is_available:
+        return AttributeResponse(
+            input_text=request.text,
+            locations=[],
+            year_scores=[0.0] * 160,
+            predicted_date_range={"min": None, "max": None, "confidence": 0.0},
+            date_saliency=[],
+            location_saliency=[],
+            available=False,
+            message="Model not loaded. Call /api/inscriptions/model/initialize first."
+        )
+    
+    result = service.attribute(request.text)
+    
     return AttributeResponse(
-        input_text=request.text,
-        locations=[],
-        year_scores=[0.0] * 160,  # 160 values for years -800 to +800 in 10-year intervals
-        predicted_date_range={"min": None, "max": None, "confidence": 0.0},
-        available=False,
-        message="Model integration coming soon. The Ithaca attribution model will be integrated in a future update."
+        input_text=result.input_text,
+        locations=[
+            LocationPrediction(
+                location_id=loc.location_id,
+                name=loc.name,
+                score=loc.score
+            )
+            for loc in result.locations
+        ],
+        year_scores=result.year_scores,
+        predicted_date_range=result.predicted_date_range,
+        date_saliency=result.date_saliency,
+        location_saliency=result.location_saliency,
+        available=True
     )
 
 
 @router.post("/contextualize", response_model=ContextualizeResponse)
 async def contextualize_inscription(request: ContextualizeRequest):
     """
-    [STUB] Find similar inscriptions in the corpus.
+    Find similar inscriptions in the corpus.
     
-    This endpoint will be connected to the Ithaca model in a future update.
+    Uses the model's embedding space to find semantically similar inscriptions.
     """
-    # Return stub response
+    service = get_ithaca_service()
+    
+    if not service.is_available:
+        return ContextualizeResponse(
+            similar=[],
+            available=False,
+            message="Model not loaded. Call /api/inscriptions/model/initialize first."
+        )
+    
+    result = service.contextualize(request.text, top_k=request.top_k)
+    
     return ContextualizeResponse(
-        similar=[],
-        available=False,
-        message="Model integration coming soon. The Ithaca contextualization model will be integrated in a future update."
+        similar=[
+            SimilarInscription(
+                id=str(s.id),  # Convert to string
+                ids_alt=s.ids_alt,
+                text=s.text,
+                location_id=s.location_id,
+                date_min=s.date_min,
+                date_max=s.date_max,
+                score=s.score,
+                partner_link=s.partner_link
+            )
+            for s in result.similar
+        ],
+        available=True
     )
 
 
 @router.get("/model/status")
 async def get_model_status():
     """
-    Check if the Ithaca model is available.
+    Check if the Ithaca model is available and get its status.
     """
+    service = get_ithaca_service()
+    
     return {
-        "available": False,
-        "model_name": "Ithaca",
-        "version": None,
+        "available": service.is_available,
+        "initialized": service.initialized,
+        "language": service.language,
+        "model_name": "Ithaca/Aeneas",
         "features": {
-            "restore": False,
-            "attribute": False,
-            "contextualize": False,
+            "restore": service.is_available,
+            "attribute": service.is_available,
+            "contextualize": service.is_available,
         },
-        "message": "Model integration coming soon"
+        "message": "Model ready" if service.is_available else "Model not initialized"
     }
 
+
+@router.post("/model/initialize")
+async def initialize_model(language: str = "greek"):
+    """
+    Initialize the Ithaca model.
+    
+    This loads the model checkpoint and required data files.
+    May take 30-60 seconds on first call.
+    
+    Args:
+        language: 'greek' or 'latin'
+    """
+    if language not in ["greek", "latin"]:
+        raise HTTPException(status_code=400, detail="Language must be 'greek' or 'latin'")
+    
+    success = initialize_ithaca_service(language=language)
+    
+    if success:
+        return {
+            "status": "success",
+            "message": f"Ithaca model initialized for {language}",
+            "language": language
+        }
+    else:
+        raise HTTPException(
+            status_code=500,
+            detail="Failed to initialize model. Check server logs for details."
+        )
