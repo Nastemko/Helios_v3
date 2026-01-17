@@ -5,6 +5,7 @@ import Login from './pages/Login';
 import Home from './pages/Home';
 import TextBrowser from './pages/TextBrowser';
 import TextReader from './pages/TextReader';
+import InscriptionWorkbench from './pages/InscriptionWorkbench';
 
 function PrivateRoute({ children }: { children: React.ReactNode }) {
   const { isAuthenticated, isLoading } = useAuth();
@@ -29,6 +30,7 @@ function App() {
         <Route index element={<Home />} />
         <Route path="browse" element={<TextBrowser />} />
         <Route path="text/:urn" element={<TextReader />} />
+        <Route path="inscriptions" element={<InscriptionWorkbench />} />
       </Route>
     </Routes>
   );
