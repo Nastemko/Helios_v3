@@ -109,3 +109,113 @@ export interface TranslateAssistStatus {
   max_chars: number;
 }
 
+// ============================================================================
+// INSCRIPTION TYPES (PHI Corpus)
+// ============================================================================
+
+export interface Inscription {
+  id: number;
+  phi_id: number;
+  urn: string;
+  title: string;
+  text: string;
+  region_main: string | null;
+  region_sub: string | null;
+  date_str: string | null;
+  date_min: number | null;
+  date_max: number | null;
+  date_circa: boolean | null;
+  metadata_raw: string | null;
+}
+
+export interface InscriptionListItem {
+  id: number;
+  phi_id: number;
+  urn: string;
+  title: string;
+  text_preview: string;
+  region_main: string | null;
+  region_sub: string | null;
+  date_str: string | null;
+  date_min: number | null;
+  date_max: number | null;
+}
+
+export interface RegionCount {
+  region: string;
+  region_id: string | null;
+  count: number;
+}
+
+export interface InscriptionStats {
+  total_inscriptions: number;
+  inscriptions_with_dates: number;
+  regions_count: number;
+  date_range: {
+    earliest: number | null;
+    latest: number | null;
+  };
+}
+
+// Ithaca Model Result Types
+
+export interface LocationPrediction {
+  location_id: number;
+  name: string;
+  score: number;
+}
+
+export interface RestorationAlternative {
+  text: string;
+  score: number;
+}
+
+export interface RestorationResult {
+  input_text: string;
+  top_prediction: string;
+  restored_indices: number[];
+  alternatives: RestorationAlternative[];
+  available: boolean;
+  message: string;
+}
+
+export interface AttributionResult {
+  input_text: string;
+  locations: LocationPrediction[];
+  year_scores: number[]; // 160 values for years -800 to +800
+  predicted_date_range: {
+    min: number | null;
+    max: number | null;
+    confidence: number;
+  };
+  available: boolean;
+  message: string;
+}
+
+export interface SimilarInscription {
+  phi_id: number;
+  text: string;
+  region: string | null;
+  date_min: number | null;
+  date_max: number | null;
+  score: number;
+}
+
+export interface ContextualizationResult {
+  similar: SimilarInscription[];
+  available: boolean;
+  message: string;
+}
+
+export interface IthacaModelStatus {
+  available: boolean;
+  model_name: string;
+  version: string | null;
+  features: {
+    restore: boolean;
+    attribute: boolean;
+    contextualize: boolean;
+  };
+  message: string;
+}
+

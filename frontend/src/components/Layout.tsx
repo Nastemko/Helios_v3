@@ -25,12 +25,21 @@ export default function Layout() {
                 <span className="font-semibold text-lg text-white">Helios</span>
             </Link>
             
-            <nav className="hidden md:flex gap-4">
+            <nav className="hidden md:flex gap-1">
                  <Link
                     to="/browse"
-                    className="text-sm font-medium text-white/80 hover:text-white px-2 py-1 rounded hover:bg-white/10 transition-colors"
+                    className="text-sm font-medium text-white/80 hover:text-white px-3 py-1.5 rounded hover:bg-white/10 transition-colors"
                   >
-                    Browse
+                    Literary Texts
+                  </Link>
+                  <Link
+                    to="/inscriptions"
+                    className="text-sm font-medium text-white/80 hover:text-white px-3 py-1.5 rounded hover:bg-white/10 transition-colors flex items-center gap-1.5"
+                  >
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
+                    </svg>
+                    Inscriptions
                   </Link>
             </nav>
         </div>

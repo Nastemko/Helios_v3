@@ -11,6 +11,14 @@ import type {
   TranslateAssistStatus,
   StudentNote,
   Highlight,
+  Inscription,
+  InscriptionListItem,
+  RegionCount,
+  InscriptionStats,
+  RestorationResult,
+  AttributionResult,
+  ContextualizationResult,
+  IthacaModelStatus,
 } from "../types";
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || "http://localhost:8000";
@@ -165,6 +173,50 @@ export const translateAssistApi = {
     api.post<TranslationResult>("/api/translate-assist", data),
 
   status: () => api.get<TranslateAssistStatus>("/api/translate-assist/status"),
+};
+
+// Inscription API (PHI Corpus)
+export const inscriptionApi = {
+  // List inscriptions with filtering
+  list: (params?: {
+    search?: string;
+    region_main?: string;
+    region_sub?: string;
+    date_min?: number;
+    date_max?: number;
+    skip?: number;
+    limit?: number;
+  }) => api.get<InscriptionListItem[]>("/api/inscriptions", { params }),
+
+  // Get single inscription by PHI ID
+  get: (phiId: number) => api.get<Inscription>(`/api/inscriptions/${phiId}`),
+
+  // Get list of regions with counts
+  getRegions: (level: "main" | "sub" = "main") =>
+    api.get<RegionCount[]>("/api/inscriptions/regions", { params: { level } }),
+
+  // Get corpus statistics
+  getStats: () => api.get<InscriptionStats>("/api/inscriptions/stats"),
+
+  // Ithaca model endpoints (stubs for now)
+  restore: (text: string, temperature: number = 1.0) =>
+    api.post<RestorationResult>("/api/inscriptions/restore", {
+      text,
+      temperature,
+    }),
+
+  attribute: (text: string) =>
+    api.post<AttributionResult>("/api/inscriptions/attribute", { text }),
+
+  contextualize: (text: string, topK: number = 20) =>
+    api.post<ContextualizationResult>("/api/inscriptions/contextualize", {
+      text,
+      top_k: topK,
+    }),
+
+  // Check model status
+  getModelStatus: () =>
+    api.get<IthacaModelStatus>("/api/inscriptions/model/status"),
 };
 
 export default api;
