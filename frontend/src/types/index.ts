@@ -207,15 +207,17 @@ export interface ContextualizationResult {
   message: string;
 }
 
-export interface IthacaModelStatus {
+export interface ModelStatus {
   available: boolean;
   model_name: string;
-  version: string | null;
-  features: {
-    restore: boolean;
-    attribute: boolean;
-    contextualize: boolean;
+}
+
+export interface IthacaModelStatus {
+  models: {
+    greek: ModelStatus;
+    latin: ModelStatus;
   };
-  message: string;
+  features: string[];
+  supported_languages: string[];
 }
 

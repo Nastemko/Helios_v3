@@ -1,5 +1,5 @@
 """API endpoints for browsing and querying PHI inscriptions"""
-from typing import Optional, List
+from typing import Optional, List, Literal
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 from sqlalchemy import cast, String
@@ -7,9 +7,12 @@ from pydantic import BaseModel
 
 from database import get_db
 from models.text import Text, TextSegment
-from services.ithaca_service import get_ithaca_service, initialize_ithaca_service
+from services.ithaca_service import get_ithaca_service, initialize_all_models
 
 router = APIRouter(prefix="/api/inscriptions", tags=["inscriptions"])
+
+# Type alias for language
+Language = Literal["greek", "latin"]
 
 
 # Response models
@@ -300,12 +303,13 @@ async def get_inscription(
 
 
 # ============================================================================
-# ITHACA MODEL ENDPOINTS
+# ITHACA MODEL ENDPOINTS - Support both Greek and Latin
 # ============================================================================
 
 class RestoreRequest(BaseModel):
     """Request for text restoration"""
     text: str
+    language: Language = "greek"
     temperature: float = 1.0
     beam_width: int = 100
     max_restoration_len: int = 15
@@ -321,6 +325,7 @@ class RestorationCandidate(BaseModel):
 class RestoreResponse(BaseModel):
     """Response from restoration model"""
     input_text: str
+    language: str
     top_prediction: str
     missing_indices: List[int]
     predictions: List[RestorationCandidate]
@@ -332,6 +337,7 @@ class RestoreResponse(BaseModel):
 class AttributeRequest(BaseModel):
     """Request for attribution (date + location)"""
     text: str
+    language: Language = "greek"
 
 
 class LocationPrediction(BaseModel):
@@ -344,6 +350,7 @@ class LocationPrediction(BaseModel):
 class AttributeResponse(BaseModel):
     """Response from attribution model"""
     input_text: str
+    language: str
     locations: List[LocationPrediction]
     year_scores: List[float]  # 160 values for -800 to +800
     predicted_date_range: dict  # {min, max, confidence}
@@ -356,6 +363,7 @@ class AttributeResponse(BaseModel):
 class ContextualizeRequest(BaseModel):
     """Request for finding similar inscriptions"""
     text: str
+    language: Language = "greek"
     top_k: int = 20
 
 
@@ -374,6 +382,7 @@ class SimilarInscription(BaseModel):
 class ContextualizeResponse(BaseModel):
     """Response with similar inscriptions"""
     similar: List[SimilarInscription]
+    language: str
     available: bool
     message: Optional[str] = None
 
@@ -385,23 +394,33 @@ async def restore_inscription(request: RestoreRequest):
     
     Use '?' for single missing characters and '#' for unknown-length gaps.
     
-    Example input: "εδοξεν τηι βουληι και τωι δημωι # αθηναιων"
+    Args:
+        text: The inscription text with missing characters
+        language: 'greek' or 'latin' (default: greek)
+        temperature: Sampling temperature (default: 1.0)
+        beam_width: Number of candidates to consider (default: 100)
+        max_restoration_len: Max length for unknown-length gaps (default: 15)
+    
+    Example Greek: "εδοξεν τηι βουληι και τωι δημωι # αθηναιων"
+    Example Latin: "imp caesar divi # f augustus"
     """
     service = get_ithaca_service()
     
-    if not service.is_available:
+    if not service.is_available(request.language):
         return RestoreResponse(
             input_text=request.text,
+            language=request.language,
             top_prediction=request.text,
             missing_indices=[],
             predictions=[],
             prediction_saliency=[],
             available=False,
-            message="Model not loaded. Call /api/inscriptions/model/initialize first."
+            message=f"{request.language.title()} model not loaded. Check /api/inscriptions/model/status"
         )
     
     result = service.restore(
         text=request.text,
+        language=request.language,
         beam_width=request.beam_width,
         temperature=request.temperature,
         max_restoration_len=request.max_restoration_len
@@ -409,6 +428,7 @@ async def restore_inscription(request: RestoreRequest):
     
     return RestoreResponse(
         input_text=result.input_text,
+        language=request.language,
         top_prediction=result.top_prediction,
         missing_indices=result.missing_indices,
         predictions=[
@@ -429,6 +449,10 @@ async def attribute_inscription(request: AttributeRequest):
     """
     Predict the date and geographic origin of an inscription.
     
+    Args:
+        text: The inscription text
+        language: 'greek' or 'latin' (default: greek)
+    
     Returns:
     - locations: Top predicted locations with confidence scores
     - year_scores: Probability distribution over years -800 to +800 (10-year intervals)
@@ -437,22 +461,24 @@ async def attribute_inscription(request: AttributeRequest):
     """
     service = get_ithaca_service()
     
-    if not service.is_available:
+    if not service.is_available(request.language):
         return AttributeResponse(
             input_text=request.text,
+            language=request.language,
             locations=[],
             year_scores=[0.0] * 160,
             predicted_date_range={"min": None, "max": None, "confidence": 0.0},
             date_saliency=[],
             location_saliency=[],
             available=False,
-            message="Model not loaded. Call /api/inscriptions/model/initialize first."
+            message=f"{request.language.title()} model not loaded. Check /api/inscriptions/model/status"
         )
     
-    result = service.attribute(request.text)
+    result = service.attribute(request.text, language=request.language)
     
     return AttributeResponse(
         input_text=result.input_text,
+        language=request.language,
         locations=[
             LocationPrediction(
                 location_id=loc.location_id,
@@ -474,23 +500,33 @@ async def contextualize_inscription(request: ContextualizeRequest):
     """
     Find similar inscriptions in the corpus.
     
+    Args:
+        text: The inscription text
+        language: 'greek' or 'latin' (default: greek)
+        top_k: Number of similar inscriptions to return (default: 20)
+    
     Uses the model's embedding space to find semantically similar inscriptions.
     """
     service = get_ithaca_service()
     
-    if not service.is_available:
+    if not service.is_available(request.language):
         return ContextualizeResponse(
             similar=[],
+            language=request.language,
             available=False,
-            message="Model not loaded. Call /api/inscriptions/model/initialize first."
+            message=f"{request.language.title()} model not loaded. Check /api/inscriptions/model/status"
         )
     
-    result = service.contextualize(request.text, top_k=request.top_k)
+    result = service.contextualize(
+        request.text, 
+        language=request.language,
+        top_k=request.top_k
+    )
     
     return ContextualizeResponse(
         similar=[
             SimilarInscription(
-                id=str(s.id),  # Convert to string
+                id=str(s.id),
                 ids_alt=s.ids_alt,
                 text=s.text,
                 location_id=s.location_id,
@@ -501,6 +537,7 @@ async def contextualize_inscription(request: ContextualizeRequest):
             )
             for s in result.similar
         ],
+        language=request.language,
         available=True
     )
 
@@ -508,48 +545,52 @@ async def contextualize_inscription(request: ContextualizeRequest):
 @router.get("/model/status")
 async def get_model_status():
     """
-    Check if the Ithaca model is available and get its status.
+    Check the status of all inscription models (Greek and Latin).
     """
     service = get_ithaca_service()
+    status = service.get_status()
     
     return {
-        "available": service.is_available,
-        "initialized": service.initialized,
-        "language": service.language,
-        "model_name": "Ithaca/Aeneas",
-        "features": {
-            "restore": service.is_available,
-            "attribute": service.is_available,
-            "contextualize": service.is_available,
-        },
-        "message": "Model ready" if service.is_available else "Model not initialized"
+        "models": status,
+        "features": ["restore", "attribute", "contextualize"],
+        "supported_languages": ["greek", "latin"]
     }
 
 
 @router.post("/model/initialize")
-async def initialize_model(language: str = "greek"):
+async def initialize_models(
+    language: Optional[Language] = Query(None, description="Specific language to initialize, or omit for both")
+):
     """
-    Initialize the Ithaca model.
-    
-    This loads the model checkpoint and required data files.
-    May take 30-60 seconds on first call.
+    Initialize inscription analysis models.
     
     Args:
-        language: 'greek' or 'latin'
+        language: 'greek', 'latin', or omit to initialize both
+    
+    This loads the model checkpoint and required data files.
+    May take 30-60 seconds per model.
     """
-    if language not in ["greek", "latin"]:
-        raise HTTPException(status_code=400, detail="Language must be 'greek' or 'latin'")
+    service = get_ithaca_service()
     
-    success = initialize_ithaca_service(language=language)
-    
-    if success:
-        return {
-            "status": "success",
-            "message": f"Ithaca model initialized for {language}",
-            "language": language
-        }
+    if language:
+        # Initialize specific language
+        success = service.initialize_model(language)
+        if success:
+            return {
+                "status": "success",
+                "message": f"{language.title()} model initialized",
+                "initialized": {language: True}
+            }
+        else:
+            raise HTTPException(
+                status_code=500,
+                detail=f"Failed to initialize {language} model. Check that model files exist in backend/models/"
+            )
     else:
-        raise HTTPException(
-            status_code=500,
-            detail="Failed to initialize model. Check server logs for details."
-        )
+        # Initialize both
+        results = initialize_all_models()
+        return {
+            "status": "success" if any(results.values()) else "failed",
+            "message": "Model initialization complete",
+            "initialized": results
+        }

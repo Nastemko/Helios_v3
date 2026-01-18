@@ -91,6 +91,21 @@ async def startup_event():
 
     initialize_aeneas_service(models_dir)
 
+    # Initialize Ithaca inscription models (Greek and Latin)
+    logger.info("Initializing Ithaca inscription models...")
+    from services.ithaca_service import initialize_all_models
+
+    try:
+        ithaca_results = initialize_all_models()
+        for lang, success in ithaca_results.items():
+            if success:
+                logger.info(f"Ithaca {lang.title()} model initialized successfully")
+            else:
+                logger.warning(f"Ithaca {lang.title()} model not available (files may not be present)")
+    except Exception as e:
+        logger.error(f"Error initializing Ithaca models: {e}")
+        # Continue startup even if Ithaca models fail to load
+
     logger.info(f"{settings.APP_NAME} started successfully")
 
 

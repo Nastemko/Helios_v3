@@ -198,19 +198,32 @@ export const inscriptionApi = {
   // Get corpus statistics
   getStats: () => api.get<InscriptionStats>("/api/inscriptions/stats"),
 
-  // Ithaca model endpoints (stubs for now)
-  restore: (text: string, temperature: number = 1.0) =>
+  // Ithaca/Aeneas model endpoints - supports Greek and Latin
+  restore: (
+    text: string,
+    language: "greek" | "latin" = "greek",
+    temperature: number = 1.0
+  ) =>
     api.post<RestorationResult>("/api/inscriptions/restore", {
       text,
+      language,
       temperature,
     }),
 
-  attribute: (text: string) =>
-    api.post<AttributionResult>("/api/inscriptions/attribute", { text }),
+  attribute: (text: string, language: "greek" | "latin" = "greek") =>
+    api.post<AttributionResult>("/api/inscriptions/attribute", {
+      text,
+      language,
+    }),
 
-  contextualize: (text: string, topK: number = 20) =>
+  contextualize: (
+    text: string,
+    language: "greek" | "latin" = "greek",
+    topK: number = 20
+  ) =>
     api.post<ContextualizationResult>("/api/inscriptions/contextualize", {
       text,
+      language,
       top_k: topK,
     }),
 
