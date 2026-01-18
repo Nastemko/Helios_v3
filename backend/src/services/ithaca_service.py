@@ -5,6 +5,8 @@ This service wraps the Ithaca/Aeneas model for:
 - Text restoration (filling in missing characters)
 - Attribution (predicting date and geographic origin)
 - Contextualization (finding similar inscriptions)
+
+Supports both Greek (Ithaca) and Latin (Aeneas) models simultaneously.
 """
 
 import logging
@@ -12,7 +14,7 @@ import pickle
 import sys
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Literal
 
 logger = logging.getLogger(__name__)
 
@@ -20,6 +22,9 @@ logger = logging.getLogger(__name__)
 PREDICTINGTHEPAST_PATH = Path(__file__).parent.parent.parent.parent / "predictingthepast_exp"
 if str(PREDICTINGTHEPAST_PATH) not in sys.path:
     sys.path.insert(0, str(PREDICTINGTHEPAST_PATH))
+
+# Type alias for supported languages
+Language = Literal["greek", "latin"]
 
 
 @dataclass
@@ -101,15 +106,13 @@ class ContextualizationResult:
     similar: List[SimilarInscription]
 
 
-class IthacaService:
+class IthacaModel:
     """
-    Service for Ithaca model inference.
-    
-    Loads the model checkpoint and provides methods for restoration,
-    attribution, and contextualization of ancient inscriptions.
+    Single model instance for one language (Greek or Latin).
     """
     
-    def __init__(self):
+    def __init__(self, language: Language):
+        self.language = language
         self.initialized = False
         self.forward = None
         self.params = None
@@ -118,29 +121,18 @@ class IthacaService:
         self.dataset = None
         self.retrieval = None
         self.vocab_char_size = None
-        self.language = "greek"
         
     def initialize(
         self,
         checkpoint_path: Path,
         dataset_path: Path,
         retrieval_path: Path,
-        language: str = "greek"
     ) -> bool:
         """
-        Initialize the Ithaca model.
-        
-        Args:
-            checkpoint_path: Path to model checkpoint pickle
-            dataset_path: Path to dataset JSON
-            retrieval_path: Path to retrieval pickle
-            language: 'greek' or 'latin'
-            
-        Returns:
-            True if initialization successful
+        Initialize the model with checkpoint and data files.
         """
         try:
-            logger.info(f"Initializing Ithaca service for {language}...")
+            logger.info(f"Initializing {self.language.upper()} model...")
             
             # Import JAX and model components
             import jax
@@ -161,12 +153,10 @@ class IthacaService:
             self.vocab_char_size = checkpoint['model_config']['vocab_char_size']
             
             # Initialize alphabet
-            if language == 'latin':
+            if self.language == 'latin':
                 self.alphabet = util_alphabet.LatinAlphabet()
-            elif language == 'greek':
-                self.alphabet = util_alphabet.GreekAlphabet()
             else:
-                raise ValueError(f'Unknown language: {language}')
+                self.alphabet = util_alphabet.GreekAlphabet()
             
             # Load dataset for contextualization
             logger.info(f"Loading dataset from {dataset_path}...")
@@ -176,14 +166,12 @@ class IthacaService:
             logger.info(f"Loading retrieval embeddings from {retrieval_path}...")
             self.retrieval = inference.load_retrieval(str(retrieval_path))
             
-            self.language = language
             self.initialized = True
-            
-            logger.info("Ithaca service initialized successfully!")
+            logger.info(f"{self.language.upper()} model initialized successfully!")
             return True
             
         except Exception as e:
-            logger.error(f"Failed to initialize Ithaca service: {e}")
+            logger.error(f"Failed to initialize {self.language} model: {e}")
             self.initialized = False
             return False
     
@@ -191,28 +179,106 @@ class IthacaService:
     def is_available(self) -> bool:
         """Check if the model is ready for inference"""
         return self.initialized and self.forward is not None
+
+
+class IthacaService:
+    """
+    Service for Ithaca/Aeneas model inference.
+    
+    Supports both Greek and Latin models loaded simultaneously.
+    """
+    
+    def __init__(self):
+        self._models: Dict[Language, IthacaModel] = {}
+        
+    def initialize_model(
+        self,
+        language: Language,
+        checkpoint_path: Optional[Path] = None,
+        dataset_path: Optional[Path] = None,
+        retrieval_path: Optional[Path] = None,
+    ) -> bool:
+        """
+        Initialize a specific language model.
+        """
+        # Default paths
+        models_dir = Path(__file__).parent.parent.parent / "models"
+        
+        if checkpoint_path is None:
+            if language == "greek":
+                checkpoint_path = models_dir / "ithaca_153143996_2.pkl"
+            else:
+                checkpoint_path = models_dir / "aeneas_117149994_2.pkl"
+        
+        if dataset_path is None:
+            if language == "greek":
+                dataset_path = models_dir / "iphi.json"
+            else:
+                dataset_path = models_dir / "led.json"
+        
+        if retrieval_path is None:
+            if language == "greek":
+                retrieval_path = models_dir / "iphi_emb_xid153143996.pkl"
+            else:
+                retrieval_path = models_dir / "led_emb_xid117149994.pkl"
+        
+        # Check if files exist
+        if not checkpoint_path.exists():
+            logger.warning(f"Checkpoint not found: {checkpoint_path}")
+            return False
+        if not dataset_path.exists():
+            logger.warning(f"Dataset not found: {dataset_path}")
+            return False
+        if not retrieval_path.exists():
+            logger.warning(f"Retrieval file not found: {retrieval_path}")
+            return False
+        
+        # Create and initialize model
+        model = IthacaModel(language)
+        success = model.initialize(checkpoint_path, dataset_path, retrieval_path)
+        
+        if success:
+            self._models[language] = model
+        
+        return success
+    
+    def get_model(self, language: Language) -> Optional[IthacaModel]:
+        """Get a specific language model"""
+        return self._models.get(language)
+    
+    def is_available(self, language: Language) -> bool:
+        """Check if a specific language model is ready"""
+        model = self._models.get(language)
+        return model is not None and model.is_available
+    
+    def get_status(self) -> Dict[str, Any]:
+        """Get status of all models"""
+        return {
+            "greek": {
+                "available": self.is_available("greek"),
+                "model_name": "Ithaca"
+            },
+            "latin": {
+                "available": self.is_available("latin"),
+                "model_name": "Aeneas"
+            }
+        }
     
     def restore(
         self,
         text: str,
+        language: Language = "greek",
         beam_width: int = 100,
         temperature: float = 1.0,
         max_restoration_len: int = 15
     ) -> RestorationResult:
         """
         Restore missing characters in an inscription.
-        
-        Args:
-            text: Input text with '?' for single missing chars and '#' for unknown-length gaps
-            beam_width: Number of candidates to consider
-            temperature: Sampling temperature
-            max_restoration_len: Maximum length for unknown-length restorations
-            
-        Returns:
-            RestorationResult with predictions
         """
-        if not self.is_available:
-            logger.warning("Ithaca model not available - returning stub response")
+        model = self._models.get(language)
+        
+        if model is None or not model.is_available:
+            logger.warning(f"{language} model not available - returning stub response")
             return RestorationResult(
                 input_text=text,
                 top_prediction=text,
@@ -225,16 +291,15 @@ class IthacaService:
         try:
             result = inference.restore(
                 text,
-                forward=self.forward,
-                params=self.params,
-                alphabet=self.alphabet,
-                vocab_char_size=self.vocab_char_size,
+                forward=model.forward,
+                params=model.params,
+                alphabet=model.alphabet,
+                vocab_char_size=model.vocab_char_size,
                 beam_width=beam_width,
                 temperature=temperature,
                 unk_restoration_max_len=max_restoration_len,
             )
             
-            # Convert to our dataclass format
             predictions = [
                 RestorationCandidate(
                     text=r.text,
@@ -270,18 +335,14 @@ class IthacaService:
                 predictions=[]
             )
     
-    def attribute(self, text: str) -> AttributionResult:
+    def attribute(self, text: str, language: Language = "greek") -> AttributionResult:
         """
         Predict date and geographic origin of an inscription.
-        
-        Args:
-            text: Input inscription text
-            
-        Returns:
-            AttributionResult with location and date predictions
         """
-        if not self.is_available:
-            logger.warning("Ithaca model not available - returning stub response")
+        model = self._models.get(language)
+        
+        if model is None or not model.is_available:
+            logger.warning(f"{language} model not available - returning stub response")
             return AttributionResult(
                 input_text=text,
                 locations=[],
@@ -295,17 +356,16 @@ class IthacaService:
         try:
             result = inference.attribute(
                 text,
-                forward=self.forward,
-                params=self.params,
-                alphabet=self.alphabet,
-                vocab_char_size=self.vocab_char_size,
+                forward=model.forward,
+                params=model.params,
+                alphabet=model.alphabet,
+                vocab_char_size=model.vocab_char_size,
             )
             
             # Convert location predictions with names from region_map
-            # region_map['names'] is a list indexed by location_id
-            names_list = self.region_map.get('names', [])
+            names_list = model.region_map.get('names', [])
             locations = []
-            for loc in result.locations[:20]:  # Top 20 locations
+            for loc in result.locations[:20]:
                 if loc.location_id < len(names_list):
                     name = names_list[loc.location_id]
                 else:
@@ -334,19 +394,19 @@ class IthacaService:
                 location_saliency=[]
             )
     
-    def contextualize(self, text: str, top_k: int = 20) -> ContextualizationResult:
+    def contextualize(
+        self, 
+        text: str, 
+        language: Language = "greek",
+        top_k: int = 20
+    ) -> ContextualizationResult:
         """
         Find similar inscriptions in the corpus.
-        
-        Args:
-            text: Input inscription text
-            top_k: Number of similar inscriptions to return
-            
-        Returns:
-            ContextualizationResult with similar inscriptions
         """
-        if not self.is_available:
-            logger.warning("Ithaca model not available - returning stub response")
+        model = self._models.get(language)
+        
+        if model is None or not model.is_available:
+            logger.warning(f"{language} model not available - returning stub response")
             return ContextualizationResult(similar=[])
         
         from predictingthepast.eval import inference
@@ -354,21 +414,20 @@ class IthacaService:
         try:
             result = inference.contextualize(
                 text,
-                self.dataset,
-                self.retrieval,
-                self.forward,
-                self.params,
-                self.alphabet,
-                self.region_map,
+                model.dataset,
+                model.retrieval,
+                model.forward,
+                model.params,
+                model.alphabet,
+                model.region_map,
                 include_test=True,
                 top_k=top_k,
             )
             
-            # Convert to our format
             similar = []
             for i in range(len(result.ids)):
                 similar.append(SimilarInscription(
-                    id=result.ids[i],
+                    id=str(result.ids[i]),
                     ids_alt=result.ids_alt[i] if result.ids_alt else None,
                     text=result.text[i],
                     location_id=result.location_ids[i],
@@ -397,38 +456,29 @@ def get_ithaca_service() -> IthacaService:
     return _ithaca_service
 
 
-def initialize_ithaca_service(
-    checkpoint_path: Optional[Path] = None,
-    dataset_path: Optional[Path] = None,
-    retrieval_path: Optional[Path] = None,
-    language: str = "greek"
-) -> bool:
+def initialize_ithaca_service(language: Language = "greek") -> bool:
     """
-    Initialize the Ithaca service with model files.
-    
-    If paths are not provided, uses default locations in backend/models/
+    Initialize a specific language model.
     """
     service = get_ithaca_service()
+    return service.initialize_model(language)
+
+
+def initialize_all_models() -> Dict[str, bool]:
+    """
+    Initialize both Greek and Latin models.
+    Returns dict with success status for each.
+    """
+    service = get_ithaca_service()
+    results = {}
     
-    # Default paths
-    models_dir = Path(__file__).parent.parent.parent / "models"
+    logger.info("Initializing all Ithaca/Aeneas models...")
     
-    if checkpoint_path is None:
-        if language == "greek":
-            checkpoint_path = models_dir / "ithaca_153143996_2.pkl"
-        else:
-            checkpoint_path = models_dir / "aeneas_117149994_2.pkl"
+    # Try Greek
+    results["greek"] = service.initialize_model("greek")
     
-    if dataset_path is None:
-        if language == "greek":
-            dataset_path = models_dir / "iphi.json"
-        else:
-            dataset_path = models_dir / "led.json"
+    # Try Latin
+    results["latin"] = service.initialize_model("latin")
     
-    if retrieval_path is None:
-        if language == "greek":
-            retrieval_path = models_dir / "iphi_emb_xid153143996.pkl"
-        else:
-            retrieval_path = models_dir / "led_emb_xid117149994.pkl"
-    
-    return service.initialize(checkpoint_path, dataset_path, retrieval_path, language)
+    logger.info(f"Model initialization complete: {results}")
+    return results

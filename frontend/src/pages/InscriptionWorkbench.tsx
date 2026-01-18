@@ -11,10 +11,13 @@ import type {
   InscriptionListItem,
 } from '../types';
 
+type Language = 'greek' | 'latin';
+
 export default function InscriptionWorkbench() {
   // Input state
   const [inputText, setInputText] = useState('');
   const [temperature, setTemperature] = useState(1.0);
+  const [language, setLanguage] = useState<Language>('greek');
   
   // Results state
   const [restorationResult, setRestorationResult] = useState<RestorationResult | null>(null);
@@ -43,7 +46,10 @@ export default function InscriptionWorkbench() {
   });
 
   const stats = statsData?.data;
-  const modelAvailable = modelStatus?.data?.available ?? false;
+  const models = modelStatus?.data?.models;
+  const greekAvailable = models?.greek?.available ?? false;
+  const latinAvailable = models?.latin?.available ?? false;
+  const currentModelAvailable = language === 'greek' ? greekAvailable : latinAvailable;
 
   // Handle "Contextualise and Attribute" (no restoration)
   const handleAttributeOnly = useCallback(async () => {
@@ -55,8 +61,8 @@ export default function InscriptionWorkbench() {
     
     try {
       const [attrRes, ctxRes] = await Promise.all([
-        inscriptionApi.attribute(inputText),
-        inscriptionApi.contextualize(inputText),
+        inscriptionApi.attribute(inputText, language),
+        inscriptionApi.contextualize(inputText, language),
       ]);
       
       setAttributionResult(attrRes.data);
@@ -66,7 +72,7 @@ export default function InscriptionWorkbench() {
     } finally {
       setIsProcessing(false);
     }
-  }, [inputText]);
+  }, [inputText, language]);
 
   // Handle "Contextualise, Restore and Attribute" (full analysis)
   const handleFullAnalysis = useCallback(async () => {
@@ -77,9 +83,9 @@ export default function InscriptionWorkbench() {
     
     try {
       const [restoreRes, attrRes, ctxRes] = await Promise.all([
-        inscriptionApi.restore(inputText, temperature),
-        inscriptionApi.attribute(inputText),
-        inscriptionApi.contextualize(inputText),
+        inscriptionApi.restore(inputText, language, temperature),
+        inscriptionApi.attribute(inputText, language),
+        inscriptionApi.contextualize(inputText, language),
       ]);
       
       setRestorationResult(restoreRes.data);
@@ -90,7 +96,7 @@ export default function InscriptionWorkbench() {
     } finally {
       setIsProcessing(false);
     }
-  }, [inputText, temperature]);
+  }, [inputText, language, temperature]);
 
   // Load inscription into input
   const handleLoadInscription = useCallback((inscription: InscriptionListItem) => {
@@ -126,8 +132,8 @@ export default function InscriptionWorkbench() {
               </div>
               <h1 className="text-2xl font-bold mb-2">Inscription Workbench</h1>
               <p className="text-white/90 text-sm max-w-xl">
-                Restore ancient Greek text sequences of unknown length, and predict the date 
-                and geographic origin of inscriptions using the Ithaca model.
+                Restore ancient text sequences of unknown length, and predict the date 
+                and geographic origin of inscriptions using AI models.
               </p>
             </div>
             {stats && (
@@ -139,17 +145,70 @@ export default function InscriptionWorkbench() {
           </div>
         </div>
 
+        {/* Language Toggle */}
+        <div className="bg-white rounded-xl p-4 mb-6 shadow-sm border border-stone-200">
+          <div className="flex items-center justify-between">
+            <div>
+              <label className="text-sm font-medium text-stone-700">Language Model</label>
+              <p className="text-xs text-stone-500 mt-0.5">
+                Select the language for inscription analysis
+              </p>
+            </div>
+            <div className="flex bg-stone-100 rounded-lg p-1">
+              <button
+                onClick={() => setLanguage('greek')}
+                className={`px-4 py-2 text-sm font-medium rounded-md transition-all ${
+                  language === 'greek'
+                    ? 'bg-white text-helios-teal shadow-sm'
+                    : 'text-stone-600 hover:text-stone-800'
+                }`}
+              >
+                <span className="flex items-center gap-2">
+                  Greek (Ithaca)
+                  {greekAvailable ? (
+                    <span className="w-2 h-2 bg-green-500 rounded-full" title="Model loaded" />
+                  ) : (
+                    <span className="w-2 h-2 bg-stone-300 rounded-full" title="Model not loaded" />
+                  )}
+                </span>
+              </button>
+              <button
+                onClick={() => setLanguage('latin')}
+                className={`px-4 py-2 text-sm font-medium rounded-md transition-all ${
+                  language === 'latin'
+                    ? 'bg-white text-helios-teal shadow-sm'
+                    : 'text-stone-600 hover:text-stone-800'
+                }`}
+              >
+                <span className="flex items-center gap-2">
+                  Latin (Aeneas)
+                  {latinAvailable ? (
+                    <span className="w-2 h-2 bg-green-500 rounded-full" title="Model loaded" />
+                  ) : (
+                    <span className="w-2 h-2 bg-stone-300 rounded-full" title="Model not loaded" />
+                  )}
+                </span>
+              </button>
+            </div>
+          </div>
+        </div>
+
         {/* Model Status Warning */}
-        {!modelAvailable && (
+        {!currentModelAvailable && (
           <div className="bg-amber-50 border border-amber-200 rounded-lg p-4 mb-6 flex items-start gap-3">
             <svg className="w-5 h-5 text-amber-500 mt-0.5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
             </svg>
             <div>
-              <p className="text-amber-800 font-medium">Model Integration Coming Soon</p>
+              <p className="text-amber-800 font-medium">
+                {language === 'greek' ? 'Greek (Ithaca)' : 'Latin (Aeneas)'} Model Not Loaded
+              </p>
               <p className="text-amber-700 text-sm mt-1">
-                The Ithaca restoration and attribution model is being integrated. 
-                You can browse and search the inscription corpus while we complete the setup.
+                The {language} model is not currently available. 
+                {language === 'latin' && latinAvailable === false && greekAvailable && (
+                  <> Try switching to Greek, or </>
+                )}
+                Check with your administrator about model availability.
               </p>
             </div>
           </div>
@@ -165,7 +224,8 @@ export default function InscriptionWorkbench() {
           onFullAnalysis={handleFullAnalysis}
           onClear={handleClear}
           isProcessing={isProcessing}
-          modelAvailable={modelAvailable}
+          modelAvailable={currentModelAvailable}
+          language={language}
         />
 
         {/* Error Display */}
@@ -218,4 +278,3 @@ export default function InscriptionWorkbench() {
     </div>
   );
 }
-

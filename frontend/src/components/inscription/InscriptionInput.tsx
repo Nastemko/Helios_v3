@@ -1,5 +1,7 @@
 import { useState } from 'react';
 
+type Language = 'greek' | 'latin';
+
 interface InscriptionInputProps {
   value: string;
   onChange: (value: string) => void;
@@ -10,10 +12,11 @@ interface InscriptionInputProps {
   onClear: () => void;
   isProcessing: boolean;
   modelAvailable: boolean;
+  language: Language;
 }
 
 // Sample inscriptions for the "Show me an example" dropdown
-const EXAMPLE_INSCRIPTIONS = [
+const GREEK_EXAMPLES = [
   {
     name: "Athenian Decree (with gaps)",
     text: "εδοξεν τηι βουληι και τωι δημωι λυσιστρατος ειπε- επειδη διοφανης ανηρ αγαθος ων διατελει περι δηλιους δεδοχθαι τωι ----- διοφανην καλλι-------- --ηναιον προξενον ειναι δ--------- αυτογ και εκγονους κ-- ειναι αυτοις ατελειαν εν δηλωι παντων και γης και οικιας εγκτησιν και προσοδον προς τημ βουλην και τον δημον πρωτοις μετα τα ιερα και τα αλλα οσα και τοις αλλοις προξενοις και ευεργεταις του ιερου δεδοται",
@@ -32,6 +35,25 @@ const EXAMPLE_INSCRIPTIONS = [
   },
 ];
 
+const LATIN_EXAMPLES = [
+  {
+    name: "Military Diploma (with gaps)",
+    text: "imp caesar divi # f augustus pontifex maximus tribunicia potestate ----- cos xiii pater patriae",
+  },
+  {
+    name: "Funerary Inscription",
+    text: "dis manibus sacrum gaius iulius maximus vixit annis lx mensibus iii diebus x hic situs est sit tibi terra levis",
+  },
+  {
+    name: "Votive Altar",
+    text: "iovi optimo maximo sacrum pro salute imperatoris caesaris traiani hadriani augusti",
+  },
+  {
+    name: "Building Inscription (with gap)",
+    text: "senatus populusque romanus # restituit",
+  },
+];
+
 export default function InscriptionInput({
   value,
   onChange,
@@ -42,12 +64,27 @@ export default function InscriptionInput({
   onClear,
   isProcessing,
   modelAvailable,
+  language,
 }: InscriptionInputProps) {
   const [showExamples, setShowExamples] = useState(false);
   
   const charCount = value.length;
   const isValidLength = charCount >= 50 && charCount <= 760;
   const hasGaps = value.includes('-') || value.includes('?') || value.includes('#');
+  
+  const examples = language === 'greek' ? GREEK_EXAMPLES : LATIN_EXAMPLES;
+  
+  const placeholderText = language === 'greek' 
+    ? `Enter Greek inscription text here...
+
+Use ? for single missing characters (e.g., κα?λος)
+Use # for unknown-length gaps (e.g., εδοξεν # τωι δημωι)
+Use ----- for known-length gaps (5 missing chars)`
+    : `Enter Latin inscription text here...
+
+Use ? for single missing characters (e.g., ma?imus)
+Use # for unknown-length gaps (e.g., imp caesar # augustus)
+Use ----- for known-length gaps (5 missing chars)`;
   
   const handleExampleSelect = (text: string) => {
     onChange(text);
@@ -61,11 +98,7 @@ export default function InscriptionInput({
         <textarea
           value={value}
           onChange={(e) => onChange(e.target.value)}
-          placeholder="Enter Greek inscription text here...
-
-Use ? for single missing characters (e.g., κα?λος)
-Use # for unknown-length gaps (e.g., εδοξεν # τωι δημωι)
-Use ----- for known-length gaps (5 missing chars)"
+          placeholder={placeholderText}
           className="w-full h-48 p-4 border border-stone-300 rounded-lg font-serif text-lg leading-relaxed resize-none focus:ring-2 focus:ring-helios-teal focus:border-transparent placeholder:text-stone-400 placeholder:font-sans placeholder:text-base"
           disabled={isProcessing}
         />
@@ -159,7 +192,7 @@ Use ----- for known-length gaps (5 missing chars)"
             onClick={() => setShowExamples(!showExamples)}
             className="px-4 py-2.5 bg-stone-100 text-stone-700 font-medium rounded-full hover:bg-stone-200 transition-colors flex items-center gap-2"
           >
-            Show me an example
+            Show me an example ({language === 'greek' ? 'Greek' : 'Latin'})
             <svg className={`w-4 h-4 transition-transform ${showExamples ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
             </svg>
@@ -167,7 +200,7 @@ Use ----- for known-length gaps (5 missing chars)"
 
           {showExamples && (
             <div className="absolute right-0 mt-2 w-80 bg-white rounded-lg shadow-lg border border-stone-200 py-2 z-10">
-              {EXAMPLE_INSCRIPTIONS.map((example, idx) => (
+              {examples.map((example, idx) => (
                 <button
                   key={idx}
                   onClick={() => handleExampleSelect(example.text)}
@@ -187,10 +220,10 @@ Use ----- for known-length gaps (5 missing chars)"
       {/* Model Unavailable Notice */}
       {!modelAvailable && (
         <div className="mt-4 text-sm text-stone-500 italic">
-          Results will show placeholder data while the model is being integrated.
+          The {language === 'greek' ? 'Greek (Ithaca)' : 'Latin (Aeneas)'} model is not currently loaded. 
+          Analysis will not be available until the model is initialized.
         </div>
       )}
     </div>
   );
 }
-
