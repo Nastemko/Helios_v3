@@ -22,7 +22,7 @@ logger = logging.getLogger(__name__)
 
 def is_database_populated(db: Session) -> bool:
     """Check if the database already has texts loaded."""
-    count = db.query(Text).count()
+    count = db.query(Text).limit(1).count()
     return count > 0
 
 
@@ -197,22 +197,18 @@ def run_population(
         db.close()
 
 
-async def populate_on_startup():
+def populate_on_startup():
     """
     Async wrapper for running population on FastAPI startup.
 
     This function is designed to be called from the FastAPI startup event.
     It runs the population in a way that doesn't block the event loop.
     """
-    import asyncio
-    from concurrent.futures import ThreadPoolExecutor
 
     logger.info("Checking if database needs population...")
 
     # Run the synchronous population in a thread pool
-    loop = asyncio.get_event_loop()
-    with ThreadPoolExecutor() as executor:
-        stats = await loop.run_in_executor(executor, run_population)
+    stats = run_population()
 
     return stats
 

@@ -12,7 +12,16 @@ from database import Base, engine
 from middleware.performance import performance_middleware
 
 # Import and include routers
-from routers import aeneas, analysis, annotations, auth, inscriptions, texts, translate_assist
+from routers import (
+    aeneas,
+    analysis,
+    annotations,
+    auth,
+    inscriptions,
+    texts,
+    translate_assist,
+)
+from scripts.populate_on_startup import populate_on_startup
 
 # Configure logging
 logging.basicConfig(
@@ -64,10 +73,9 @@ async def startup_event():
 
     # Populate database with Greek texts if not already populated
     logger.info("Checking for Greek text population...")
-    from scripts.populate_on_startup import populate_on_startup
 
     try:
-        stats = await populate_on_startup()
+        stats = populate_on_startup()
         if stats["inserted"] > 0:
             logger.info(f"Populated database with {stats['inserted']} Greek texts")
         elif stats["skipped"] > 0:

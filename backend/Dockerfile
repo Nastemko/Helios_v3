@@ -10,11 +10,7 @@ ENV PYTHONUNBUFFERED=1 \
 
 # Install system dependencies, download and install uv in a single layer to optimize image size.
 # uv is moved to a system-wide binary path to be available to all users.
-RUN apt-get update && apt-get install -y \
-    python3.12 \
-    python3.12-venv \
-    curl \
-    git \
+RUN apt-get update && apt-get install -y curl git \
     && rm -rf /var/lib/apt/lists/* \
     && curl -LsSf https://astral.sh/uv/install.sh | sh \
     && mv /root/.local/bin/uv /usr/local/bin/uv
