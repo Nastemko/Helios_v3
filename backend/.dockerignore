@@ -7,17 +7,16 @@ __pycache__/
 venv/
 env/
 ENV/
-.venv
+.venv/
+*.pyc
 
 # Database
 *.db
 *.db-shm
 *.db-wal
-helios_local.db
 
 # Logs
 *.log
-backend.log
 
 # IDE
 .vscode/
@@ -28,16 +27,13 @@ backend.log
 
 # OS
 .DS_Store
-Thumbs.db
-
-# Alembic
-alembic/versions/*.pyc
 
 # Environment
 .env
 .env.local
 
 # Testing
+*_test.py
 .pytest_cache/
 .coverage
 htmlcov/
@@ -45,8 +41,3 @@ htmlcov/
 # Git
 .git/
 .gitignore
-
-# misc
-*.db
-*.pyc
-*_test.py

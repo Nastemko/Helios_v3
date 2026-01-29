@@ -1,5 +1,3 @@
-version: "3.8"
-
 services:
   # PostgreSQL with pgvector
   postgres:
@@ -21,8 +19,8 @@ services:
   # Backend (FastAPI)
   backend:
     build:
-      context: .
-      dockerfile: ./backend/Dockerfile
+      context: ./backend/
+      dockerfile: Dockerfile
     container_name: helios-backend
     env_file: .env
     volumes:
