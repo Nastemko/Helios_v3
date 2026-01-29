@@ -16,7 +16,7 @@ from typing import Any, Dict, Literal, Optional
 
 import jax
 
-from src.services.ithaca_service.models import (
+from services.ithaca_service.models import (
     AttributionResult,
     ContextualizationResult,
     LocationPrediction,
