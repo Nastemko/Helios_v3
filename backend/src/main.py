@@ -22,6 +22,10 @@ from routers import (
     translate_assist,
 )
 from scripts.populate_on_startup import populate_on_startup
+from services.ithaca_service.ithaca_service import (
+    initialize_all_models,
+    initialize_ithaca_service,
+)
 
 # Configure logging
 logging.basicConfig(
@@ -95,13 +99,10 @@ async def startup_event():
     models_dir = Path(settings.MODELS_DIR)
     logger.info(f"Initializing Aeneas service with models from {models_dir}")
 
-    from services.aeneas_service import initialize_aeneas_service
-
-    initialize_aeneas_service(models_dir)
+    initialize_ithaca_service()
 
     # Initialize Ithaca inscription models (Greek and Latin)
     logger.info("Initializing Ithaca inscription models...")
-    from services.ithaca_service import initialize_all_models
 
     try:
         ithaca_results = initialize_all_models()
@@ -109,7 +110,9 @@ async def startup_event():
             if success:
                 logger.info(f"Ithaca {lang.title()} model initialized successfully")
             else:
-                logger.warning(f"Ithaca {lang.title()} model not available (files may not be present)")
+                logger.warning(
+                    f"Ithaca {lang.title()} model not available (files may not be present)"
+                )
     except Exception as e:
         logger.error(f"Error initializing Ithaca models: {e}")
         # Continue startup even if Ithaca models fail to load

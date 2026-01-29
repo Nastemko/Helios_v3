@@ -11,6 +11,7 @@ Supports both Greek (Ithaca) and Latin (Aeneas) models simultaneously.
 
 import logging
 import pickle
+from functools import lru_cache
 from pathlib import Path
 from typing import Any, Dict, Literal, Optional
 
@@ -345,15 +346,10 @@ class IthacaService:
             return ContextualizationResult(similar=[])
 
 
-# Singleton instance
-_ithaca_service: Optional[IthacaService] = None
-
-
+@lru_cache(maxsize=1)
 def get_ithaca_service() -> IthacaService:
     """Get or create the Ithaca service singleton"""
-    global _ithaca_service
-    if _ithaca_service is None:
-        _ithaca_service = IthacaService()
+    _ithaca_service = IthacaService()
     return _ithaca_service
 
 
