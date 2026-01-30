@@ -13,7 +13,6 @@ from middleware.performance import performance_middleware
 
 # Import and include routers
 from routers import (
-    aeneas,
     analysis,
     annotations,
     auth,
@@ -95,9 +94,9 @@ async def startup_event():
     morphology_service = get_morphology_service()
     logger.info(f"Morphology service initialized: {morphology_service.initialized}")
 
-    # Initialize Aeneas service
+    # Initialize Ithaca service
     models_dir = Path(settings.MODELS_DIR)
-    logger.info(f"Initializing Aeneas service with models from {models_dir}")
+    logger.info(f"Initializing Ithaca service with models from {models_dir}")
 
     initialize_ithaca_service()
 
@@ -147,7 +146,6 @@ app.include_router(texts.router)
 app.include_router(auth.router)
 app.include_router(annotations.router)
 app.include_router(analysis.router)
-app.include_router(aeneas.router)
 app.include_router(inscriptions.router)
 app.include_router(translate_assist.router)
 

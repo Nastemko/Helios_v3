@@ -6,7 +6,6 @@ import type {
   WordAnalysis,
   Annotation,
   User,
-  AeneasStatus,
   TranslationResult,
   TranslateAssistStatus,
   StudentNote,
@@ -72,22 +71,7 @@ export const analysisApi = {
     api.post<WordAnalysis>("/api/analyze/word", { word, language, context }),
 };
 
-// Aeneas AI API
-export const aeneasApi = {
-  status: () => api.get<AeneasStatus>("/api/aeneas/status"),
 
-  restore: (
-    text: string,
-    language: string,
-    options?: { beam_width?: number; temperature?: number; max_len?: number },
-  ) => api.post("/api/aeneas/restore", { text, language, ...options }),
-
-  attribute: (text: string, language: string) =>
-    api.post("/api/aeneas/attribute", { text, language }),
-
-  contextualize: (text: string, language: string) =>
-    api.post("/api/aeneas/contextualize", { text, language }),
-};
 
 // Annotation API
 export const annotationApi = {
@@ -198,7 +182,7 @@ export const inscriptionApi = {
   // Get corpus statistics
   getStats: () => api.get<InscriptionStats>("/api/inscriptions/stats"),
 
-  // Ithaca/Aeneas model endpoints - supports Greek and Latin
+  // ML model endpoints - Ithaca for Greek, Aeneas for Latin
   restore: (
     text: string,
     language: "greek" | "latin" = "greek",

@@ -27,7 +27,7 @@ backend/*.log
 backend/logs/
 *.log
 
-# Aeneas model files (too large for git - 2GB+)
+# ML model files (too large for git - 2GB+, includes Ithaca and Aeneas models)
 backend/models/
 # Allow keeping the models directory structure
 !backend/models/.gitkeep
