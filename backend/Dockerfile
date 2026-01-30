@@ -18,17 +18,6 @@ RUN useradd -m -u 1100 helios && \
 # Keep these under /app/data so the application can find them.
 COPY --chown=helios:helios ./canonical-greekLit /app/data/canonical-greekLit
 
-RUN curl -fSL -o /app/models/ithaca_153143996_2.pkl \
-    https://storage.googleapis.com/ithaca-resources/models/ithaca_153143996_2.pkl && \
-    curl -fSL -o /app/models/iphi.json \
-    https://storage.googleapis.com/ithaca-resources/models/iphi.json && \
-    curl -fSL -o /app/models/iphi_emb_xid153143996.pkl \
-    https://storage.googleapis.com/ithaca-resources/models/iphi_emb_xid153143996.pkl && \
-    chown -R helios:helios /app/models
-
-# Set the working directory for subsequent commands
-WORKDIR /app
-
 # Install required system packages (including libs for JAX / numerical libs),
 # install `uv` (the package manager used in this repo), and clean apt cache.
 RUN apt-get update && \
@@ -43,6 +32,17 @@ RUN apt-get update && \
     && rm -rf /var/lib/apt/lists/* \
     && curl -LsSf https://astral.sh/uv/install.sh | sh \
     && mv /root/.local/bin/uv /usr/local/bin/uv
+
+RUN curl -fSL -o /app/models/ithaca_153143996_2.pkl \
+    https://storage.googleapis.com/ithaca-resources/models/ithaca_153143996_2.pkl && \
+    curl -fSL -o /app/models/iphi.json \
+    https://storage.googleapis.com/ithaca-resources/models/iphi.json && \
+    curl -fSL -o /app/models/iphi_emb_xid153143996.pkl \
+    https://storage.googleapis.com/ithaca-resources/models/iphi_emb_xid153143996.pkl && \
+    chown -R helios:helios /app/models
+
+# Set the working directory for subsequent commands
+WORKDIR /app
 
 # Switch to the non-root user to run the application
 USER helios
