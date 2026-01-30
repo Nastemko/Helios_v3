@@ -9,7 +9,7 @@ from dataclasses import asdict
 from typing import Literal, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from services.ithaca_service.ithaca_service import IthacaService, get_ithaca_service
 
@@ -31,6 +31,11 @@ class RestoreRequest(BaseModel):
     beam_width: int = Field(100, ge=1, le=200, description="Beam width for search")
     temperature: float = Field(1.0, ge=0.1, le=2.0, description="Sampling temperature")
     max_len: int = Field(15, ge=1, le=30, description="Max restoration length")
+
+    @field_validator("text", mode="after")
+    @classmethod
+    def text_cleanup(cls, value: str):
+        return value.replace("-", "?")
 
 
 class AttributeRequest(BaseModel):

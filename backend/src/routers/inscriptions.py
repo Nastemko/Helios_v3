@@ -3,7 +3,7 @@
 from typing import List, Literal, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 from sqlalchemy import String, cast
 from sqlalchemy.orm import Session
 
@@ -334,6 +334,11 @@ class RestoreRequest(BaseModel):
     temperature: float = 1.0
     beam_width: int = 100
     max_restoration_len: int = 15
+
+    @field_validator("text", mode="after")
+    @classmethod
+    def text_cleanup(cls, value: str):
+        return value.replace("-", "?")
 
 
 class RestorationCandidate(BaseModel):
