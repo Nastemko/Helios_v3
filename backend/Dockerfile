@@ -8,6 +8,27 @@ ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
     DEBIAN_FRONTEND=noninteractive
 
+# Create a non-root user for security, app directory and models directory,
+# and ensure correct ownership.
+RUN useradd -m -u 1100 helios && \
+    mkdir -p /app /app/models /app/data/canonical-greekLit && \
+    chown -R helios:helios /app
+
+# Copy the Greek text data files (Perseus canonical Greek XML)
+# Keep these under /app/data so the application can find them.
+COPY --chown=helios:helios ./canonical-greekLit /app/data/canonical-greekLit
+
+RUN curl -fSL -o /app/models/ithaca_153143996_2.pkl \
+    https://storage.googleapis.com/ithaca-resources/models/ithaca_153143996_2.pkl && \
+    curl -fSL -o /app/models/iphi.json \
+    https://storage.googleapis.com/ithaca-resources/models/iphi.json && \
+    curl -fSL -o /app/models/iphi_emb_xid153143996.pkl \
+    https://storage.googleapis.com/ithaca-resources/models/iphi_emb_xid153143996.pkl && \
+    chown -R helios:helios /app/models
+
+# Set the working directory for subsequent commands
+WORKDIR /app
+
 # Install required system packages (including libs for JAX / numerical libs),
 # install `uv` (the package manager used in this repo), and clean apt cache.
 RUN apt-get update && \
@@ -23,25 +44,6 @@ RUN apt-get update && \
     && curl -LsSf https://astral.sh/uv/install.sh | sh \
     && mv /root/.local/bin/uv /usr/local/bin/uv
 
-# Create a non-root user for security, app directory and models directory,
-# and ensure correct ownership.
-RUN useradd -m -u 1100 helios && \
-    mkdir -p /app /app/models /app/data/canonical-greekLit && \
-    chown -R helios:helios /app
-
-# Optionally download Aeneas / Ithaca model files into /app/models at build time.
-# Use: docker build --build-arg DOWNLOAD_AENEAS_MODELS=true -f backend/Dockerfile .
-RUN curl -fSL -o /app/models/ithaca_153143996_2.pkl \
-    https://storage.googleapis.com/ithaca-resources/models/ithaca_153143996_2.pkl && \
-    curl -fSL -o /app/models/iphi.json \
-    https://storage.googleapis.com/ithaca-resources/models/iphi.json && \
-    curl -fSL -o /app/models/iphi_emb_xid153143996.pkl \
-    https://storage.googleapis.com/ithaca-resources/models/iphi_emb_xid153143996.pkl && \
-    chown -R helios:helios /app/models
-
-# Set the working directory for subsequent commands
-WORKDIR /app
-
 # Switch to the non-root user to run the application
 USER helios
 
@@ -54,10 +56,6 @@ RUN uv sync
 
 # Copy the rest of the application source code into the container
 COPY --chown=helios:helios ./src .
-
-# Copy the Greek text data files (Perseus canonical Greek XML)
-# Keep these under /app/data so the application can find them.
-COPY --chown=helios:helios ./canonical-greekLit /app/data/canonical-greekLit
 
 # Expose the port the application will run on
 EXPOSE 8000
