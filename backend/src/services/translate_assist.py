@@ -1,10 +1,12 @@
 """Translation Assist service for freeform Greek text translation."""
+
 from __future__ import annotations
 
 import json
 import logging
 import re
 import textwrap
+from functools import lru_cache
 from typing import Any, Optional
 
 from pydantic import BaseModel, Field, ValidationError
@@ -13,7 +15,9 @@ from services.llm import LLMProvider, get_llm_provider
 
 logger = logging.getLogger(__name__)
 
-CODE_FENCE_REGEX = re.compile(r"^```(?:json)?\s*(.*?)\s*```$", re.DOTALL | re.IGNORECASE)
+CODE_FENCE_REGEX = re.compile(
+    r"^```(?:json)?\s*(.*?)\s*```$", re.DOTALL | re.IGNORECASE
+)
 
 
 class TranslateAssistError(Exception):
@@ -83,6 +87,15 @@ class TranslateAssistService:
                 status_code=400,
             )
 
+        if not self._llm_provider:
+            return TranslationResult(
+                translation="Contextual translation placeholder.",
+                literal_gloss="Literal gloss placeholder.",
+                rationale="Demonstration response from mock provider.",
+                confidence=0.65,
+                source_text=cleaned_text,
+            )
+
         prompt = self._build_prompt(cleaned_text, language)
 
         try:
@@ -105,7 +118,13 @@ class TranslateAssistService:
 
     def _build_prompt(self, text: str, language: str) -> str:
         """Build the prompt for the LLM."""
-        lang_name = "Ancient Greek" if language == "grc" else "Latin" if language == "lat" else language
+        lang_name = (
+            "Ancient Greek"
+            if language == "grc"
+            else "Latin"
+            if language == "lat"
+            else language
+        )
 
         template = f"""
 Translate the following {lang_name} text into English.
@@ -168,32 +187,24 @@ JSON RESPONSE:
                 language=language,
             )
 
-        confidence = normalized.confidence if normalized.confidence is not None else 0.65
+        confidence = (
+            normalized.confidence if normalized.confidence is not None else 0.65
+        )
         confidence = max(0.0, min(1.0, confidence))
 
         return TranslationResult(
             source_text=source_text,
             translation=normalized.translation.strip(),
-            literal_gloss=normalized.literal_gloss.strip() if normalized.literal_gloss else None,
+            literal_gloss=normalized.literal_gloss.strip()
+            if normalized.literal_gloss
+            else None,
             rationale=normalized.rationale.strip(),
             confidence=confidence,
             language=language,
         )
 
 
-_service_instance: Optional[TranslateAssistService] = None
-
-
+@lru_cache(maxsize=1)
 def get_translate_assist_service() -> TranslateAssistService:
     """FastAPI dependency to obtain a singleton service."""
-    global _service_instance
-    if _service_instance is None:
-        _service_instance = TranslateAssistService()
-    return _service_instance
-
-
-def override_translate_assist_service(service: Optional[TranslateAssistService]) -> None:
-    """Allow tests to swap the service instance."""
-    global _service_instance
-    _service_instance = service
-
+    return TranslateAssistService()
