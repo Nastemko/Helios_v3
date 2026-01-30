@@ -39,6 +39,12 @@ RUN curl -fSL -o /app/models/ithaca_153143996_2.pkl \
     https://storage.googleapis.com/ithaca-resources/models/iphi.json && \
     curl -fSL -o /app/models/iphi_emb_xid153143996.pkl \
     https://storage.googleapis.com/ithaca-resources/models/iphi_emb_xid153143996.pkl && \
+    curl -fSL -o /app/models/aeneas_117149994_2.pkl \
+    https://storage.googleapis.com/ithaca-resources/models/aeneas_117149994_2.pkl && \
+    curl -fSL -o /app/models/led.json \
+    https://storage.googleapis.com/ithaca-resources/models/led.json && \
+    curl -fSL -o /app/models/led_emb_xid117149994.pkl \
+    https://storage.googleapis.com/ithaca-resources/models/led_emb_xid117149994.pkl && \
     chown -R helios:helios /app/models
 
 # Set the working directory for subsequent commands
