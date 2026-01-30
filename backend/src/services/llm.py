@@ -70,7 +70,7 @@ class OllamaLLMProvider(LLMProvider):
 @lru_cache(maxsize=1)
 def get_llm_provider() -> LLMProvider | None:
     """Return a singleton LLM provider instance."""
-    if settings.LLM_ENABLED:
+    if not settings.LLM_ENABLED:
         return
     _provider_instance = OllamaLLMProvider()
     logger.info(
