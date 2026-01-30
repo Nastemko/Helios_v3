@@ -28,12 +28,7 @@ backend/logs/
 *.log
 
 # Aeneas model files (too large for git - 2GB+)
-backend/models/*.pkl
-backend/models/*.json
-backend/models/iphi*.pkl
-backend/models/ithaca*.pkl
-backend/models/aeneas*.pkl
-backend/models/led*.pkl
+backend/models/
 # Allow keeping the models directory structure
 !backend/models/.gitkeep
 
@@ -135,4 +130,3 @@ temp/
 !.gitkeep
 !.env.example
 !README.md
-
