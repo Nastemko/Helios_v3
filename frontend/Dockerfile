@@ -26,7 +26,7 @@ WORKDIR /app
 COPY package*.json ./
 
 # Install dependencies
-RUN npm ci --only=production=false
+RUN npm ci
 
 # Copy source code
 COPY . .
@@ -51,4 +51,4 @@ EXPOSE 8888
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
-    CMD curl -f http://localhost:8888/health || exit 1
+    CMD curl -f http://127.0.0.1:8888/health || exit 1

@@ -1,9 +1,10 @@
 """LLM provider interfaces and implementations."""
+
 from __future__ import annotations
 
 import logging
 from abc import ABC, abstractmethod
-from typing import Optional
+from functools import lru_cache
 
 import httpx
 
@@ -57,60 +58,24 @@ class OllamaLLMProvider(LLMProvider):
 
         async with httpx.AsyncClient(timeout=self.timeout) as client:
             response = await client.post(url, json=payload)
-            response.raise_for_status()
-            data = response.json()
+        response.raise_for_status()
+        data = response.json()
 
-        text = data.get("response", "")
+        text: str = data.get("response", "")
         if not text:
             logger.warning("Empty response from Ollama")
         return text.strip()
 
 
-class MockLLMProvider(LLMProvider):
-    """Deterministic provider for tests and local development."""
-
-    async def suggest_translation(
-        self,
-        prompt: str,
-        *,
-        system_prompt: str | None = None,
-    ) -> str:
-        logger.debug("MockLLMProvider invoked")
-        # Return a JSON payload that matches the TutorService schema.
-        return (
-            '{'
-            '"translation": "Contextual translation placeholder.",'
-            '"literal_gloss": "Literal gloss placeholder.",'
-            '"rationale": "Demonstration response from mock provider.",'
-            '"confidence": 0.65'
-            '}'
-        )
-
-
-_provider_instance: Optional[LLMProvider] = None
-
-
-def get_llm_provider() -> LLMProvider:
+@lru_cache(maxsize=1)
+def get_llm_provider() -> LLMProvider | None:
     """Return a singleton LLM provider instance."""
-    global _provider_instance
-
-    if _provider_instance is None:
-        if settings.LLM_ENABLED:
-            _provider_instance = OllamaLLMProvider()
-            logger.info(
-                "Initialized OllamaLLMProvider (model=%s)",
-                getattr(_provider_instance, "model", "unknown"),
-            )
-        else:
-            _provider_instance = MockLLMProvider()
-            logger.info("Initialized MockLLMProvider because LLM is disabled")
+    if not settings.LLM_ENABLED:
+        return
+    _provider_instance = OllamaLLMProvider()
+    logger.info(
+        "Initialized OllamaLLMProvider (model=%s)",
+        _provider_instance.model,
+    )
 
     return _provider_instance
-
-
-def override_llm_provider(provider: Optional[LLMProvider]) -> None:
-    """Override the global provider (primarily for tests)."""
-    global _provider_instance
-    _provider_instance = provider
-
-

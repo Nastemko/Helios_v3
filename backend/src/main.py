@@ -12,7 +12,19 @@ from database import Base, engine
 from middleware.performance import performance_middleware
 
 # Import and include routers
-from routers import aeneas, analysis, annotations, auth, inscriptions, texts, translate_assist
+from routers import (
+    analysis,
+    annotations,
+    auth,
+    inscriptions,
+    texts,
+    translate_assist,
+)
+from scripts.populate_on_startup import populate_on_startup
+from services.ithaca_service.ithaca_service import (
+    initialize_all_models,
+    initialize_ithaca_service,
+)
 
 # Configure logging
 logging.basicConfig(
@@ -64,10 +76,9 @@ async def startup_event():
 
     # Populate database with Greek texts if not already populated
     logger.info("Checking for Greek text population...")
-    from scripts.populate_on_startup import populate_on_startup
 
     try:
-        stats = await populate_on_startup()
+        stats = populate_on_startup()
         if stats["inserted"] > 0:
             logger.info(f"Populated database with {stats['inserted']} Greek texts")
         elif stats["skipped"] > 0:
@@ -83,13 +94,27 @@ async def startup_event():
     morphology_service = get_morphology_service()
     logger.info(f"Morphology service initialized: {morphology_service.initialized}")
 
-    # Initialize Aeneas service
+    # Initialize Ithaca service
     models_dir = Path(settings.MODELS_DIR)
-    logger.info(f"Initializing Aeneas service with models from {models_dir}")
+    logger.info(f"Initializing Ithaca service with models from {models_dir}")
 
-    from services.aeneas_service import initialize_aeneas_service
+    initialize_ithaca_service()
 
-    initialize_aeneas_service(models_dir)
+    # Initialize Ithaca inscription models (Greek and Latin)
+    logger.info("Initializing Ithaca inscription models...")
+
+    try:
+        ithaca_results = initialize_all_models()
+        for lang, success in ithaca_results.items():
+            if success:
+                logger.info(f"Ithaca {lang.title()} model initialized successfully")
+            else:
+                logger.warning(
+                    f"Ithaca {lang.title()} model not available (files may not be present)"
+                )
+    except Exception as e:
+        logger.error(f"Error initializing Ithaca models: {e}")
+        # Continue startup even if Ithaca models fail to load
 
     # Initialize Ithaca inscription models (Greek and Latin)
     logger.info("Initializing Ithaca inscription models...")
@@ -136,7 +161,6 @@ app.include_router(texts.router)
 app.include_router(auth.router)
 app.include_router(annotations.router)
 app.include_router(analysis.router)
-app.include_router(aeneas.router)
 app.include_router(inscriptions.router)
 app.include_router(translate_assist.router)
 

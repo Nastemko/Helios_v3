@@ -73,14 +73,7 @@ export interface Highlight {
   created_at: string;
 }
 
-export interface AeneasStatus {
-  available: boolean;
-  models: {
-    greek: boolean;
-    latin: boolean;
-  };
-  message: string;
-}
+
 
 // Translation Assist types
 export interface TranslationResult {
