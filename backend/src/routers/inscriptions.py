@@ -1,4 +1,5 @@
 """API endpoints for browsing and querying PHI inscriptions"""
+from typing import Optional, List, Literal
 
 from typing import List, Literal, Optional
 
@@ -6,15 +7,21 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, field_validator
 from sqlalchemy import String, cast
 from sqlalchemy.orm import Session
+from sqlalchemy import cast, String
+from pydantic import BaseModel
 
 from database import get_db
 from models.text import Text, TextSegment
+from services.ithaca_service import get_ithaca_service, initialize_all_models
 from services.ithaca_service.ithaca_service import (
     get_ithaca_service,
     initialize_all_models,
 )
 
 router = APIRouter(prefix="/api/inscriptions", tags=["inscriptions"])
+
+# Type alias for language
+Language = Literal["greek", "latin"]
 
 # Type alias for language
 Language = Literal["greek", "latin"]
@@ -323,6 +330,7 @@ async def get_inscription(phi_id: int, db: Session = Depends(get_db)):
 
 # ============================================================================
 # ITHACA MODEL ENDPOINTS - Support both Greek and Latin
+# ITHACA MODEL ENDPOINTS - Support both Greek and Latin
 # ============================================================================
 
 
@@ -331,9 +339,18 @@ class RestoreRequest(BaseModel):
 
     text: str
     language: Language = "greek"
+    language: Language = "greek"
     temperature: float = 1.0
     beam_width: int = 100
+    beam_width: int = 100
     max_restoration_len: int = 15
+
+
+class RestorationCandidate(BaseModel):
+    """A single restoration candidate"""
+    text: str
+    restored_indices: List[int]
+    score: float
 
     @field_validator("text", mode="after")
     @classmethod
@@ -354,7 +371,13 @@ class RestoreResponse(BaseModel):
 
     input_text: str
     language: str
+    language: str
     top_prediction: str
+    missing_indices: List[int]
+    predictions: List[RestorationCandidate]
+    prediction_saliency: List[dict]
+    available: bool
+    message: Optional[str] = None
     missing_indices: List[int]
     predictions: List[RestorationCandidate]
     prediction_saliency: List[dict]
@@ -366,6 +389,14 @@ class AttributeRequest(BaseModel):
     """Request for attribution (date + location)"""
 
     text: str
+    language: Language = "greek"
+
+
+class LocationPrediction(BaseModel):
+    """A location prediction"""
+    location_id: int
+    name: str
+    score: float
     language: Language = "greek"
 
 
@@ -383,8 +414,14 @@ class AttributeResponse(BaseModel):
     input_text: str
     language: str
     locations: List[LocationPrediction]
+    language: str
+    locations: List[LocationPrediction]
     year_scores: List[float]  # 160 values for -800 to +800
     predicted_date_range: dict  # {min, max, confidence}
+    date_saliency: List[float]
+    location_saliency: List[float]
+    available: bool
+    message: Optional[str] = None
     date_saliency: List[float]
     location_saliency: List[float]
     available: bool
@@ -396,7 +433,20 @@ class ContextualizeRequest(BaseModel):
 
     text: str
     language: Language = "greek"
+    language: Language = "greek"
     top_k: int = 20
+
+
+class SimilarInscription(BaseModel):
+    """A similar inscription"""
+    id: str  # PHI ID as string
+    ids_alt: Optional[dict] = None
+    text: str
+    location_id: Optional[int] = None
+    date_min: Optional[int] = None
+    date_max: Optional[int] = None
+    score: float
+    partner_link: Optional[str] = None
 
 
 class SimilarInscription(BaseModel):
@@ -414,6 +464,10 @@ class SimilarInscription(BaseModel):
 
 class ContextualizeResponse(BaseModel):
     """Response with similar inscriptions"""
+    similar: List[SimilarInscription]
+    language: str
+    available: bool
+    message: Optional[str] = None
 
     similar: List[SimilarInscription]
     language: str
@@ -425,8 +479,58 @@ class ContextualizeResponse(BaseModel):
 async def restore_inscription(request: RestoreRequest):
     """
     Restore missing characters in an inscription.
+    
+    Restore missing characters in an inscription.
 
     Use '?' for single missing characters and '#' for unknown-length gaps.
+    
+    Args:
+        text: The inscription text with missing characters
+        language: 'greek' or 'latin' (default: greek)
+        temperature: Sampling temperature (default: 1.0)
+        beam_width: Number of candidates to consider (default: 100)
+        max_restoration_len: Max length for unknown-length gaps (default: 15)
+    
+    Example Greek: "εδοξεν τηι βουληι και τωι δημωι # αθηναιων"
+    Example Latin: "imp caesar divi # f augustus"
+    """
+    service = get_ithaca_service()
+    
+    if not service.is_available(request.language):
+        return RestoreResponse(
+            input_text=request.text,
+            language=request.language,
+            top_prediction=request.text,
+            missing_indices=[],
+            predictions=[],
+            prediction_saliency=[],
+            available=False,
+            message=f"{request.language.title()} model not loaded. Check /api/inscriptions/model/status"
+        )
+    
+    result = service.restore(
+        text=request.text,
+        language=request.language,
+        beam_width=request.beam_width,
+        temperature=request.temperature,
+        max_restoration_len=request.max_restoration_len
+    )
+    
+    return RestoreResponse(
+        input_text=result.input_text,
+        language=request.language,
+        top_prediction=result.top_prediction,
+        missing_indices=result.missing_indices,
+        predictions=[
+            RestorationCandidate(
+                text=p.text,
+                restored_indices=p.restored_indices,
+                score=p.score
+            )
+            for p in result.predictions
+        ],
+        prediction_saliency=result.prediction_saliency,
+        available=True
 
     Args:
         text: The inscription text with missing characters
@@ -480,6 +584,51 @@ async def restore_inscription(request: RestoreRequest):
 async def attribute_inscription(request: AttributeRequest):
     """
     Predict the date and geographic origin of an inscription.
+    
+    Args:
+        text: The inscription text
+        language: 'greek' or 'latin' (default: greek)
+    
+    Returns:
+    - locations: Top predicted locations with confidence scores
+    - year_scores: Probability distribution over years -800 to +800 (10-year intervals)
+    - predicted_date_range: Most likely date range
+    - saliency maps: Which characters influenced the predictions
+    """
+    service = get_ithaca_service()
+    
+    if not service.is_available(request.language):
+        return AttributeResponse(
+            input_text=request.text,
+            language=request.language,
+            locations=[],
+            year_scores=[0.0] * 160,
+            predicted_date_range={"min": None, "max": None, "confidence": 0.0},
+            date_saliency=[],
+            location_saliency=[],
+            available=False,
+            message=f"{request.language.title()} model not loaded. Check /api/inscriptions/model/status"
+        )
+    
+    result = service.attribute(request.text, language=request.language)
+    
+    return AttributeResponse(
+        input_text=result.input_text,
+        language=request.language,
+        locations=[
+            LocationPrediction(
+                location_id=loc.location_id,
+                name=loc.name,
+                score=loc.score
+            )
+            for loc in result.locations
+        ],
+        year_scores=result.year_scores,
+        predicted_date_range=result.predicted_date_range,
+        date_saliency=result.date_saliency,
+        location_saliency=result.location_saliency,
+        available=True
+    Predict the date and geographic origin of an inscription.
 
     Args:
         text: The inscription text
@@ -529,6 +678,14 @@ async def attribute_inscription(request: AttributeRequest):
 async def contextualize_inscription(request: ContextualizeRequest):
     """
     Find similar inscriptions in the corpus.
+    
+    Args:
+        text: The inscription text
+        language: 'greek' or 'latin' (default: greek)
+        top_k: Number of similar inscriptions to return (default: 20)
+    
+    Uses the model's embedding space to find semantically similar inscriptions.
+    Find similar inscriptions in the corpus.
 
     Args:
         text: The inscription text
@@ -537,6 +694,38 @@ async def contextualize_inscription(request: ContextualizeRequest):
 
     Uses the model's embedding space to find semantically similar inscriptions.
     """
+    service = get_ithaca_service()
+    
+    if not service.is_available(request.language):
+        return ContextualizeResponse(
+            similar=[],
+            language=request.language,
+            available=False,
+            message=f"{request.language.title()} model not loaded. Check /api/inscriptions/model/status"
+        )
+    
+    result = service.contextualize(
+        request.text, 
+        language=request.language,
+        top_k=request.top_k
+    )
+    
+    return ContextualizeResponse(
+        similar=[
+            SimilarInscription(
+                id=str(s.id),
+                ids_alt=s.ids_alt,
+                text=s.text,
+                location_id=s.location_id,
+                date_min=s.date_min,
+                date_max=s.date_max,
+                score=s.score,
+                partner_link=s.partner_link
+            )
+            for s in result.similar
+        ],
+        language=request.language,
+        available=True
     service = get_ithaca_service()
 
     if not service.is_available(request.language):
@@ -574,11 +763,58 @@ async def contextualize_inscription(request: ContextualizeRequest):
 async def get_model_status():
     """
     Check the status of all inscription models (Greek and Latin).
+    Check the status of all inscription models (Greek and Latin).
     """
+    service = get_ithaca_service()
+    status = service.get_status()
+    
     service = get_ithaca_service()
     status = service.get_status()
 
     return {
+        "models": status,
+        "features": ["restore", "attribute", "contextualize"],
+        "supported_languages": ["greek", "latin"]
+    }
+
+
+@router.post("/model/initialize")
+async def initialize_models(
+    language: Optional[Language] = Query(None, description="Specific language to initialize, or omit for both")
+):
+    """
+    Initialize inscription analysis models.
+    
+    Args:
+        language: 'greek', 'latin', or omit to initialize both
+    
+    This loads the model checkpoint and required data files.
+    May take 30-60 seconds per model.
+    """
+    service = get_ithaca_service()
+    
+    if language:
+        # Initialize specific language
+        success = service.initialize_model(language)
+        if success:
+            return {
+                "status": "success",
+                "message": f"{language.title()} model initialized",
+                "initialized": {language: True}
+            }
+        else:
+            raise HTTPException(
+                status_code=500,
+                detail=f"Failed to initialize {language} model. Check that model files exist in backend/models/"
+            )
+    else:
+        # Initialize both
+        results = initialize_all_models()
+        return {
+            "status": "success" if any(results.values()) else "failed",
+            "message": "Model initialization complete",
+            "initialized": results
+        }
         "models": status,
         "features": ["restore", "attribute", "contextualize"],
         "supported_languages": ["greek", "latin"],

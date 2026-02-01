@@ -191,9 +191,15 @@ export const inscriptionApi = {
     api.post<RestorationResult>("/api/inscriptions/restore", {
       text,
       language,
+      language,
       temperature,
     }),
 
+  attribute: (text: string, language: "greek" | "latin" = "greek") =>
+    api.post<AttributionResult>("/api/inscriptions/attribute", {
+      text,
+      language,
+    }),
   attribute: (text: string, language: "greek" | "latin" = "greek") =>
     api.post<AttributionResult>("/api/inscriptions/attribute", {
       text,
@@ -205,8 +211,14 @@ export const inscriptionApi = {
     language: "greek" | "latin" = "greek",
     topK: number = 20
   ) =>
+  contextualize: (
+    text: string,
+    language: "greek" | "latin" = "greek",
+    topK: number = 20
+  ) =>
     api.post<ContextualizationResult>("/api/inscriptions/contextualize", {
       text,
+      language,
       language,
       top_k: topK,
     }),
