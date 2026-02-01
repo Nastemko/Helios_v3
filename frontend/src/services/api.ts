@@ -71,8 +71,6 @@ export const analysisApi = {
     api.post<WordAnalysis>("/api/analyze/word", { word, language, context }),
 };
 
-
-
 // Annotation API
 export const annotationApi = {
   create: (data: {
@@ -191,7 +189,6 @@ export const inscriptionApi = {
     api.post<RestorationResult>("/api/inscriptions/restore", {
       text,
       language,
-      language,
       temperature,
     }),
 
@@ -200,17 +197,7 @@ export const inscriptionApi = {
       text,
       language,
     }),
-  attribute: (text: string, language: "greek" | "latin" = "greek") =>
-    api.post<AttributionResult>("/api/inscriptions/attribute", {
-      text,
-      language,
-    }),
 
-  contextualize: (
-    text: string,
-    language: "greek" | "latin" = "greek",
-    topK: number = 20
-  ) =>
   contextualize: (
     text: string,
     language: "greek" | "latin" = "greek",
@@ -218,7 +205,6 @@ export const inscriptionApi = {
   ) =>
     api.post<ContextualizationResult>("/api/inscriptions/contextualize", {
       text,
-      language,
       language,
       top_k: topK,
     }),
