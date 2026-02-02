@@ -58,7 +58,7 @@ class Settings(BaseSettings):
     OLLAMA_MODEL: str = "llama3.2:3b"
     OLLAMA_EMBEDDING_MODEL: str = "nomic-embed-text"
     OLLAMA_TEMPERATURE: float = 0.2
-    OLLAMA_THINK: str | bool = ThinkLevel.high
+    OLLAMA_THINK: ThinkLevel | bool = True
     OLLAMA_TIMEOUT: int = 120  # 2 minutes for inference
     LLM_ENABLED: bool = True
 
