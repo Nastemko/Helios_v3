@@ -34,10 +34,14 @@ class OllamaLLMProvider(LLMProvider):
         base_url: str | None = None,
         model: str | None = None,
         timeout: int | None = None,
+        temperature: float | None = None,
+        think: str | None = None,
     ) -> None:
         self.base_url = (base_url or settings.OLLAMA_BASE_URL).rstrip("/")
         self.model = model or settings.OLLAMA_MODEL
         self.timeout = timeout or settings.OLLAMA_TIMEOUT
+        self.temperature = temperature or settings.OLLAMA_TEMPERATURE
+        self.think = think or settings.OLLAMA_THINK
 
     async def suggest_translation(
         self,
@@ -49,6 +53,10 @@ class OllamaLLMProvider(LLMProvider):
             "model": self.model,
             "prompt": prompt,
             "stream": False,
+            "think": self.think,
+            "options": {
+                "temperature": self.temperature,
+            },
         }
         if system_prompt:
             payload["system"] = system_prompt

@@ -1,6 +1,14 @@
 """Application configuration"""
 
+from enum import StrEnum, auto
+
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+
+class ThinkLevel(StrEnum):
+    low = auto()
+    medium = auto()
+    high = auto()
 
 
 class Settings(BaseSettings):
@@ -49,6 +57,8 @@ class Settings(BaseSettings):
     OLLAMA_BASE_URL: str = "http://localhost:11434"
     OLLAMA_MODEL: str = "llama3.2:3b"
     OLLAMA_EMBEDDING_MODEL: str = "nomic-embed-text"
+    OLLAMA_TEMPERATURE: float = 0.2
+    OLLAMA_THINK: str = ThinkLevel.high
     OLLAMA_TIMEOUT: int = 120  # 2 minutes for inference
     LLM_ENABLED: bool = True
 

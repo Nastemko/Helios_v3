@@ -295,7 +295,7 @@ async def get_inscription(phi_id: int, db: Session = Depends(get_db)):
     Get a specific inscription by its PHI ID.
     """
     urn = f"urn:phi:{phi_id}"
-    text = db.query(Text).filter(Text.urn == urn).first()
+    text = db.query(Text).filter(Text.urn == urn).scalar().first()
 
     if not text:
         raise HTTPException(
