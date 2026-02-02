@@ -456,24 +456,6 @@ def restore(
 
     # Sequence of saliency maps for the top prediction's trajectory:
     saliency_char_steps = []
-    if beam_result:
-        # Use the trajectory from the top beam result for saliency
-        top_beam_entry = beam_result[0]
-        saliency_generator = eval_util.sequential_restoration_saliency(
-            top_beam_entry.text_history,  # Pass the history from the top beam
-            forward,
-            params,
-            alphabet,
-            vocab_char_size,
-        )
-        saliency_char_steps = [
-            RestorationCharSaliency(
-                step.text[1:].rstrip(alphabet.pad),
-                int(step.pred_char_pos) - 1,
-                step.saliency_map.tolist(),
-            )
-            for step in saliency_generator
-        ]
 
     return RestorationResults(
         input_text=text,

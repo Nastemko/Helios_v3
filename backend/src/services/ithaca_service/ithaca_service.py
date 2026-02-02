@@ -91,12 +91,10 @@ class IthacaModel:
 
             self.initialized = True
             logger.info(f"{self.language.upper()} model initialized successfully!")
-            return True
-
         except Exception as e:
             logger.error(f"Failed to initialize {self.language} model: {e}")
-            self.initialized = False
-            return False
+        finally:
+            return self.initialized
 
     @property
     def is_available(self) -> bool:

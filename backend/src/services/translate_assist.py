@@ -114,7 +114,7 @@ class TranslateAssistService:
 
     def _prepare_text(self, text: str) -> str:
         """Clean and normalize input text."""
-        return " ".join(text.split()).strip()
+        return " ".join(c.strip() for c in text.split())
 
     def _build_prompt(self, text: str, language: str) -> str:
         """Build the prompt for the LLM."""
