@@ -173,7 +173,7 @@ def run_population(
     if data_dir:
         data_path = Path(data_dir)
     else:
-        data_path = Path(settings.PERSEUS_DATA_DIR)
+        data_path = Path(settings.assets.PERSEUS_DATA_DIR)
 
     logger.info(f"Using data directory: {data_path}")
 

@@ -1,5 +1,7 @@
 """Database configuration and session management"""
 
+from functools import lru_cache
+
 from sqlalchemy import Engine, create_engine
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
@@ -13,6 +15,7 @@ def _db_url() -> str:
     return f"postgresql://{db_set.USER}:{db_set.PASSWORD}@{db_set.HOST}:{db_set.PORT}/{db_set.DB}"
 
 
+@lru_cache(maxsize=1)
 def _get_engine() -> Engine:
     engine_kwargs = {
         "poolclass": QueuePool,
@@ -35,6 +38,8 @@ SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=_get_engine(
 
 # Base class for models
 Base = declarative_base()
+
+engine = _get_engine()
 
 
 def get_db():

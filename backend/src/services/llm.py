@@ -37,11 +37,11 @@ class OllamaLLMProvider(LLMProvider):
         temperature: float | None = None,
         think: str | None = None,
     ) -> None:
-        self.base_url = (base_url or settings.OLLAMA_BASE_URL).rstrip("/")
-        self.model = model or settings.OLLAMA_MODEL
-        self.timeout = timeout or settings.OLLAMA_TIMEOUT
-        self.temperature = temperature or settings.OLLAMA_TEMPERATURE
-        self.think = think or settings.OLLAMA_THINK
+        self.base_url = (base_url or settings.llm.BASE_URL).rstrip("/")
+        self.model = model or settings.llm.MODEL
+        self.timeout = timeout or settings.llm.TIMEOUT
+        self.temperature = temperature or settings.llm.TEMPERATURE
+        self.think = think or settings.llm.THINK
 
     async def suggest_translation(
         self,
@@ -78,7 +78,7 @@ class OllamaLLMProvider(LLMProvider):
 @lru_cache(maxsize=1)
 def get_llm_provider() -> LLMProvider | None:
     """Return a singleton LLM provider instance."""
-    if not settings.LLM_ENABLED:
+    if not settings.llm.ENABLED:
         return
     _provider_instance = OllamaLLMProvider()
     logger.info(

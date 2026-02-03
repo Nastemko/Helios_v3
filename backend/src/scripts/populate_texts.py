@@ -30,7 +30,7 @@ def populate_database(limit: int | None = None, dry_run: bool = False):
         Base.metadata.create_all(bind=engine)
 
     # Initialize parser
-    data_dir = Path(settings.PERSEUS_DATA_DIR)
+    data_dir = Path(settings.assets.PERSEUS_DATA_DIR)
     if not data_dir.exists():
         logger.error(f"Perseus data directory not found: {data_dir}")
         return

@@ -12,7 +12,7 @@ from models.user import User
 from utils.security import verify_token
 
 # In dev mode, don't auto-error on missing credentials
-security = HTTPBearer(auto_error=not settings.DEBUG)
+security = HTTPBearer(auto_error=not settings.misc.DEBUG)
 
 credentials_exception = HTTPException(
     status_code=status.HTTP_401_UNAUTHORIZED,
@@ -43,7 +43,7 @@ async def get_current_user(
     logger = logging.getLogger(__name__)
 
     # DEV MODE: Bypass authentication if DEBUG is true and no credentials are provided
-    if settings.DEBUG:
+    if settings.misc.DEBUG:
         logger.info("DEV MODE: No credentials provided, using dev user")
         dev_user = db.query(User).filter(User.email == "dev@helios.local").first()
         if not dev_user:
