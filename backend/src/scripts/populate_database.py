@@ -1,4 +1,4 @@
-"""Unified script to populate the database with Perseus texts.
+"""Unified script to populate database with Perseus texts.
 
 This script replaces both populate_on_startup.py and populate_texts.py with
 a superior implementation that eliminates duplicate key constraint violations
@@ -7,7 +7,8 @@ through atomic database operations.
 Features:
 - Prefetch existing URNs to avoid individual database queries
 - Optimized batching using itertools.batched for efficient processing
-- Atomic upserts using SQLAlchemy merge() to prevent race conditions
+- PostgreSQL ON CONFLICT DO NOTHING to eliminate SELECT queries
+- SQLAlchemy 2.x compatible for modern database operations
 - Configurable language filtering (default: all languages)
 - Fail-fast error handling for reliable processing
 - Comprehensive CLI interface
@@ -24,6 +25,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Dict, List, Optional
 
+from sqlalchemy import text, select
 from sqlalchemy.orm import Session
 
 from config import settings
@@ -70,17 +72,15 @@ class DatabasePopulator:
     def prefetch_existing_urns(self, db: Session) -> None:
         """Prefetch all existing URNs to avoid individual database queries."""
         logger.info("Prefetching existing URNs...")
-        existing_texts = db.query(Text.urn).all()
-        self.existing_urns = {text.urn for text in existing_texts}
+        existing_texts = db.execute(select(Text.urn)).all()
+        self.existing_urns = {row.urn for row in existing_texts}
         logger.info(f"Prefetched {len(self.existing_urns)} existing URNs")
 
     def is_database_populated(self, db: Session) -> bool:
         """Check if the database already has texts loaded."""
-        return (
-            len(self.existing_urns) > 0
-            if self.existing_urns
-            else db.query(Text).limit(1).count() > 0
-        )
+        if self.existing_urns:
+            return len(self.existing_urns) > 0
+        return db.scalar(select(Text).limit(1)) is not None
 
     def clear_database(self, db: Session) -> None:
         """Clear all existing texts and segments."""
@@ -142,43 +142,70 @@ class DatabasePopulator:
     def insert_batch(self, db: Session, batch_data: List[Dict]) -> None:
         """
         Insert a batch of texts and their segments in a single transaction.
+        Uses PostgreSQL ON CONFLICT DO NOTHING to avoid SELECT queries.
+        SQLAlchemy 2.x compatible.
         """
         if not batch_data:
             return
 
+        # Prepare values for bulk insert
+        text_values = []
         for text_data in batch_data:
-            # Create Text object
-            text = Text(
-                urn=text_data["urn"],
-                author=text_data["author"],
-                title=text_data["title"],
-                language=text_data["language"],
-                is_fragment=text_data["is_fragment"],
-                text_metadata=text_data["text_metadata"],
+            text_values.append(
+                {
+                    "urn": text_data["urn"],
+                    "author": text_data["author"],
+                    "title": text_data["title"],
+                    "language": text_data["language"],
+                    "is_fragment": text_data["is_fragment"],
+                    "text_metadata": text_data["text_metadata"],
+                }
             )
 
-            # Add to session
-            db.add(text)
+        # Bulk insert texts with conflict resolution
+        text_insert_sql = text("""
+            INSERT INTO texts (urn, author, title, language, is_fragment, text_metadata)
+            VALUES (:urn, :author, :title, :language, :is_fragment, :text_metadata)
+            ON CONFLICT (urn) DO NOTHING
+            RETURNING id, urn
+        """)
 
-            # We need to flush to get the text.id for segments
-            db.flush()
+        try:
+            # Execute bulk insert with parameters
+            result = db.execute(text_insert_sql, text_values)
+            inserted_texts = result.all()
 
-            # Create TextSegment objects
-            for seg_data in text_data["segments"]:
-                segment = TextSegment(
-                    text_id=text.id,
-                    book=seg_data["book"],
-                    line=seg_data["line"],
-                    reference=seg_data["reference"],
-                    content=seg_data["content"],
-                    sequence=seg_data["sequence"],
-                )
-                db.add(segment)
-                self.stats.total_segments += 1
+            # Get mapping of URN to ID for inserted texts
+            urn_to_id = {row.urn: row.id for row in inserted_texts}
 
-            self.stats.inserted += 1
-            # Add to cache to avoid re-processing within the same run
-            self.existing_urns.add(text_data["urn"])
+            # Now insert segments for successfully inserted texts only
+            for text_data in batch_data:
+                if text_data["urn"] in urn_to_id:
+                    text_id = urn_to_id[text_data["urn"]]
+
+                    # Create TextSegment objects for this text
+                    for seg_data in text_data["segments"]:
+                        segment = TextSegment(
+                            text_id=text_id,
+                            book=seg_data["book"],
+                            line=seg_data["line"],
+                            reference=seg_data["reference"],
+                            content=seg_data["content"],
+                            sequence=seg_data["sequence"],
+                        )
+                        db.add(segment)
+                        self.stats.total_segments += 1
+
+                    self.stats.inserted += 1
+                    # Add to cache to avoid re-processing within the same run
+                    self.existing_urns.add(text_data["urn"])
+                else:
+                    # Text already existed, count as skipped
+                    self.stats.skipped += 1
+
+        except Exception as e:
+            logger.error(f"Error during batch insert: {e}")
+            raise
 
     def process_file_batch(
         self, db: Session, parser: PerseusXMLParser, xml_files: List[Path]
@@ -219,6 +246,7 @@ class DatabasePopulator:
     def run_population(self, db: Session) -> PopulateStats:
         """
         Main population method with batched processing and prefetched URN cache.
+        SQLAlchemy 2.x compatible.
 
         Args:
             db: Database session
@@ -281,7 +309,7 @@ class DatabasePopulator:
 
 def run_population(config: PopulateConfig) -> PopulateStats:
     """
-    Run the database population process with the given configuration.
+    Run database population process with given configuration.
 
     Args:
         config: Population configuration
