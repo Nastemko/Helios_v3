@@ -11,15 +11,62 @@ class ThinkLevel(StrEnum):
     high = auto()
 
 
-class Settings(BaseSettings):
-    """Application settings loaded from environment variables"""
+class LLMSettings(BaseSettings):
+    """LLM configuration settings"""
 
-    # Application
-    APP_NAME: str = "Helios API"
-    DEBUG: bool = True  # Set to False in production
+    BASE_URL: str = "http://localhost:11434"
+    MODEL: str = "llama3.2:3b"
+    TEMPERATURE: float = 0.2
+    THINK: ThinkLevel | bool = True
+    TIMEOUT: int = 120  # 2 minutes for inference
+    ENABLED: bool = True
 
-    # Database (SQLite for local development, PostgreSQL for production)
-    DATABASE_URL: str = "sqlite:///./helios_local.db"
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        env_file_encoding="utf-8",
+        case_sensitive=True,
+        env_prefix="LLM_",
+    )
+
+
+class DatabaseSettings(BaseSettings):
+    """Database configuration settings"""
+
+    # PostgreSQL Settings (for production)
+    HOST: str = "localhost"
+    PORT: int = 5432
+    DB: str = "helios"
+    USER: str = "heliosuser"
+    PASSWORD: str = ""
+
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        env_file_encoding="utf-8",
+        case_sensitive=True,
+        env_prefix="DATABASE_",
+    )
+
+
+class AssetSettings(BaseSettings):
+    """Asset configuration settings for Perseus and ML models"""
+
+    # ML models
+    JAX_MODELS_DIR: str = "./models"
+
+    # Perseus texts
+    # In Docker: /app/data/canonical-greekLit/data
+    # Local development: ../canonical-greekLit/data
+    PERSEUS_DATA_DIR: str = "/app/data/canonical-greekLit/data"
+
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        env_file_encoding="utf-8",
+        case_sensitive=True,
+    )
+
+
+class AuthSettings(BaseSettings):
+    """Authentication and authorization configuration settings"""
 
     # Security
     SECRET_KEY: str = "dev-secret-key-change-in-production"
@@ -30,50 +77,40 @@ class Settings(BaseSettings):
     GOOGLE_CLIENT_ID: str = ""
     GOOGLE_CLIENT_SECRET: str = ""
     GOOGLE_REDIRECT_URI: str = "http://localhost:8000/api/auth/callback/google"
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        env_file_encoding="utf-8",
+        case_sensitive=True,
+    )
+
+
+class MiscSettings(BaseSettings):
+    """Application settings composed from component settings"""
+
+    # Application
+    APP_NAME: str = "Helios API"
+    DEBUG: bool = True  # Set to False in production
 
     # CORS - include multiple ports for development flexibility
     CORS_ORIGINS: list[str] = [
         "http://localhost:3000",
-        "http://localhost:3001",
-        "http://localhost:3002",
-        "http://localhost:3003",
-        "http://localhost:5173",
         "http://127.0.0.1:3000",
-        "http://127.0.0.1:3001",
-        "http://127.0.0.1:3002",
-        "http://127.0.0.1:3003",
-        "http://127.0.0.1:5173",
     ]
-
-    # ML models
-    MODELS_DIR: str = "./models"
-
-    # Perseus texts
-    # In Docker: /app/data/canonical-greekLit/data
-    # Local development: ../canonical-greekLit/data
-    PERSEUS_DATA_DIR: str = "/app/data/canonical-greekLit/data"
-
-    # Ollama LLM Settings
-    OLLAMA_BASE_URL: str = "http://localhost:11434"
-    OLLAMA_MODEL: str = "llama3.2:3b"
-    OLLAMA_EMBEDDING_MODEL: str = "nomic-embed-text"
-    OLLAMA_TEMPERATURE: float = 0.2
-    OLLAMA_THINK: ThinkLevel | bool = True
-    OLLAMA_TIMEOUT: int = 120  # 2 minutes for inference
-    LLM_ENABLED: bool = True
-
-    # PostgreSQL Settings (for production)
-    POSTGRES_HOST: str = "localhost"
-    POSTGRES_PORT: int = 5432
-    POSTGRES_DB: str = "helios"
-    POSTGRES_USER: str = "heliosuser"
-    POSTGRES_PASSWORD: str = ""
 
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",
         case_sensitive=True,
     )
+
+
+class Settings:
+    def __init__(self, **kwargs):
+        self.misc = MiscSettings()
+        self.auth = AuthSettings()
+        self.llm = LLMSettings()
+        self.database = DatabaseSettings()
+        self.assets = AssetSettings()
 
 
 settings = Settings()
