@@ -52,26 +52,7 @@ export interface Annotation {
   updated_at?: string;
 }
 
-export interface StudentNote {
-  id: number;
-  user_id: number;
-  text_id?: number;
-  content: string;
-  created_at: string;
-  updated_at?: string;
-}
 
-export interface Highlight {
-  id: number;
-  user_id: number;
-  text_id: number;
-  segment_id: number;
-  start_offset: number;
-  end_offset: number;
-  selected_text: string;
-  color: string;
-  created_at: string;
-}
 
 
 
