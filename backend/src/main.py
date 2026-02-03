@@ -21,7 +21,7 @@ from routers import (
     translate_assist,
 )
 from scripts.load_phi_inscriptions import initialize_phi_inscriptions
-from scripts.populate_on_startup import populate_on_startup
+from scripts.populate_database import populate_on_startup
 from services.ithaca_service.ithaca_service import (
     initialize_all_models,
     initialize_ithaca_service,
