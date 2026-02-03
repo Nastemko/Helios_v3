@@ -22,7 +22,7 @@ The Greek texts come from the `canonical-greekLit` directory, which contains TEI
 
 ### File Locations
 
-- **Development (docker-compose)**: The `canonical-greekLit` folder is mounted as a volume at `/app/data/canonical-greekLit`
+- **Development (docker-compose)**: The `canonical-greekLit` folder is mounted as a volume at `/app/assets/canonical-greekLit`
 - **Production (Docker image)**: The data must be copied into `backend/data/canonical-greekLit` before building
 
 ## Setup Instructions
@@ -81,7 +81,7 @@ python -m scripts.populate_on_startup --data-dir /path/to/data
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `PERSEUS_DATA_DIR` | `/app/data/canonical-greekLit/data` | Path to the Perseus XML data directory |
+| `PERSEUS_DATA_DIR` | `/app/assets/canonical-greekLit/data` | Path to the Perseus XML data directory |
 
 ## Troubleshooting
 

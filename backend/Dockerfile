@@ -11,12 +11,12 @@ ENV PYTHONUNBUFFERED=1 \
 # Create a non-root user for security, app directory and models directory,
 # and ensure correct ownership.
 RUN useradd -m -u 1100 helios && \
-    mkdir -p /app /app/models /app/data/canonical-greekLit && \
+    mkdir -p /app /app/assets/inscriptions /app/assets/canonical-greekLit && \
     chown -R helios:helios /app
 
 # Copy the Greek text data files (Perseus canonical Greek XML)
-# Keep these under /app/data so the application can find them.
-COPY --chown=helios:helios ./canonical-greekLit /app/data/canonical-greekLit
+# Keep these under /app/assets so the application can find them.
+COPY --chown=helios:helios ./assets/canonical-greekLit /app/assets/canonical-greekLit
 
 # Install required system packages (including libs for JAX / numerical libs),
 # install `uv` (the package manager used in this repo), and clean apt cache.
@@ -33,19 +33,19 @@ RUN apt-get update && \
     && curl -LsSf https://astral.sh/uv/install.sh | sh \
     && mv /root/.local/bin/uv /usr/local/bin/uv
 
-RUN curl -fSL -o /app/models/ithaca_153143996_2.pkl \
+RUN curl -fSL -o /app/assets/inscriptions/ithaca_153143996_2.pkl \
     https://storage.googleapis.com/ithaca-resources/models/ithaca_153143996_2.pkl && \
-    curl -fSL -o /app/models/iphi.json \
+    curl -fSL -o /app/assets/inscriptions/iphi.json \
     https://storage.googleapis.com/ithaca-resources/models/iphi.json && \
-    curl -fSL -o /app/models/iphi_emb_xid153143996.pkl \
+    curl -fSL -o /app/assets/inscriptions/iphi_emb_xid153143996.pkl \
     https://storage.googleapis.com/ithaca-resources/models/iphi_emb_xid153143996.pkl && \
-    curl -fSL -o /app/models/aeneas_117149994_2.pkl \
+    curl -fSL -o /app/assets/inscriptions/aeneas_117149994_2.pkl \
     https://storage.googleapis.com/ithaca-resources/models/aeneas_117149994_2.pkl && \
-    curl -fSL -o /app/models/led.json \
+    curl -fSL -o /app/assets/inscriptions/led.json \
     https://storage.googleapis.com/ithaca-resources/models/led.json && \
-    curl -fSL -o /app/models/led_emb_xid117149994.pkl \
+    curl -fSL -o /app/assets/inscriptions/led_emb_xid117149994.pkl \
     https://storage.googleapis.com/ithaca-resources/models/led_emb_xid117149994.pkl && \
-    chown -R helios:helios /app/models
+    chown -R helios:helios /app/assets/inscriptions
 
 # Set the working directory for subsequent commands
 WORKDIR /app

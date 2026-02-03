@@ -105,7 +105,7 @@ async def startup_event():
     logger.info(f"Morphology service initialized: {morphology_service.initialized}")
 
     # Initialize Ithaca service
-    models_dir = Path(settings.assets.JAX_MODELS_DIR)
+    models_dir = Path(settings.assets.INSCRIPTIONS_DIR)
     logger.info(f"Initializing Ithaca service with models from {models_dir}")
 
     initialize_ithaca_service()

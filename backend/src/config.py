@@ -51,12 +51,12 @@ class AssetSettings(BaseSettings):
     """Asset configuration settings for Perseus and ML models"""
 
     # ML models
-    JAX_MODELS_DIR: str = "/app/models"
+    INSCRIPTIONS_DIR: str = "/app/assets/inscriptions"
 
     # Perseus texts
     # In Docker: /app/data/canonical-greekLit/data
     # Local development: ../canonical-greekLit/data
-    PERSEUS_DATA_DIR: str = "/app/data/canonical-greekLit/data"
+    PERSEUS_DATA_DIR: str = "/app/assets/canonical-greekLit/data"
 
     model_config = SettingsConfigDict(
         env_file=".env",

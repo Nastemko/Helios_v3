@@ -31,7 +31,7 @@ def load_phi_inscriptions(
     """
     # Default path - look in the iphi directory
     if phi_json_path is None:
-        _phi_json_path = Path(settings.assets.JAX_MODELS_DIR) / "iphi.json"
+        _phi_json_path = Path(settings.assets.INSCRIPTIONS_DIR) / "iphi.json"
     else:
         _phi_json_path = Path(phi_json_path)
 

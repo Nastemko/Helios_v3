@@ -25,6 +25,7 @@ from services.ithaca_service.models import (
     RestorationResult,
     SimilarInscription,
 )
+from src.config import settings
 from vendor.predictingthepast.eval import inference
 from vendor.predictingthepast.models.model import Model
 from vendor.predictingthepast.util import alphabet as util_alphabet
@@ -123,7 +124,7 @@ class IthacaService:
         Initialize a specific language model.
         """
         # Default paths
-        models_dir = Path(__file__).parent.parent.parent / "models"
+        models_dir = Path(settings.assets.INSCRIPTIONS_DIR) / "models"
 
         if checkpoint_path is None:
             if language == "greek":

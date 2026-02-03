@@ -52,7 +52,7 @@ services:
         condition: service_healthy
     volumes:
       - ./canonical-greekLit:/app/canonical-greekLit:ro
-      - ./backend/models:/app/models
+      - ./backend/models:/app/assets/inscriptions
 
   frontend:
     build: ./frontend
@@ -531,4 +531,3 @@ docker-compose up -d --build
 # Database backup
 docker-compose exec postgres pg_dump -U helios helios > backup.sql
 ```
-

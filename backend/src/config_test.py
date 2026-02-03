@@ -22,7 +22,7 @@ class TestConfig(unittest.TestCase):
             "GOOGLE_CLIENT_SECRET": "test-google-secret-from-env",
             # pydantic_settings can parse comma-separated strings into a list
             "CORS_ORIGINS": '["http://test.com", "http://anothertest.com"]',
-            "JAX_MODELS_DIR": "/test/models",
+            "INSCRIPTIONS_DIR": "/test/models",
             "PERSEUS_DATA_DIR": "/test/perseus",
             "LLM_BASE_URL": "http://testhost:11434",
             "LLM_MODEL": "test-llama-model",
@@ -57,7 +57,7 @@ class TestConfig(unittest.TestCase):
         self.assertEqual(
             settings.misc.CORS_ORIGINS, ["http://test.com", "http://anothertest.com"]
         )
-        self.assertEqual(settings.assets.JAX_MODELS_DIR, "/test/models")
+        self.assertEqual(settings.assets.INSCRIPTIONS_DIR, "/test/models")
         self.assertEqual(settings.assets.PERSEUS_DATA_DIR, "/test/perseus")
         self.assertEqual(settings.llm.BASE_URL, "http://testhost:11434")
         self.assertEqual(settings.llm.MODEL, "test-llama-model")
@@ -95,9 +95,11 @@ class TestConfig(unittest.TestCase):
                     "http://127.0.0.1:3000",
                 ],
             )
-            self.assertEqual(settings.assets.JAX_MODELS_DIR, "./models")
             self.assertEqual(
-                settings.assets.PERSEUS_DATA_DIR, "/app/data/canonical-greekLit/data"
+                settings.assets.INSCRIPTIONS_DIR, "/app/assets/inscriptions"
+            )
+            self.assertEqual(
+                settings.assets.PERSEUS_DATA_DIR, "/app/assets/canonical-greekLit/data"
             )
             self.assertEqual(settings.llm.BASE_URL, "http://localhost:11434")
             self.assertEqual(settings.llm.MODEL, "llama3.2:3b")
