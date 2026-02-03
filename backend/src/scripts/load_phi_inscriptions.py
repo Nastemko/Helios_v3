@@ -263,6 +263,10 @@ class PHIInscriptionLoader:
             inserted_texts = result.all()
 
             # Get mapping of URN to ID for inserted texts
+            # Handle case where no rows were returned (all conflicted)
+            if not inserted_texts:
+                return
+
             urn_to_id = {row.urn: row.id for row in inserted_texts}
 
             # Create segments for successfully inserted texts

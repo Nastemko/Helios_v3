@@ -25,7 +25,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Dict, List, Optional
 
-from sqlalchemy import text, select
+from sqlalchemy import select, text
 from sqlalchemy.orm import Session
 
 from config import settings
@@ -174,6 +174,9 @@ class DatabasePopulator:
             # Execute bulk insert with parameters
             result = db.execute(text_insert_sql, text_values)
             inserted_texts = result.all()
+
+            if not inserted_texts:
+                return
 
             # Get mapping of URN to ID for inserted texts
             urn_to_id = {row.urn: row.id for row in inserted_texts}
@@ -380,19 +383,19 @@ def main():
 Examples:
   # Populate all languages
   python populate_database.py
-  
+
   # Dry run to see what would be processed
   python populate_database.py --dry-run
-  
+
   # Process only first 50 texts
   python populate_database.py --limit 50
-  
+
   # Force repopulation
   python populate_database.py --force
-  
+
   # Process only Greek texts
   python populate_database.py --languages grc
-  
+
   # Process Greek and Latin texts
   python populate_database.py --languages grc lat
         """,
