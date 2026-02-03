@@ -19,6 +19,7 @@ from pathlib import Path
 from typing import Dict, List, Optional
 
 from sqlalchemy import func, select, text
+from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import Session
 
 from config import settings
@@ -208,7 +209,7 @@ class PHIInscriptionLoader:
         if not batch_data:
             return
 
-        # Prepare values for bulk insert
+        # Prepare values for bulk insert using SQLAlchemy models
         inscription_values = []
         for inscription in batch_data:
             phi_id = inscription.get("id")
@@ -250,23 +251,28 @@ class PHIInscriptionLoader:
                 }
             )
 
-        # Bulk insert with PostgreSQL ON CONFLICT
-        phi_insert_sql = text("""
-            INSERT INTO texts (urn, author, title, language, is_fragment, text_metadata)
-            VALUES (:urn, :author, :title, :language, :is_fragment, :text_metadata)
-            ON CONFLICT (urn) DO NOTHING
-            RETURNING id, urn
-        """)
+        # Use SQLAlchemy's PostgreSQL insert() dialect
+        stmt = (
+            insert(Text)
+            .values(inscription_values)
+            .on_conflict_do_nothing(index_elements=["urn"])
+            .returning(Text.id, Text.urn)
+        )
 
         try:
-            result = db.execute(phi_insert_sql, inscription_values)
-            inserted_texts = result.all()
+            result = db.execute(stmt)
+            inserted_texts = result.fetchall()  # This will be [] if all conflicted
 
-            # Get mapping of URN to ID for inserted texts
-            # Handle case where no rows were returned (all conflicted)
+            # Handle empty results gracefully - this is the key fix
             if not inserted_texts:
+                logger.debug(
+                    "All PHI inscriptions in batch already exist (no new rows inserted)"
+                )
+                # Mark all as skipped
+                self.stats.skipped += len(batch_data)
                 return
 
+            # Get mapping of URN to ID for inserted texts
             urn_to_id = {row.urn: row.id for row in inserted_texts}
 
             # Create segments for successfully inserted texts

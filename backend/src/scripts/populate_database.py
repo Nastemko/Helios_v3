@@ -26,6 +26,7 @@ from pathlib import Path
 from typing import Dict, List, Optional
 
 from sqlalchemy import select, text
+from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import Session
 
 from config import settings
@@ -143,7 +144,7 @@ class DatabasePopulator:
         """
         Insert a batch of texts and their segments in a single transaction.
         Uses PostgreSQL ON CONFLICT DO NOTHING to avoid SELECT queries.
-        SQLAlchemy 2.x compatible.
+        SQLAlchemy 2.x compatible with proper handling of empty results.
         """
         if not batch_data:
             return
@@ -162,20 +163,24 @@ class DatabasePopulator:
                 }
             )
 
-        # Bulk insert texts with conflict resolution
-        text_insert_sql = text("""
-            INSERT INTO texts (urn, author, title, language, is_fragment, text_metadata)
-            VALUES (:urn, :author, :title, :language, :is_fragment, :text_metadata)
-            ON CONFLICT (urn) DO NOTHING
-            RETURNING id, urn
-        """)
+        # Use SQLAlchemy's PostgreSQL insert() dialect
+        stmt = (
+            insert(Text)
+            .values(text_values)
+            .on_conflict_do_nothing(index_elements=["urn"])
+            .returning(Text.id, Text.urn)
+        )
 
         try:
             # Execute bulk insert with parameters
-            result = db.execute(text_insert_sql, text_values)
-            inserted_texts = result.all()
+            result = db.execute(stmt)
+            inserted_texts = result.fetchall()  # This will be [] if all conflicted
 
+            # Handle empty results gracefully - this is the key fix
             if not inserted_texts:
+                logger.debug("All texts in batch already exist (no new rows inserted)")
+                # Mark all as skipped
+                self.stats.skipped += len(batch_data)
                 return
 
             # Get mapping of URN to ID for inserted texts
