@@ -11,7 +11,7 @@ ENV PYTHONUNBUFFERED=1 \
 # Create a non-root user for security, app directory and models directory,
 # and ensure correct ownership.
 RUN useradd -m -u 1100 helios && \
-    mkdir -p /app /app/assets/inscriptions /app/assets/canonical-greekLit && \
+    mkdir -p /app /app/assets/inscriptions/model /app/assets/canonical-greekLit && \
     chown -R helios:helios /app
 
 # Copy the Greek text data files (Perseus canonical Greek XML)
