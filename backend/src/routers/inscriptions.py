@@ -4,7 +4,7 @@ from typing import List, Literal, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, field_validator
-from sqlalchemy import String, cast
+from sqlalchemy import String, cast, select
 from sqlalchemy.orm import Session
 
 from database import get_db
@@ -105,14 +105,13 @@ def _parse_int(val) -> Optional[int]:
 
 def _get_full_text(db: Session, text_id: int) -> str:
     """Get full inscription text by joining segments"""
-    segments = (
-        db.query(TextSegment)
+    segments = db.scalars(
+        select(TextSegment)
         .filter(TextSegment.text_id == text_id)
         .order_by(TextSegment.sequence)
-        .all()
-    )
+    ).all()
 
-    return ". ".join(seg.content for seg in segments if seg.content)
+    return ". ".join(str(seg.content) for seg in segments if str(seg.content))
 
 
 @router.get("/", response_model=List[InscriptionListItem])
@@ -132,18 +131,17 @@ async def list_inscriptions(
     Date format: negative values are BC (e.g., -350 = 350 BC), positive are AD.
     """
     # Base query - only inscriptions (urn starts with urn:phi:)
-    query = db.query(Text).filter(Text.urn.like("urn:phi:%"))
+    query = select(Text).filter(Text.urn.like("urn:phi:%"))
 
     # Search in text content
     if search:
         # Get texts that have matching segments
         search_pattern = f"%{search}%"
-        matching_text_ids = (
-            db.query(TextSegment.text_id)
+        matching_text_ids = db.scalars(
+            select(TextSegment.text_id)
             .filter(TextSegment.content.ilike(search_pattern))
             .distinct()
-            .subquery()
-        )
+        ).all()
         query = query.filter(Text.id.in_(matching_text_ids))
 
     # Region filters - need to check JSON metadata
@@ -159,8 +157,7 @@ async def list_inscriptions(
         )
 
     # Apply pagination
-    query = query.order_by(Text.id)
-    texts = query.offset(skip).limit(limit).all()
+    texts = db.scalars(query.order_by(Text.id).offset(skip).limit(limit)).all()
 
     # Build response with text previews
     results = []
@@ -176,17 +173,17 @@ async def list_inscriptions(
                 continue
 
         # Get text preview from first segment
-        first_segment = (
-            db.query(TextSegment)
+        first_segment = db.scalar(
+            select(TextSegment)
             .filter(TextSegment.text_id == text.id)
             .order_by(TextSegment.sequence)
-            .first()
+            .limit(1)
         )
 
         text_preview = ""
-        if first_segment and first_segment.content:
-            text_preview = first_segment.content[:150]
-            if len(first_segment.content) > 150:
+        if first_segment and str(first_segment.content):
+            text_preview = str(first_segment.content)[:150]
+            if len(str(first_segment.content)) > 150:
                 text_preview += "..."
 
         results.append(
@@ -295,7 +292,7 @@ async def get_inscription(phi_id: int, db: Session = Depends(get_db)):
     Get a specific inscription by its PHI ID.
     """
     urn = f"urn:phi:{phi_id}"
-    text = db.query(Text).filter(Text.urn == urn).scalar().first()
+    text = db.query(Text).filter(Text.urn == urn).scalar()
 
     if not text:
         raise HTTPException(

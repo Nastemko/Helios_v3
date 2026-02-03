@@ -64,15 +64,12 @@ async def create_annotation(
     """
     # Verify text exists
 
-    text = db.query(Text).filter(Text.id == annotation.text_id).first()
+    text = db.query(Text).filter(Text.id == annotation.text_id).scalar()
     if not text:
         raise HTTPException(status_code=404, detail="Text not found")
 
     segment = (
-        db.query(TextSegment)
-        .filter(TextSegment.id == annotation.segment_id)
-        .scalar()
-        .first()
+        db.query(TextSegment).filter(TextSegment.id == annotation.segment_id).scalar()
     )
     if not segment:
         raise HTTPException(status_code=404, detail="Text segment not found")
