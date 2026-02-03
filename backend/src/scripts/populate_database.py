@@ -5,6 +5,8 @@ a superior implementation that eliminates duplicate key constraint violations
 through atomic database operations.
 
 Features:
+- Prefetch existing URNs to avoid individual database queries
+- Optimized batching using itertools.batched for efficient processing
 - Atomic upserts using SQLAlchemy merge() to prevent race conditions
 - Configurable language filtering (default: all languages)
 - Fail-fast error handling for reliable processing
@@ -14,6 +16,7 @@ Features:
 """
 
 import argparse
+import itertools
 import logging
 import sys
 import time
@@ -57,15 +60,27 @@ class PopulateStats:
 
 
 class DatabasePopulator:
-    """Handles database population with atomic operations and error handling."""
+    """Handles database population with batched operations and prefetched URN cache."""
 
     def __init__(self, config: PopulateConfig):
         self.config = config
         self.stats = PopulateStats()
+        self.existing_urns = set()
+
+    def prefetch_existing_urns(self, db: Session) -> None:
+        """Prefetch all existing URNs to avoid individual database queries."""
+        logger.info("Prefetching existing URNs...")
+        existing_texts = db.query(Text.urn).all()
+        self.existing_urns = {text.urn for text in existing_texts}
+        logger.info(f"Prefetched {len(self.existing_urns)} existing URNs")
 
     def is_database_populated(self, db: Session) -> bool:
         """Check if the database already has texts loaded."""
-        return db.query(Text).limit(1).count() > 0
+        return (
+            len(self.existing_urns) > 0
+            if self.existing_urns
+            else db.query(Text).limit(1).count() > 0
+        )
 
     def clear_database(self, db: Session) -> None:
         """Clear all existing texts and segments."""
@@ -73,82 +88,137 @@ class DatabasePopulator:
         db.query(TextSegment).delete()
         db.query(Text).delete()
         db.commit()
+        self.existing_urns.clear()  # Clear cache after clearing database
 
-    def populate_text(self, db: Session, text_data: Dict) -> bool:
+    def should_process_text(self, text_data: Dict) -> bool:
         """
-        Populate a single text with atomic operations.
+        Check if text should be processed based on language filter and existing URN cache.
 
-        Returns True if successful, False if text already exists.
+        Returns True if text should be processed, False if should be skipped.
         """
         # Check language filter
         if self.config.languages and text_data["language"] not in self.config.languages:
             return False
 
-        # Atomic upsert using merge() - prevents duplicate key violations
-        text = Text(
-            urn=text_data["urn"],
-            author=text_data["author"],
-            title=text_data["title"],
-            language=text_data["language"],
-            is_fragment=text_data["is_fragment"],
-            text_metadata=text_data["text_metadata"],
-        )
-
-        # merge() handles atomic upsert - either creates new or updates existing
-        merged_text = db.merge(text)
-        db.flush()  # Get the text.id without committing
-
-        # Handle segments - delete existing ones if updating
-        if not self.config.force:
-            # Delete existing segments for this text
-            db.query(TextSegment).filter(TextSegment.text_id == merged_text.id).delete()
-
-        # Create TextSegment objects
-        for seg_data in text_data["segments"]:
-            segment = TextSegment(
-                text_id=merged_text.id,
-                book=seg_data["book"],
-                line=seg_data["line"],
-                reference=seg_data["reference"],
-                content=seg_data["content"],
-                sequence=seg_data["sequence"],
-            )
-            db.add(segment)
-            self.stats.total_segments += 1
+        # Check if text already exists using prefetched cache
+        if text_data["urn"] in self.existing_urns:
+            return False
 
         return True
 
-    def process_file(
-        self, db: Session, parser: PerseusXMLParser, xml_file: Path
-    ) -> bool:
+    def prepare_batch_data(
+        self, parser: PerseusXMLParser, xml_files: List[Path]
+    ) -> List[Dict]:
         """
-        Process a single XML file.
+        Parse and prepare batch data for insertion.
 
-        Returns True if successful, False on error.
+        Returns list of text data ready for database insertion.
+        """
+        batch_data = []
+
+        for xml_file in xml_files:
+            try:
+                text_data = parser.parse_file(xml_file)
+                if not text_data:
+                    logger.debug(f"Could not parse {xml_file}")
+                    continue
+
+                if self.should_process_text(text_data):
+                    batch_data.append(text_data)
+                    self.stats.files_processed += 1
+                else:
+                    self.stats.skipped += 1
+
+            except Exception as e:
+                logger.error(f"Error parsing {xml_file}: {e}")
+                self.stats.errors += 1
+                if self.config.fail_fast:
+                    raise RuntimeError(
+                        f"Failed to parse {xml_file}. Stopping due to fail_fast=True."
+                    )
+
+        return batch_data
+
+    def insert_batch(self, db: Session, batch_data: List[Dict]) -> None:
+        """
+        Insert a batch of texts and their segments in a single transaction.
+        """
+        if not batch_data:
+            return
+
+        for text_data in batch_data:
+            # Create Text object
+            text = Text(
+                urn=text_data["urn"],
+                author=text_data["author"],
+                title=text_data["title"],
+                language=text_data["language"],
+                is_fragment=text_data["is_fragment"],
+                text_metadata=text_data["text_metadata"],
+            )
+
+            # Add to session
+            db.add(text)
+
+            # We need to flush to get the text.id for segments
+            db.flush()
+
+            # Create TextSegment objects
+            for seg_data in text_data["segments"]:
+                segment = TextSegment(
+                    text_id=text.id,
+                    book=seg_data["book"],
+                    line=seg_data["line"],
+                    reference=seg_data["reference"],
+                    content=seg_data["content"],
+                    sequence=seg_data["sequence"],
+                )
+                db.add(segment)
+                self.stats.total_segments += 1
+
+            self.stats.inserted += 1
+            # Add to cache to avoid re-processing within the same run
+            self.existing_urns.add(text_data["urn"])
+
+    def process_file_batch(
+        self, db: Session, parser: PerseusXMLParser, xml_files: List[Path]
+    ) -> None:
+        """
+        Process a batch of XML files with a single database transaction.
         """
         try:
-            text_data = parser.parse_file(xml_file)
-            if not text_data:
-                logger.debug(f"Could not parse {xml_file}")
-                return False
+            # Parse and prepare all data for this batch
+            batch_data = self.prepare_batch_data(parser, xml_files)
 
-            success = self.populate_text(db, text_data)
-            if success:
-                self.stats.inserted += 1
-                self.stats.files_processed += 1
-            else:
-                self.stats.skipped += 1
+            if self.config.dry_run:
+                logger.info(
+                    f"DRY RUN: Would insert {len(batch_data)} texts from this batch"
+                )
+                for text_data in batch_data[:3]:  # Show first 3
+                    logger.info(
+                        f"  - {text_data['author']}: {text_data['title']} ({len(text_data['segments'])} segments)"
+                    )
+                return
 
-            return True
+            # Insert all data in this batch as a single transaction
+            self.insert_batch(db, batch_data)
+
+            # Commit the entire batch at once
+            db.commit()
+            logger.info(f"Successfully committed batch with {len(batch_data)} texts")
 
         except Exception as e:
-            logger.error(f"Error processing {xml_file}: {e}")
-            self.stats.errors += 1
-            return False
+            logger.error(f"Error processing batch: {e}")
+            db.rollback()
+            self.stats.errors += len(xml_files)  # Mark all files in batch as errors
+            if self.config.fail_fast:
+                raise RuntimeError(
+                    f"Batch processing failed. Stopping due to fail_fast=True."
+                )
 
     def run_population(self, db: Session) -> PopulateStats:
         """
-        Main population method with fail-fast error handling.
+        Main population method with batched processing and prefetched URN cache.
 
         Args:
             db: Database session
@@ -158,13 +228,15 @@ class DatabasePopulator:
         """
         start_time = time.time()
 
+        # Prefetch existing URNs for efficient duplicate checking
+        self.prefetch_existing_urns(db)
+
         # Check if already populated
         if not self.config.force and self.is_database_populated(db):
-            existing_count = db.query(Text).count()
             logger.info(
-                f"Database already contains {existing_count} texts. Skipping population."
+                f"Database already contains {len(self.existing_urns)} texts. Skipping population."
             )
-            self.stats.skipped = existing_count
+            self.stats.skipped = len(self.existing_urns)
             return self.stats
 
         if self.config.force:
@@ -187,35 +259,19 @@ class DatabasePopulator:
 
         logger.info(f"Found {len(xml_files)} XML files to process")
 
-        # Process each file with fail-fast error handling
-        for idx, xml_file in enumerate(xml_files):
-            # Log progress every 100 files
-            if (idx + 1) % 100 == 0:
-                logger.info(f"Processing file {idx + 1}/{len(xml_files)}...")
+        # Process files in batches for better performance using itertools.batched
+        batch_size = self.config.commit_batch
+        total_batches = (len(xml_files) + batch_size - 1) // batch_size
 
-            success = self.process_file(db, parser, xml_file)
+        for batch_num, batch_files in enumerate(
+            itertools.batched(xml_files, batch_size), start=1
+        ):
+            logger.info(
+                f"Processing batch {batch_num}/{total_batches} ({len(batch_files)} files)..."
+            )
 
-            # Fail-fast on processing errors
-            if not success and self.config.fail_fast:
-                db.rollback()
-                raise RuntimeError(
-                    f"Failed to process {xml_file}. Stopping due to fail_fast=True."
-                )
-
-            # Commit batch
-            if (
-                self.stats.inserted % self.config.commit_batch == 0
-                and self.stats.inserted > 0
-            ):
-                db.commit()
-                logger.info(f"Committed {self.stats.inserted} texts so far...")
-
-        # Final commit
-        try:
-            db.commit()
-        except Exception as e:
-            db.rollback()
-            raise RuntimeError(f"Error during final commit: {e}")
+            # Process entire batch in a single transaction
+            self.process_file_batch(db, parser, list(batch_files))
 
         # Calculate processing time
         self.stats.processing_time = time.time() - start_time
@@ -285,3 +341,108 @@ async def populate_on_startup(config: Optional[PopulateConfig] = None) -> Dict:
         "processing_time": stats.processing_time,
         "files_processed": stats.files_processed,
     }
+
+
+def main():
+    """CLI interface for the database population script."""
+    parser = argparse.ArgumentParser(
+        description="Populate database with Perseus texts",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Examples:
+  # Populate all languages
+  python populate_database.py
+  
+  # Dry run to see what would be processed
+  python populate_database.py --dry-run
+  
+  # Process only first 50 texts
+  python populate_database.py --limit 50
+  
+  # Force repopulation
+  python populate_database.py --force
+  
+  # Process only Greek texts
+  python populate_database.py --languages grc
+  
+  # Process Greek and Latin texts
+  python populate_database.py --languages grc lat
+        """,
+    )
+
+    parser.add_argument(
+        "--limit", type=int, help="Limit number of texts to process (for testing)"
+    )
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Parse files but don't insert into database",
+    )
+    parser.add_argument(
+        "--force",
+        action="store_true",
+        help="Clear existing texts and repopulate (use with caution!)",
+    )
+    parser.add_argument(
+        "--languages",
+        nargs="+",
+        help="Languages to process (e.g., grc lat). Default: all languages",
+    )
+    parser.add_argument(
+        "--commit-batch",
+        type=int,
+        default=100,
+        help="Batch size for database transactions (default: 100)",
+    )
+    parser.add_argument(
+        "--data-dir",
+        type=str,
+        help="Path to Perseus data directory (uses config if not provided)",
+    )
+    parser.add_argument(
+        "--continue-on-error",
+        action="store_true",
+        help="Continue processing on individual file errors (default: fail-fast)",
+    )
+
+    args = parser.parse_args()
+
+    # Configure logging
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    )
+
+    # Create configuration
+    config = PopulateConfig(
+        limit=args.limit,
+        dry_run=args.dry_run,
+        force=args.force,
+        languages=args.languages or [],
+        commit_batch=args.commit_batch,
+        fail_fast=not args.continue_on_error,
+        data_dir=Path(args.data_dir) if args.data_dir else None,
+    )
+
+    # Safety check for force operation
+    if args.force:
+        response = input(
+            "Are you sure you want to clear all existing texts and repopulate? (yes/no): "
+        )
+        if response.lower() != "yes":
+            logger.info("Force operation cancelled")
+            sys.exit(0)
+
+    try:
+        stats = run_population(config)
+        sys.exit(0 if stats.errors == 0 else 1)
+    except KeyboardInterrupt:
+        logger.info("Population interrupted by user")
+        sys.exit(130)
+    except Exception as e:
+        logger.error(f"Population failed: {e}")
+        sys.exit(1)
+
+
+if __name__ == "__main__":
+    main()

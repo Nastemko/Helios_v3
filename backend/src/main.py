@@ -79,7 +79,7 @@ async def startup_event():
     logger.info("Checking for Greek text population...")
 
     try:
-        stats = populate_on_startup()
+        stats = await populate_on_startup()
         if stats["inserted"] > 0:
             logger.info(f"Populated database with {stats['inserted']} Greek texts")
         elif stats["skipped"] > 0:
