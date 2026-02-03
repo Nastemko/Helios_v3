@@ -33,17 +33,17 @@ RUN apt-get update && \
     && curl -LsSf https://astral.sh/uv/install.sh | sh \
     && mv /root/.local/bin/uv /usr/local/bin/uv
 
-RUN curl -fSL -o /app/assets/inscriptions/ithaca_153143996_2.pkl \
+RUN curl -fSL -o /app/assets/inscriptions/models/ithaca_153143996_2.pkl \
     https://storage.googleapis.com/ithaca-resources/models/ithaca_153143996_2.pkl && \
     curl -fSL -o /app/assets/inscriptions/iphi.json \
     https://storage.googleapis.com/ithaca-resources/models/iphi.json && \
-    curl -fSL -o /app/assets/inscriptions/iphi_emb_xid153143996.pkl \
+    curl -fSL -o /app/assets/inscriptions/models/iphi_emb_xid153143996.pkl \
     https://storage.googleapis.com/ithaca-resources/models/iphi_emb_xid153143996.pkl && \
-    curl -fSL -o /app/assets/inscriptions/aeneas_117149994_2.pkl \
+    curl -fSL -o /app/assets/inscriptions/models/aeneas_117149994_2.pkl \
     https://storage.googleapis.com/ithaca-resources/models/aeneas_117149994_2.pkl && \
     curl -fSL -o /app/assets/inscriptions/led.json \
     https://storage.googleapis.com/ithaca-resources/models/led.json && \
-    curl -fSL -o /app/assets/inscriptions/led_emb_xid117149994.pkl \
+    curl -fSL -o /app/assets/inscriptions/models/led_emb_xid117149994.pkl \
     https://storage.googleapis.com/ithaca-resources/models/led_emb_xid117149994.pkl && \
     chown -R helios:helios /app/assets/inscriptions
 

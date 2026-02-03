@@ -134,9 +134,9 @@ class IthacaService:
 
         if dataset_path is None:
             if language == "greek":
-                dataset_path = models_dir / "iphi.json"
+                dataset_path = Path(settings.assets.INSCRIPTIONS_DIR) / "iphi.json"
             else:
-                dataset_path = models_dir / "led.json"
+                dataset_path = Path(settings.assets.INSCRIPTIONS_DIR) / "led.json"
 
         if retrieval_path is None:
             if language == "greek":
