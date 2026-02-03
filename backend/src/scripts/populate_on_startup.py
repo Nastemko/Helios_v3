@@ -211,38 +211,3 @@ def populate_on_startup():
     stats = run_population()
 
     return stats
-
-
-if __name__ == "__main__":
-    """Allow running as a standalone script for testing."""
-    # Setup logging
-    logging.basicConfig(
-        level=logging.INFO,
-        format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-    )
-
-    parser = argparse.ArgumentParser(
-        description="Populate database with Greek texts from Perseus XML"
-    )
-    parser.add_argument(
-        "--data-dir",
-        type=str,
-        help="Path to data directory (uses config default if not provided)",
-    )
-    parser.add_argument(
-        "--limit", type=int, help="Limit number of texts to process (for testing)"
-    )
-    parser.add_argument(
-        "--force",
-        action="store_true",
-        help="Force repopulation even if database has texts",
-    )
-
-    args = parser.parse_args()
-
-    # Ensure tables exist
-    Base.metadata.create_all(bind=engine)
-
-    stats = run_population(data_dir=args.data_dir, limit=args.limit, force=args.force)
-
-    sys.exit(0 if stats["errors"] == 0 else 1)

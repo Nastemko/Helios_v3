@@ -1,13 +1,12 @@
 """Script to populate the database with PHI inscriptions from iphi.json"""
 
-import argparse
 import json
 import logging
-import sys
 from pathlib import Path
 
 from database import Base, SessionLocal, engine
 from models.text import Text, TextSegment
+from src.config import settings
 
 logging.basicConfig(
     level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
@@ -32,13 +31,7 @@ def load_phi_inscriptions(
     """
     # Default path - look in the iphi directory
     if phi_json_path is None:
-        _phi_json_path = (
-            Path(__file__).parent.parent.parent.parent
-            / "iphi"
-            / "train"
-            / "data"
-            / "iphi.json"
-        )
+        _phi_json_path = Path(settings.assets.JAX_MODELS_DIR) / "iphi.json"
     else:
         _phi_json_path = Path(phi_json_path)
 
@@ -231,48 +224,26 @@ def clear_inscriptions():
         db.close()
 
 
-if __name__ == "__main__":
-    parser = argparse.ArgumentParser(
-        description="Load PHI inscriptions into Helios database"
-    )
-    parser.add_argument(
-        "--json-path",
-        type=str,
-        help="Path to iphi.json file (defaults to iphi/train/data/iphi.json)",
-    )
-    parser.add_argument(
-        "--limit", type=int, help="Limit number of inscriptions to load (for testing)"
-    )
-    parser.add_argument(
-        "--dry-run",
-        action="store_true",
-        help="Don't insert, just preview what would be loaded",
-    )
-    parser.add_argument(
-        "--batch-size",
-        type=int,
-        default=500,
-        help="Number of records to commit at once (default: 500)",
-    )
-    parser.add_argument(
-        "--clear",
-        action="store_true",
-        help="Clear all existing inscriptions before loading (use with caution!)",
-    )
+def initialize_phi_inscriptions():
+    """
+    Load PHI inscriptions into database on FastAPI startup.
 
-    args = parser.parse_args()
+    This function is designed to be called from the FastAPI startup event.
+    It runs the inscription loading in a way that is idempotent and doesn't
+    block the event loop excessively.
+    """
+    logger.info("Initializing PHI inscriptions...")
 
-    if args.clear:
-        response = input("Are you sure you want to clear all inscriptions? (yes/no): ")
-        if response.lower() == "yes":
-            clear_inscriptions()
-        else:
-            logger.info("Clear cancelled")
-            sys.exit(0)
-
-    load_phi_inscriptions(
-        phi_json_path=args.json_path,
-        limit=args.limit,
-        dry_run=args.dry_run,
-        batch_size=args.batch_size,
-    )
+    try:
+        # Use existing function with no limits for production
+        load_phi_inscriptions(
+            phi_json_path=None,  # Use default path
+            limit=None,  # No limits for production
+            dry_run=False,
+            batch_size=500,  # Default batch size
+        )
+        logger.info("PHI inscriptions initialized successfully")
+        return {"status": "success"}
+    except Exception as e:
+        logger.error(f"Error initializing PHI inscriptions: {e}")
+        return {"status": "error", "message": str(e)}

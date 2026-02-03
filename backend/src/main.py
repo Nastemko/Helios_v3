@@ -20,6 +20,7 @@ from routers import (
     texts,
     translate_assist,
 )
+from scripts.load_phi_inscriptions import initialize_phi_inscriptions
 from scripts.populate_on_startup import populate_on_startup
 from services.ithaca_service.ithaca_service import (
     initialize_all_models,
@@ -86,6 +87,15 @@ async def startup_event():
     except Exception as e:
         logger.error(f"Error during text population: {e}")
         # Continue startup even if population fails
+
+    # Initialize PHI inscriptions
+    logger.info("Initializing PHI inscriptions...")
+    try:
+        phi_stats = initialize_phi_inscriptions()
+        logger.info("PHI inscription initialization complete")
+    except Exception as e:
+        logger.error(f"Error during PHI inscription initialization: {e}")
+        # Continue startup even if PHI loading fails
 
     # Initialize Morphology service
     logger.info("Initializing CLTK morphology service...")
