@@ -76,7 +76,7 @@ class MorphologyService:
             word_obj = None
             if context:
                 for w in doc.words:
-                    if w.string.lower() == word.lower():
+                    if w.string and w.string.lower() == word.lower():
                         word_obj = w
                         break
             if word_obj is None and doc.words:
@@ -172,7 +172,7 @@ class MorphologyService:
             word_obj = None
             if context:
                 for w in doc.words:
-                    if w.string.lower() == word.lower():
+                    if w.string and w.string.lower() == word.lower():
                         word_obj = w
                         break
             if word_obj is None and doc.words:
