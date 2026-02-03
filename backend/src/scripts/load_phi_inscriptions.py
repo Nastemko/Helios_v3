@@ -18,7 +18,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Dict, List, Optional
 
-from sqlalchemy import text, select, func
+from sqlalchemy import func, select, text
 from sqlalchemy.orm import Session
 
 from config import settings
@@ -92,9 +92,9 @@ class PHIInscriptionLoader:
         if self.existing_phi_urns:
             return len(self.existing_phi_urns) > 0
         result = db.scalar(
-            select(func.count(Text.id)).filter(Text.urn.like("urn:phi:%"))
+            select(func.count(Text.id)).filter(Text.urn.like("urn:phi:%")).limit(1)
         )
-        return result > 0
+        return result is not None and result > 0
 
     def should_process_inscription(self, inscription: Dict) -> bool:
         """Check if inscription should be processed based on existing URN cache."""
@@ -520,16 +520,16 @@ if __name__ == "__main__":
 Examples:
   # Load all inscriptions
   python load_phi_inscriptions.py
-  
+
   # Dry run to see what would be processed
   python load_phi_inscriptions.py --dry-run
-  
+
   # Process only first 100 inscriptions
   python load_phi_inscriptions.py --limit 100
-  
+
   # Force reload (clear existing)
   python load_phi_inscriptions.py --force
-  
+
   # Custom batch size
   python load_phi_inscriptions.py --batch-size 200
         """,
