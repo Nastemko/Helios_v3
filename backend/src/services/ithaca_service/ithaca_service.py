@@ -17,6 +17,7 @@ from typing import Any, Dict, Literal, Optional
 
 import jax
 
+from config import settings
 from services.ithaca_service.models import (
     AttributionResult,
     ContextualizationResult,
@@ -25,7 +26,6 @@ from services.ithaca_service.models import (
     RestorationResult,
     SimilarInscription,
 )
-from src.config import settings
 from vendor.predictingthepast.eval import inference
 from vendor.predictingthepast.models.model import Model
 from vendor.predictingthepast.util import alphabet as util_alphabet

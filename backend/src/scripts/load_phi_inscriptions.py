@@ -4,9 +4,9 @@ import json
 import logging
 from pathlib import Path
 
+from config import settings
 from database import Base, SessionLocal, engine
 from models.text import Text, TextSegment
-from src.config import settings
 
 logging.basicConfig(
     level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
