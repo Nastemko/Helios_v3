@@ -130,43 +130,6 @@ class PHIInscriptionLoader:
 
         return batch_data
 
-    def create_text_record(self, inscription: Dict) -> Text:
-        """Create a Text record from inscription data."""
-        phi_id = inscription.get("id")
-        urn = f"urn:phi:{phi_id}"
-
-        # Build title from metadata
-        title = f"PHI {phi_id}"
-        region_sub = inscription.get("region_sub")
-        region_main = inscription.get("region_main")
-
-        if region_sub:
-            title = f"{region_sub} - PHI {phi_id}"
-        elif region_main:
-            title = f"{region_main} - PHI {phi_id}"
-
-        return Text(
-            urn=urn,
-            author="[Inscription]",  # Anonymous for inscriptions
-            title=title,
-            language="grc",
-            is_fragment=True,  # Inscriptions are often fragmentary
-            text_metadata={
-                "text_type": "inscription",
-                "phi_id": phi_id,
-                "source": "Packard Humanities Institute",
-                "region_main": region_main,
-                "region_main_id": inscription.get("region_main_id"),
-                "region_sub": region_sub,
-                "region_sub_id": inscription.get("region_sub_id"),
-                "date_str": inscription.get("date_str"),
-                "date_min": inscription.get("date_min"),
-                "date_max": inscription.get("date_max"),
-                "date_circa": inscription.get("date_circa"),
-                "metadata_raw": inscription.get("metadata"),
-            },
-        )
-
     def create_segments_for_text(
         self, db: Session, inscription: Dict, text_id: int
     ) -> None:
@@ -232,22 +195,20 @@ class PHIInscriptionLoader:
                     "title": title,
                     "language": "grc",
                     "is_fragment": True,
-                    "text_metadata": json.dumps(
-                        {
-                            "text_type": "inscription",
-                            "phi_id": phi_id,
-                            "source": "Packard Humanities Institute",
-                            "region_main": region_main,
-                            "region_main_id": inscription.get("region_main_id"),
-                            "region_sub": region_sub,
-                            "region_sub_id": inscription.get("region_sub_id"),
-                            "date_str": inscription.get("date_str"),
-                            "date_min": inscription.get("date_min"),
-                            "date_max": inscription.get("date_max"),
-                            "date_circa": inscription.get("date_circa"),
-                            "metadata_raw": inscription.get("metadata"),
-                        }
-                    ),
+                    "text_metadata": {
+                        "text_type": "inscription",
+                        "phi_id": phi_id,
+                        "source": "Packard Humanities Institute",
+                        "region_main": region_main,
+                        "region_main_id": inscription.get("region_main_id"),
+                        "region_sub": region_sub,
+                        "region_sub_id": inscription.get("region_sub_id"),
+                        "date_str": inscription.get("date_str"),
+                        "date_min": inscription.get("date_min"),
+                        "date_max": inscription.get("date_max"),
+                        "date_circa": inscription.get("date_circa"),
+                        "metadata_raw": inscription.get("metadata"),
+                    },
                 }
             )
 
