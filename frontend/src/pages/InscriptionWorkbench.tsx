@@ -29,7 +29,7 @@ export default function InscriptionWorkbench() {
   const [error, setError] = useState<string | null>(null);
   
   // Browser panel state
-  const [showBrowser, setShowBrowser] = useState(false);
+  const [showBrowser, setShowBrowser] = useState(true);
 
   // Fetch model status
   const { data: modelStatus } = useQuery({
@@ -51,21 +51,15 @@ export default function InscriptionWorkbench() {
   const latinAvailable = models?.latin?.available ?? false;
   const currentModelAvailable = language === 'greek' ? greekAvailable : latinAvailable;
 
-  // Handle "Contextualise and Attribute" (no restoration)
-  const handleAttributeOnly = useCallback(async () => {
+  // Handle "Contextualise" only
+  const handleContextualize = useCallback(async () => {
     if (!inputText.trim()) return;
     
     setIsProcessing(true);
     setError(null);
-    setRestorationResult(null);
     
     try {
-      const [attrRes, ctxRes] = await Promise.all([
-        inscriptionApi.attribute(inputText, language),
-        inscriptionApi.contextualize(inputText, language),
-      ]);
-      
-      setAttributionResult(attrRes.data);
+      const ctxRes = await inscriptionApi.contextualize(inputText, language);
       setContextualizationResult(ctxRes.data);
     } catch (err: any) {
       setError(err.response?.data?.detail || err.message || 'An error occurred');
@@ -74,23 +68,33 @@ export default function InscriptionWorkbench() {
     }
   }, [inputText, language]);
 
-  // Handle "Contextualise, Restore and Attribute" (full analysis)
-  const handleFullAnalysis = useCallback(async () => {
+  // Handle "Attribute" only
+  const handleAttribute = useCallback(async () => {
     if (!inputText.trim()) return;
     
     setIsProcessing(true);
     setError(null);
     
     try {
-      const [restoreRes, attrRes, ctxRes] = await Promise.all([
-        inscriptionApi.restore(inputText, language, temperature),
-        inscriptionApi.attribute(inputText, language),
-        inscriptionApi.contextualize(inputText, language),
-      ]);
-      
-      setRestorationResult(restoreRes.data);
+      const attrRes = await inscriptionApi.attribute(inputText, language);
       setAttributionResult(attrRes.data);
-      setContextualizationResult(ctxRes.data);
+    } catch (err: any) {
+      setError(err.response?.data?.detail || err.message || 'An error occurred');
+    } finally {
+      setIsProcessing(false);
+    }
+  }, [inputText, language]);
+
+  // Handle "Restore" only
+  const handleRestore = useCallback(async () => {
+    if (!inputText.trim()) return;
+    
+    setIsProcessing(true);
+    setError(null);
+    
+    try {
+      const restoreRes = await inscriptionApi.restore(inputText, language, temperature);
+      setRestorationResult(restoreRes.data);
     } catch (err: any) {
       setError(err.response?.data?.detail || err.message || 'An error occurred');
     } finally {
@@ -220,8 +224,9 @@ export default function InscriptionWorkbench() {
           onChange={setInputText}
           temperature={temperature}
           onTemperatureChange={setTemperature}
-          onAttributeOnly={handleAttributeOnly}
-          onFullAnalysis={handleFullAnalysis}
+          onContextualize={handleContextualize}
+          onAttribute={handleAttribute}
+          onRestore={handleRestore}
           onClear={handleClear}
           isProcessing={isProcessing}
           modelAvailable={currentModelAvailable}

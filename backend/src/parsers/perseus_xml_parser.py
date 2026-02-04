@@ -15,6 +15,7 @@ class PerseusXMLParser:
     # XML Namespaces
     TEI_NS = "{http://www.tei-c.org/ns/1.0}"
     CTS_NS = "{http://chs.harvard.edu/xmlns/cts}"
+    TI_NS = "{http://chs.harvard.edu/xmlns/cts}"  # CTS Text Inventory namespace
 
     def __init__(self, data_dir: Path):
         """
@@ -51,6 +52,12 @@ class PerseusXMLParser:
             # Extract metadata from teiHeader
             metadata = self._extract_metadata(root)
 
+            # Try to get English title from __cts__.xml in the same directory
+            english_title = self._extract_english_title_from_cts(xml_path)
+            
+            # Use English title if available, otherwise fall back to native title from header
+            title = english_title or metadata.get("title", "Unknown")
+
             # Extract text segments
             segments = self._extract_text_segments(root)
 
@@ -61,7 +68,7 @@ class PerseusXMLParser:
             return {
                 "urn": urn,
                 "author": metadata.get("author", "Unknown"),
-                "title": metadata.get("title", "Unknown"),
+                "title": title,
                 "language": language,
                 "is_fragment": False,  # TODO: determine from metadata
                 "text_metadata": metadata,
@@ -70,6 +77,42 @@ class PerseusXMLParser:
 
         except Exception as e:
             logger.error(f"Error parsing {xml_path}: {e}")
+            return None
+
+    def _extract_english_title_from_cts(self, xml_path: Path) -> Optional[str]:
+        """
+        Extract English title from __cts__.xml file in the same directory
+
+        Args:
+            xml_path: Path to the main XML file
+
+        Returns:
+            English title string or None if not found
+        """
+        try:
+            cts_path = xml_path.parent / "__cts__.xml"
+            if not cts_path.exists():
+                return None
+
+            tree = ET.parse(str(cts_path))
+            root = tree.getroot()
+
+            # Look for ti:title with xml:lang="eng"
+            # The namespace is typically "http://chs.harvard.edu/xmlns/cts"
+            for ns_prefix in ["ti", ""]:
+                ns = self.TI_NS if ns_prefix else ""
+                
+                # Try to find title element with English language
+                for title_elem in root.iter():
+                    if title_elem.tag.endswith("title"):
+                        lang = title_elem.get("{http://www.w3.org/XML/1998/namespace}lang")
+                        if lang == "eng" and title_elem.text:
+                            return title_elem.text.strip()
+
+            return None
+
+        except Exception as e:
+            logger.debug(f"Could not extract English title from CTS file for {xml_path}: {e}")
             return None
 
     def _extract_urn(self, root: ET.Element) -> Optional[str]:
