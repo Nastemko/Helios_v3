@@ -94,7 +94,7 @@ async def list_texts(
     # Apply pagination
     texts = query.offset(skip).limit(limit).all()
 
-    return texts
+    return [TextResponse.model_validate(t, extra="ignore") for t in texts]
 
 
 @router.get("/{text_id}", response_model=TextDetailResponse)
@@ -130,8 +130,10 @@ async def get_text(
     segments = segments_query.offset(skip).limit(limit).all()
 
     return TextDetailResponse(
-        text=TextResponse.from_orm(text),
-        segments=[TextSegmentResponse.from_orm(seg) for seg in segments],
+        text=TextResponse.model_validate(text, extra="ignore"),
+        segments=[
+            TextSegmentResponse.model_validate(seg, extra="ignore") for seg in segments
+        ],
         total_segments=total_segments,
     )
 
@@ -166,7 +168,7 @@ async def get_text_segment(
     if not segment:
         raise HTTPException(status_code=404, detail=f"Segment not found: {reference}")
 
-    return TextSegmentResponse.from_orm(segment)
+    return TextSegmentResponse.model_validate(segment, extra="ignore")
 
 
 @router.get("/authors/list")

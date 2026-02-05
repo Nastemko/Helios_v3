@@ -147,7 +147,7 @@ async def get_current_user_info(current_user: User = Depends(get_current_user)):
 
     Requires valid JWT token in Authorization header.
     """
-    return UserResponse.from_orm(current_user)
+    return UserResponse.model_validate(current_user, extra="ignore")
 
 
 @router.post("/logout")
@@ -195,7 +195,9 @@ async def dev_login(db: Session = Depends(get_db)):
     access_token = create_access_token(data={"sub": str(user.id)})
 
     return TokenResponse(
-        access_token=access_token, token_type="bearer", user=UserResponse.from_orm(user)
+        access_token=access_token,
+        token_type="bearer",
+        user=UserResponse.model_validate(user, extra="ignore"),
     )
 
 
@@ -231,7 +233,7 @@ async def auth_status(request: Request, db: Session = Depends(get_db)):
                     if user:
                         return {
                             "authenticated": True,
-                            "user": UserResponse.from_orm(user),
+                            "user": UserResponse.model_validate(user, extra="ignore"),
                         }
 
         return {"authenticated": False, "user": None}

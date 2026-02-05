@@ -153,7 +153,7 @@ async def get_annotation(
     if not annotation:
         raise HTTPException(status_code=404, detail="Annotation not found")
 
-    return AnnotationResponse.from_orm(annotation)
+    return AnnotationResponse.model_validate(annotation, extra="ignore")
 
 
 @router.put("/{annotation_id}", response_model=AnnotationResponse)
@@ -183,7 +183,7 @@ async def update_annotation(
     db.commit()
     db.refresh(annotation)
 
-    return AnnotationResponse.from_orm(annotation)
+    return AnnotationResponse.model_validate(annotation, extra="ignore")
 
 
 @router.delete("/{annotation_id}", status_code=204)
