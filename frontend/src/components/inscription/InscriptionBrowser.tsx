@@ -1,24 +1,26 @@
-import { useState, useCallback } from 'react';
-import { useQuery } from '@tanstack/react-query';
-import { inscriptionApi } from '../../services/api';
-import type { InscriptionListItem, RegionCount } from '../../types';
+import { useState, useCallback } from "react";
+import { useQuery } from "@tanstack/react-query";
+import { inscriptionApi } from "../../services/api";
+import type { InscriptionListItem, RegionCount } from "../../types";
 
 interface InscriptionBrowserProps {
   onSelectInscription: (inscription: InscriptionListItem) => void;
 }
 
-export default function InscriptionBrowser({ onSelectInscription }: InscriptionBrowserProps) {
-  const [search, setSearch] = useState('');
-  const [regionMain, setRegionMain] = useState('');
-  const [dateMin, setDateMin] = useState<string>('');
-  const [dateMax, setDateMax] = useState<string>('');
+export default function InscriptionBrowser({
+  onSelectInscription,
+}: InscriptionBrowserProps) {
+  const [search, setSearch] = useState("");
+  const [regionMain, setRegionMain] = useState("");
+  const [dateMin, setDateMin] = useState<string>("");
+  const [dateMax, setDateMax] = useState<string>("");
   const [page, setPage] = useState(0);
   const limit = 20;
 
   // Fetch regions for dropdown
   const { data: regionsData } = useQuery({
-    queryKey: ['inscription-regions'],
-    queryFn: () => inscriptionApi.getRegions('main'),
+    queryKey: ["inscription-regions"],
+    queryFn: () => inscriptionApi.getRegions("main"),
     staleTime: 300000, // Cache for 5 minutes
   });
 
@@ -35,8 +37,12 @@ export default function InscriptionBrowser({ onSelectInscription }: InscriptionB
   };
 
   // Fetch inscriptions
-  const { data: inscriptionsData, isLoading, isFetching } = useQuery({
-    queryKey: ['inscriptions', queryParams],
+  const {
+    data: inscriptionsData,
+    isLoading,
+    isFetching,
+  } = useQuery({
+    queryKey: ["inscriptions", queryParams],
     queryFn: () => inscriptionApi.list(queryParams),
     staleTime: 60000, // Cache for 1 minute
   });
@@ -66,10 +72,10 @@ export default function InscriptionBrowser({ onSelectInscription }: InscriptionB
   }, []);
 
   const handleClearFilters = useCallback(() => {
-    setSearch('');
-    setRegionMain('');
-    setDateMin('');
-    setDateMax('');
+    setSearch("");
+    setRegionMain("");
+    setDateMin("");
+    setDateMax("");
     setPage(0);
   }, []);
 
@@ -152,7 +158,7 @@ export default function InscriptionBrowser({ onSelectInscription }: InscriptionB
             </button>
           )}
         </div>
-        
+
         <p className="text-xs text-stone-500 mt-2">
           Date format: negative values = BC (e.g., -350 = 350 BC), positive = AD
         </p>
@@ -185,13 +191,17 @@ export default function InscriptionBrowser({ onSelectInscription }: InscriptionB
                     {inscription.region_sub && (
                       <>
                         <span className="text-stone-300">•</span>
-                        <span className="text-stone-600">{inscription.region_sub}</span>
+                        <span className="text-stone-600">
+                          {inscription.region_sub}
+                        </span>
                       </>
                     )}
                     {inscription.date_str && (
                       <>
                         <span className="text-stone-300">•</span>
-                        <span className="text-stone-500">{inscription.date_str.trim()}</span>
+                        <span className="text-stone-500">
+                          {inscription.date_str.trim()}
+                        </span>
                       </>
                     )}
                   </div>
@@ -203,8 +213,18 @@ export default function InscriptionBrowser({ onSelectInscription }: InscriptionB
                   className="shrink-0 p-2 text-stone-400 hover:text-helios-teal hover:bg-teal-50 rounded-lg transition-colors"
                   title="Load into workbench"
                 >
-                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                  <svg
+                    className="w-5 h-5"
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth={2}
+                      d="M12 4v16m8-8H4"
+                    />
                   </svg>
                 </button>
               </div>
@@ -223,12 +243,14 @@ export default function InscriptionBrowser({ onSelectInscription }: InscriptionB
           >
             Previous
           </button>
-          
+
           <span className="text-sm text-stone-600">
             Page {page + 1}
-            {isFetching && <span className="ml-2 text-stone-400">(loading...)</span>}
+            {isFetching && (
+              <span className="ml-2 text-stone-400">(loading...)</span>
+            )}
           </span>
-          
+
           <button
             onClick={() => setPage(page + 1)}
             disabled={inscriptions.length < limit || isFetching}
@@ -241,4 +263,3 @@ export default function InscriptionBrowser({ onSelectInscription }: InscriptionB
     </div>
   );
 }
-

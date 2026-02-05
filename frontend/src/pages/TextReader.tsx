@@ -9,7 +9,7 @@ import { useTranslationAssist } from '../hooks/useTranslationAssist';
 import type { TextSegment, TranslationCard } from '../types';
 
 export default function TextReader() {
-  const { urn } = useParams<{ urn: string }>();
+  const { textId } = useParams<{ textId: string }>();
   const [selectedWord, setSelectedWord] = useState<{
     word: string;
     language: string;
@@ -33,9 +33,9 @@ export default function TextReader() {
   }, []);
   
   const { data, isLoading } = useQuery({
-    queryKey: ['text', urn],
-    queryFn: () => textApi.get(urn!),
-    enabled: !!urn,
+    queryKey: ['text', textId],
+    queryFn: () => textApi.get(parseInt(textId!)),
+    enabled: !!textId,
   });
 
   // These hooks must be called before any early returns to maintain consistent hook order

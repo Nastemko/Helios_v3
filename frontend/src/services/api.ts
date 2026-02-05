@@ -38,7 +38,7 @@ api.interceptors.request.use((config) => {
   return config;
 });
 
-// Text API
+  // Text API
 export const textApi = {
   list: (params?: {
     search?: string;
@@ -48,12 +48,12 @@ export const textApi = {
     limit?: number;
   }) => api.get<Text[]>("/api/texts", { params }),
 
-  get: (urn: string, params?: { skip?: number; limit?: number }) =>
-    api.get<TextDetail>(`/api/texts/${encodeURIComponent(urn)}`, { params }),
+  get: (textId: number, params?: { skip?: number; limit?: number }) =>
+    api.get<TextDetail>(`/api/texts/${textId}`, { params }),
 
-  getSegment: (urn: string, reference: string) =>
+  getSegment: (textId: number, reference: string) =>
     api.get<TextSegment>(
-      `/api/texts/${encodeURIComponent(urn)}/segment/${reference}`,
+      `/api/texts/${textId}/segment/${reference}`,
     ),
 
   getAuthors: () =>
@@ -141,8 +141,8 @@ export const inscriptionApi = {
     limit?: number;
   }) => api.get<InscriptionListItem[]>("/api/inscriptions", { params }),
 
-  // Get single inscription by PHI ID
-  get: (phiId: number) => api.get<Inscription>(`/api/inscriptions/${phiId}`),
+  // Get single inscription by text ID
+  get: (textId: number) => api.get<Inscription>(`/api/inscriptions/${textId}`),
 
   // Get list of regions with counts
   getRegions: (level: "main" | "sub" = "main") =>

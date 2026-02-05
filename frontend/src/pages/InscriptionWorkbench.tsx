@@ -100,8 +100,8 @@ export default function InscriptionWorkbench() {
 
   // Load inscription into input
   const handleLoadInscription = useCallback((inscription: InscriptionListItem) => {
-    // Fetch full inscription text
-    inscriptionApi.get(inscription.phi_id).then((res) => {
+    // Fetch full inscription text by text ID
+    inscriptionApi.get(inscription.id).then((res) => {
       setInputText(res.data.text);
       setShowBrowser(false);
     }).catch((_err) => {

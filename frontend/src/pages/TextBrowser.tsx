@@ -62,7 +62,7 @@ export default function TextBrowser() {
             {texts.data.map((text: Text) => (
                 <Link
                 key={text.id}
-                to={`/text/${encodeURIComponent(text.urn)}`}
+                to={`/text/${text.id}`}
                 className="block bg-white p-6 rounded-lg shadow-sm border hover:border-blue-300 hover:shadow-md transition"
                 >
                 <div className="flex items-start justify-between">
@@ -81,7 +81,8 @@ export default function TextBrowser() {
                         </span>
                     </div>
                     <p className="text-gray-600 font-medium mb-1">{text.author}</p>
-                    <p className="text-sm text-gray-500">{text.urn}</p>
+                    <p className="text-sm text-gray-500">{text.local_id}</p>
+                    <span className="text-xs text-gray-400 ml-2">({text.source})</span>
                     </div>
                     
                     <div className="text-blue-600 ml-4">
