@@ -14,17 +14,17 @@ import json
 import logging
 import sys
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, List, Optional
 
-from sqlalchemy import func, select, text
+from sqlalchemy import func, select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import Session
 
 from config import settings
 from database import Base, SessionLocal, engine
-from models.text import Text, TextSegment
+from models.text import Text, TextSegment, TextSource
 
 logger = logging.getLogger(__name__)
 
@@ -54,7 +54,7 @@ class PHIStats:
 
 
 class PHIInscriptionLoader:
-    """Handles PHI inscription loading with batched operations and optimized queries."""
+    """Handles PHI inscription loading with batched operations and optimized local_id cache."""
 
     def __init__(self, config: PHIConfig):
         self.config = config
@@ -80,9 +80,9 @@ class PHIInscriptionLoader:
         """Prefetch existing PHI local_ids to avoid individual database queries."""
         logger.info("Prefetching existing PHI local_ids...")
 
-        # Only fetch PHI texts (source = 'PHI') for efficiency
+        # Only fetch PHI texts (source = TextSource.PHI) for efficiency
         existing_phi = db.execute(
-            select(Text.local_id).filter(Text.source == "PHI")
+            select(Text.local_id).filter(Text.source == TextSource.PHI)
         ).all()
 
         self.existing_phi_local_ids = {row.local_id for row in existing_phi}

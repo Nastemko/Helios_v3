@@ -1,5 +1,7 @@
 """Text models"""
 
+from enum import Enum
+
 from sqlalchemy import Boolean, Column, ForeignKey, Index, Integer, String
 from sqlalchemy import Text as TextType
 from sqlalchemy.dialects.postgresql import ENUM, JSONB
@@ -8,10 +10,16 @@ from sqlalchemy.orm import relationship
 from database import Base
 
 
+class TextSource(Enum):
+    PHI = 0
+    GreekLit = 1
+
+
 class Text(Base):
     """Canonical text model (e.g., Homer's Iliad)"""
 
     __tablename__ = "texts"
+    __table_args__ = (Index("idx_author_title", "author", "title"),)
 
     id = Column(Integer, primary_key=True, index=True, nullable=False)
 
@@ -20,7 +28,7 @@ class Text(Base):
     # Postgres enum column for source/origin of the text.
     # Possible values: PHI, GreekLit
     source = Column(
-        ENUM("PHI", "GreekLit", name="text_source_enum", native_enum=True),
+        ENUM(TextSource, name="text_source_enum", native_enum=True),
         nullable=False,
         index=True,
     )
@@ -54,10 +62,10 @@ class TextSegment(Base):
     )
 
     id = Column(Integer, primary_key=True, index=True)
-    text_id = Column(Integer, ForeignKey("texts.id"), nullable=False)
+    text_id = Column(Integer, ForeignKey("texts.id"), index=True, nullable=False)
     book = Column(String)  # Book number/name (e.g., "1")
     line = Column(String)  # Line number (e.g., "1")
-    sequence = Column(Integer, nullable=False)  # For ordering
+    sequence = Column(Integer, nullable=False, index=True)  # For ordering
     content = Column(TextType, nullable=False)  # The actual Greek/Latin text
     reference = Column(
         String, nullable=False, index=True

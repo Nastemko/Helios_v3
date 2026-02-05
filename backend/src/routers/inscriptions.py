@@ -1,14 +1,14 @@
 """API endpoints for browsing and querying PHI inscriptions"""
 
-from typing import List, Literal, Optional
+from typing import Annotated, List, Literal, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Path, Query
 from pydantic import BaseModel, field_validator
 from sqlalchemy import String, cast, select
 from sqlalchemy.orm import Session
 
 from database import get_db
-from models.text import Text, TextSegment
+from models.text import Text, TextSegment, TextSource
 from services.ithaca_service.ithaca_service import (
     get_ithaca_service,
     initialize_all_models,
@@ -26,7 +26,6 @@ class InscriptionResponse(BaseModel):
 
     id: int
     phi_id: int
-    urn: str
     title: str
     text: str  # Full inscription text
     region_main: Optional[str] = None
@@ -46,7 +45,6 @@ class InscriptionListItem(BaseModel):
 
     id: int
     phi_id: int
-    urn: str
     title: str
     text_preview: str  # First ~100 chars
     region_main: Optional[str] = None
@@ -130,8 +128,8 @@ async def list_inscriptions(
 
     Date format: negative values are BC (e.g., -350 = 350 BC), positive are AD.
     """
-    # Base query - only inscriptions (urn starts with urn:phi:)
-    query = select(Text).filter(Text.urn.like("urn:phi:%"))
+    # Base query - only inscriptions
+    query = select(Text).filter(Text.source == TextSource.PHI)
 
     # Search in text content
     if search:
@@ -189,8 +187,7 @@ async def list_inscriptions(
         results.append(
             InscriptionListItem(
                 id=text.id,
-                phi_id=meta["phi_id"] or 0,
-                urn=text.urn,
+                phi_id=text.local_id,
                 title=text.title,
                 text_preview=text_preview,
                 region_main=meta["region_main"],
@@ -216,7 +213,8 @@ async def list_regions(
     or level='sub' for sub-regions (e.g., 'Athens: Agora').
     """
     # Get all inscription texts
-    inscriptions = db.query(Text).filter(Text.urn.like("urn:phi:%")).all()
+    # TODO: ow my god fix this endpoint, it is painfully slow
+    inscriptions = db.query(Text).filter(Text.source == TextSource.PHI).all()
 
     # Count by region
     region_counts = {}
@@ -249,10 +247,12 @@ async def get_inscription_stats(db: Session = Depends(get_db)):
     Get statistics about the inscription corpus.
     """
     # Count total inscriptions
-    total = db.query(Text).filter(Text.urn.like("urn:phi:%")).count()
+    total = db.query(Text).filter(Text.source == TextSource.PHI).count()
 
     # Get all inscriptions to analyze metadata
-    inscriptions = db.query(Text).filter(Text.urn.like("urn:phi:%")).all()
+    inscriptions = db.query(Text).filter(Text.source == TextSource.PHI).all()
+
+    # TODO: use database to determin the oldest and youngest texts not python
 
     dated_count = 0
     regions = set()
@@ -286,26 +286,28 @@ async def get_inscription_stats(db: Session = Depends(get_db)):
     )
 
 
-@router.get("/{phi_id}", response_model=InscriptionResponse)
-async def get_inscription(phi_id: int, db: Session = Depends(get_db)):
+@router.get("/{text_id}", response_model=InscriptionResponse)
+async def get_inscription(
+    text_id: Annotated[int, Path()], db: Session = Depends(get_db)
+):
     """
-    Get a specific inscription by its PHI ID.
+    Get a specific inscription by its text ID.
     """
-    urn = f"urn:phi:{phi_id}"
-    text = db.query(Text).filter(Text.urn == urn).scalar()
+    text = (
+        db.query(Text)
+        .filter(Text.id == text_id, Text.source == TextSource.PHI)
+        .scalar()
+    )
 
     if not text:
-        raise HTTPException(
-            status_code=404, detail=f"Inscription not found: PHI {phi_id}"
-        )
+        raise HTTPException(status_code=404, detail=f"Inscription not found: {text_id}")
 
     meta = _get_inscription_metadata(text)
     full_text = _get_full_text(db, text.id)
 
     return InscriptionResponse(
         id=text.id,
-        phi_id=meta["phi_id"] or phi_id,
-        urn=text.urn,
+        phi_id=text.local_id,
         title=text.title,
         text=full_text,
         region_main=meta["region_main"],

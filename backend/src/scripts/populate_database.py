@@ -31,7 +31,7 @@ from sqlalchemy.orm import Session
 
 from config import settings
 from database import Base, SessionLocal, engine
-from models.text import Text, TextSegment
+from models.text import Text, TextSegment, TextSource
 from parsers.perseus_xml_parser import PerseusXMLParser
 
 logger = logging.getLogger(__name__)
@@ -63,7 +63,7 @@ class PopulateStats:
 
 
 class DatabasePopulator:
-    """Handles database population with batched operations and prefetched URN cache."""
+    """Handles database population with batched operations and prefetched local_id cache."""
 
     def __init__(self, config: PopulateConfig):
         self.config = config
@@ -155,7 +155,7 @@ class DatabasePopulator:
             text_values.append(
                 {
                     "local_id": text_data["local_id"],
-                    "source": text_data["source"],
+                    "source": TextSource.GreekLit,
                     "author": text_data["author"],
                     "title": text_data["title"],
                     "language": text_data["language"],
