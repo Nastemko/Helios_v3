@@ -95,7 +95,7 @@ class PHIInscriptionLoader:
         if self.existing_phi_local_ids:
             return len(self.existing_phi_local_ids) > 0
         result = db.scalar(
-            select(func.count(Text.id)).filter(Text.source == "PHI").limit(1)
+            select(func.count(Text.id)).filter(Text.source == TextSource.PHI).limit(1)
         )
         return result is not None and result > 0
 
@@ -192,7 +192,7 @@ class PHIInscriptionLoader:
             inscription_values.append(
                 {
                     "local_id": local_id,
-                    "source": "PHI",
+                    "source": TextSource.PHI,
                     "author": "[Inscription]",
                     "title": title,
                     "language": "grc",
@@ -361,7 +361,9 @@ class PHIInscriptionLoader:
         logger.warning("Clearing all PHI inscriptions from database...")
 
         # Find all inscription texts by source
-        inscription_texts = db.execute(select(Text).filter(Text.source == "PHI")).all()
+        inscription_texts = db.execute(
+            select(Text).filter(Text.source == TextSource.PHI)
+        ).all()
 
         count = len(inscription_texts)
 
