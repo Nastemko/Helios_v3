@@ -1,16 +1,16 @@
 """Authentication API endpoints"""
 
+from authlib.integrations.starlette_client import OAuth
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import RedirectResponse
-from sqlalchemy.orm import Session
-from authlib.integrations.starlette_client import OAuth
 from pydantic import BaseModel
+from sqlalchemy.orm import Session
 
 from config import settings
 from database import get_db
+from middleware.auth import get_current_user
 from models.user import User
 from utils.security import create_access_token
-from middleware.auth import get_current_user
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 
@@ -120,8 +120,8 @@ async def auth_google_callback(request: Request, db: Session = Depends(get_db)):
         # Redirect to frontend with token
         # Frontend should extract token from URL and store it
         frontend_url = (
-            settings.CORS_ORIGINS[0]
-            if settings.CORS_ORIGINS
+            settings.misc.CORS_ORIGINS[0]
+            if settings.misc.CORS_ORIGINS
             else "http://localhost:3000"
         )
         redirect_url = f"{frontend_url}/?token={access_token}"
@@ -133,8 +133,8 @@ async def auth_google_callback(request: Request, db: Session = Depends(get_db)):
         # Log error and redirect to frontend with error
         print(f"OAuth error: {e}")
         frontend_url = (
-            settings.CORS_ORIGINS[0]
-            if settings.CORS_ORIGINS
+            settings.misc.CORS_ORIGINS[0]
+            if settings.misc.CORS_ORIGINS
             else "http://localhost:3000"
         )
         return RedirectResponse(url=f"{frontend_url}/?error=auth_failed")
@@ -170,7 +170,7 @@ async def dev_login(db: Session = Depends(get_db)):
     Only available in development mode (DEBUG=True or no GOOGLE_CLIENT_ID).
     """
     # Only allow in development mode
-    if settings.GOOGLE_CLIENT_ID and not settings.DEBUG:
+    if settings.auth.GOOGLE_CLIENT_ID and not settings.misc.DEBUG:
         raise HTTPException(
             status_code=403, detail="Dev login is only available in development mode"
         )
@@ -206,12 +206,11 @@ async def auth_status(request: Request, db: Session = Depends(get_db)):
 
     Returns user info if authenticated, otherwise returns null.
     """
-    from middleware.auth import get_current_user_optional
-
     try:
         # Try to get current user without raising error
-        from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
         from typing import Optional
+
+        from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
         security = HTTPBearer(auto_error=False)
         credentials: Optional[HTTPAuthorizationCredentials] = await security(request)

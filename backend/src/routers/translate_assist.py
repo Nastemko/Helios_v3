@@ -1,4 +1,5 @@
 """API endpoints for Translation Assist feature."""
+
 from __future__ import annotations
 
 import logging
@@ -54,7 +55,7 @@ async def translate_text(
     - rationale: Explanation of grammar and vocabulary choices
     - confidence: Model's self-assessed confidence (0.0-1.0)
     """
-    if not settings.LLM_ENABLED:
+    if not settings.llm.ENABLED:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="Translation features are currently disabled",
@@ -87,8 +88,7 @@ async def translate_text(
 async def translation_status():
     """Return the current status of the translation service."""
     return {
-        "enabled": settings.LLM_ENABLED,
-        "model": settings.OLLAMA_MODEL if settings.LLM_ENABLED else None,
+        "enabled": settings.llm.ENABLED,
+        "model": settings.llm.MODEL if settings.llm.ENABLED else None,
         "max_chars": 600,
     }
-
