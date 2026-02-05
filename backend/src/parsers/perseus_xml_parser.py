@@ -60,7 +60,6 @@ class PerseusXMLParser:
 
             return {
                 "local_id": local_id,
-                "source": "GreekLit",  # Always GreekLit for Perseus texts
                 "author": metadata.get("author", "Unknown"),
                 "title": metadata.get("title", "Unknown"),
                 "language": language,

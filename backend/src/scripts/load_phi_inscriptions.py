@@ -421,7 +421,7 @@ def load_phi_inscriptions(
         total_texts = db.scalar(select(func.count(Text.id)))
         total_segments = db.scalar(select(func.count(TextSegment.id)))
         inscription_count = db.scalar(
-            select(func.count(Text.id)).filter(Text.source == "PHI")
+            select(func.count(Text.id)).filter(Text.source == TextSource.PHI)
         )
 
         logger.info("=" * 50)
