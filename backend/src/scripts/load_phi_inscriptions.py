@@ -59,7 +59,7 @@ class PHIInscriptionLoader:
     def __init__(self, config: PHIConfig):
         self.config = config
         self.stats = PHIStats()
-        self.existing_phi_urns = set()
+        self.existing_phi_local_ids = set()
 
     def get_json_path(self) -> Path:
         """Get the path to the PHI JSON file."""
@@ -76,35 +76,36 @@ class PHIInscriptionLoader:
 
         return phi_dir / "iphi.json"
 
-    def prefetch_existing_phi_urns(self, db: Session) -> None:
-        """Prefetch existing PHI URNs to avoid individual database queries."""
-        logger.info("Prefetching existing PHI URNs...")
+    def prefetch_existing_phi_local_ids(self, db: Session) -> None:
+        """Prefetch existing PHI local_ids to avoid individual database queries."""
+        logger.info("Prefetching existing PHI local_ids...")
 
-        # Only fetch PHI URNs (urn:phi:%) for efficiency
+        # Only fetch PHI texts (source = 'PHI') for efficiency
         existing_phi = db.execute(
-            select(Text.urn).filter(Text.urn.like("urn:phi:%"))
+            select(Text.local_id).filter(Text.source == "PHI")
         ).all()
 
-        self.existing_phi_urns = {row.urn for row in existing_phi}
-        logger.info(f"Prefetched {len(self.existing_phi_urns)} existing PHI URNs")
+        self.existing_phi_local_ids = {row.local_id for row in existing_phi}
+        logger.info(
+            f"Prefetched {len(self.existing_phi_local_ids)} existing PHI local_ids"
+        )
 
     def is_database_populated_with_phi(self, db: Session) -> bool:
         """Check if database already has PHI inscriptions."""
-        if self.existing_phi_urns:
-            return len(self.existing_phi_urns) > 0
+        if self.existing_phi_local_ids:
+            return len(self.existing_phi_local_ids) > 0
         result = db.scalar(
-            select(func.count(Text.id)).filter(Text.urn.like("urn:phi:%")).limit(1)
+            select(func.count(Text.id)).filter(Text.source == "PHI").limit(1)
         )
         return result is not None and result > 0
 
     def should_process_inscription(self, inscription: Dict) -> bool:
-        """Check if inscription should be processed based on existing URN cache."""
+        """Check if inscription should be processed based on existing local_id cache."""
         phi_id = inscription.get("id")
         if not phi_id:
             return False
 
-        urn = f"urn:phi:{phi_id}"
-        return urn not in self.existing_phi_urns
+        return str(phi_id) not in self.existing_phi_local_ids
 
     def prepare_batch_data(self, inscriptions: List[Dict]) -> List[Dict]:
         """Prepare batch data for database insertion."""
@@ -176,7 +177,7 @@ class PHIInscriptionLoader:
         inscription_values = []
         for inscription in batch_data:
             phi_id = inscription.get("id")
-            urn = f"urn:phi:{phi_id}"
+            local_id = str(phi_id)
 
             # Build title
             title = f"PHI {phi_id}"
@@ -190,7 +191,8 @@ class PHIInscriptionLoader:
 
             inscription_values.append(
                 {
-                    "urn": urn,
+                    "local_id": local_id,
+                    "source": "PHI",
                     "author": "[Inscription]",
                     "title": title,
                     "language": "grc",
@@ -216,8 +218,8 @@ class PHIInscriptionLoader:
         stmt = (
             insert(Text)
             .values(inscription_values)
-            .on_conflict_do_nothing(index_elements=["urn"])
-            .returning(Text.id, Text.urn)
+            .on_conflict_do_nothing(index_elements=["local_id"])
+            .returning(Text.id, Text.local_id)
         )
 
         try:
@@ -233,19 +235,19 @@ class PHIInscriptionLoader:
                 self.stats.skipped += len(batch_data)
                 return
 
-            # Get mapping of URN to ID for inserted texts
-            urn_to_id = {row.urn: row.id for row in inserted_texts}
+            # Get mapping of local_id to ID for inserted texts
+            local_id_to_id = {row.local_id: row.id for row in inserted_texts}
 
             # Create segments for successfully inserted texts
             for inscription in batch_data:
                 phi_id = inscription.get("id")
-                urn = f"urn:phi:{phi_id}"
+                local_id = str(phi_id)
 
-                if urn in urn_to_id:
-                    text_id = urn_to_id[urn]
+                if local_id in local_id_to_id:
+                    text_id = local_id_to_id[local_id]
                     self.create_segments_for_text(db, inscription, text_id)
                     self.stats.inserted += 1
-                    self.existing_phi_urns.add(urn)
+                    self.existing_phi_local_ids.add(local_id)
                 else:
                     # Already existed
                     self.stats.skipped += 1
@@ -322,15 +324,15 @@ class PHIInscriptionLoader:
             inscriptions = inscriptions[: self.config.limit]
             logger.info(f"Limiting to first {self.config.limit} inscriptions")
 
-        # Prefetch existing URNs
-        self.prefetch_existing_phi_urns(db)
+        # Prefetch existing local_ids
+        self.prefetch_existing_phi_local_ids(db)
 
         # Check if already populated
         if not self.config.force and self.is_database_populated_with_phi(db):
             logger.info(
-                f"Database already contains {len(self.existing_phi_urns)} PHI inscriptions. Skipping loading."
+                f"Database already contains {len(self.existing_phi_local_ids)} PHI inscriptions. Skipping loading."
             )
-            self.stats.skipped = len(self.existing_phi_urns)
+            self.stats.skipped = len(self.existing_phi_local_ids)
             return self.stats
 
         # Clear existing if force mode
@@ -358,10 +360,8 @@ class PHIInscriptionLoader:
         """Remove all PHI inscriptions from database."""
         logger.warning("Clearing all PHI inscriptions from database...")
 
-        # Find all inscription texts by URN prefix
-        inscription_texts = db.execute(
-            select(Text).filter(Text.urn.like("urn:phi:%"))
-        ).all()
+        # Find all inscription texts by source
+        inscription_texts = db.execute(select(Text).filter(Text.source == "PHI")).all()
 
         count = len(inscription_texts)
 
@@ -421,7 +421,7 @@ def load_phi_inscriptions(
         total_texts = db.scalar(select(func.count(Text.id)))
         total_segments = db.scalar(select(func.count(TextSegment.id)))
         inscription_count = db.scalar(
-            select(func.count(Text.id)).filter(Text.urn.like("urn:phi:%"))
+            select(func.count(Text.id)).filter(Text.source == "PHI")
         )
 
         logger.info("=" * 50)

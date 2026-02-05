@@ -2,7 +2,7 @@
 
 from sqlalchemy import Boolean, Column, ForeignKey, Index, Integer, String
 from sqlalchemy import Text as TextType
-from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy.dialects.postgresql import ENUM, JSONB
 from sqlalchemy.orm import relationship
 
 from database import Base
@@ -13,12 +13,20 @@ class Text(Base):
 
     __tablename__ = "texts"
 
-    id = Column(Integer, primary_key=True, index=True)
-    urn = Column(
-        String, unique=True, nullable=False, index=True
-    )  # e.g., urn:cts:greekLit:tlg0012.tlg001
+    id = Column(Integer, primary_key=True, index=True, nullable=False)
+
+    local_id = Column(String, unique=True, nullable=False, index=True)
+
+    # Postgres enum column for source/origin of the text.
+    # Possible values: PHI, GreekLit
+    source = Column(
+        ENUM("PHI", "GreekLit", name="text_source_enum", native_enum=True),
+        nullable=False,
+        index=True,
+    )
+
     author = Column(String, nullable=False, index=True)
-    title = Column(String, nullable=False)
+    title = Column(String, nullable=False, index=True)
     language = Column(String, nullable=False, index=True)  # 'grc', 'lat'
     is_fragment = Column(Boolean, default=False, index=True)
     text_metadata = Column(JSONB)  # Additional metadata (editor, edition, etc.)
@@ -32,7 +40,7 @@ class Text(Base):
     )
 
     def __repr__(self):
-        return f"<Text(urn='{self.urn}', author='{self.author}', title='{self.title}')>"
+        return f"<Text(local_id='{self.local_id}', source='{self.source}', author='{self.author}', title='{self.title}')>"
 
 
 class TextSegment(Base):

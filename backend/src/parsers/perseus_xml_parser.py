@@ -39,14 +39,14 @@ class PerseusXMLParser:
             tree = ET.parse(str(xml_path))
             root = tree.getroot()
 
-            # Extract URN from div element
-            urn = self._extract_urn(root)
-            if not urn:
-                logger.warning(f"No URN found in {xml_path}")
+            # Extract local_id from div element or file path
+            local_id = self._extract_local_id(root, xml_path)
+            if not local_id:
+                logger.warning(f"No local_id found in {xml_path}")
                 return None
 
-            # Determine language from URN or XML
-            language = self._extract_language(root, urn)
+            # Determine language from XML
+            language = self._extract_language(root)
 
             # Extract metadata from teiHeader
             metadata = self._extract_metadata(root)
@@ -59,7 +59,8 @@ class PerseusXMLParser:
                 return None
 
             return {
-                "urn": urn,
+                "local_id": local_id,
+                "source": "GreekLit",  # Always GreekLit for Perseus texts
                 "author": metadata.get("author", "Unknown"),
                 "title": metadata.get("title", "Unknown"),
                 "language": language,
@@ -72,24 +73,31 @@ class PerseusXMLParser:
             logger.error(f"Error parsing {xml_path}: {e}")
             return None
 
-    def _extract_urn(self, root: ET.Element) -> Optional[str]:
-        """Extract URN from document"""
-        # Try to get URN from div[@type='edition']
+    def _extract_local_id(self, root: ET.Element, xml_path: Path) -> Optional[str]:
+        """Extract local_id from div element or file path"""
+        # Try to get from div[@type='edition'] @n attribute first
         div = root.find(f".//{self.TEI_NS}div[@type='edition']")
         if div is not None:
             urn = div.get("n")
             if urn:
-                return urn
+                # Extract everything after 2nd colon: greekLit:tlg0013.tlg001.perseus-grc2
+                parts = urn.split(":", 2)
+                if len(parts) >= 3:
+                    return parts[2]
 
-        return None
+        # Fallback to file path parsing
+        # tl tlg0013/tlg001/tlg0013.tlg001.perseus-grc2.xml -> tlg0013.tlg001.perseus-grc2
+        stem = xml_path.stem
+        if ".perseus-" in stem:
+            return stem
+        return stem
 
-    def _extract_language(self, root: ET.Element, urn: str) -> str:
+    def _extract_language(self, root: ET.Element) -> str:
         """
-        Extract language code
+        Extract language code from XML
 
         Args:
             root: XML root element
-            urn: Text URN
 
         Returns:
             Language code ('grc' for Greek, 'lat' for Latin)
@@ -101,13 +109,17 @@ class PerseusXMLParser:
             if lang:
                 return lang
 
-        # Infer from URN
-        if "greekLit" in urn:
-            return "grc"
-        elif "latinLit" in urn:
-            return "lat"
+        # Try to get from langUsage in profileDesc
+        lang_usage = root.find(f".//{self.TEI_NS}langUsage")
+        if lang_usage is not None:
+            language = lang_usage.find(f".//{self.TEI_NS}language")
+            if language is not None:
+                ident = language.get("ident")
+                if ident:
+                    return ident
 
-        return "grc"  # Default to Greek
+        # Default to Greek if not found
+        return "grc"
 
     def _extract_metadata(self, root: ET.Element) -> Dict:
         """
