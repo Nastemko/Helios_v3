@@ -182,6 +182,7 @@ async def list_authors(db: Session = Depends(get_db)):
 
     authors = (
         db.query(Text.author, func.count(Text.id).label("work_count"))
+        .filter(Text.source == TextSource.GreekLit)
         .group_by(Text.author)
         .order_by(Text.author)
         .all()
