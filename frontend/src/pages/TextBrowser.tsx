@@ -1,17 +1,58 @@
-import { useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { useInfiniteQuery } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
 import { textApi } from '../services/api';
 import type { Text } from '../types';
 
+const PAGE_SIZE = 30;
+
 export default function TextBrowser() {
   const [search, setSearch] = useState('');
   const [language, setLanguage] = useState<string>('');
-  
-  const { data: texts, isLoading } = useQuery({
+  const sentinelRef = useRef<HTMLDivElement>(null);
+
+  const {
+    data,
+    isLoading,
+    isFetchingNextPage,
+    hasNextPage,
+    fetchNextPage,
+  } = useInfiniteQuery({
     queryKey: ['texts', search, language],
-    queryFn: () => textApi.list({ search, language, limit: 100 }),
+    queryFn: ({ pageParam = 0 }) =>
+      textApi.list({ search, language, skip: pageParam, limit: PAGE_SIZE }),
+    initialPageParam: 0,
+    getNextPageParam: (lastPage, _allPages, lastPageParam) => {
+      // If we got fewer items than PAGE_SIZE, there are no more pages
+      if (!lastPage.data || lastPage.data.length < PAGE_SIZE) return undefined;
+      return lastPageParam + PAGE_SIZE;
+    },
   });
+
+  const texts = data?.pages.flatMap((page) => page.data) ?? [];
+
+  // IntersectionObserver to trigger loading the next page
+  const handleObserver = useCallback(
+    (entries: IntersectionObserverEntry[]) => {
+      const [entry] = entries;
+      if (entry.isIntersecting && hasNextPage && !isFetchingNextPage) {
+        fetchNextPage();
+      }
+    },
+    [hasNextPage, isFetchingNextPage, fetchNextPage],
+  );
+
+  useEffect(() => {
+    const sentinel = sentinelRef.current;
+    if (!sentinel) return;
+
+    const observer = new IntersectionObserver(handleObserver, {
+      rootMargin: '200px',
+    });
+    observer.observe(sentinel);
+
+    return () => observer.disconnect();
+  }, [handleObserver]);
 
   return (
     <div className="flex-1 overflow-y-auto bg-gray-50">
@@ -57,9 +98,9 @@ export default function TextBrowser() {
             <div className="inline-block animate-spin rounded-full h-12 w-12 border-4 border-blue-600 border-t-transparent"></div>
             <p className="mt-4 text-gray-600">Loading texts...</p>
             </div>
-        ) : texts?.data && texts.data.length > 0 ? (
+        ) : texts.length > 0 ? (
             <div className="grid gap-4">
-            {texts.data.map((text: Text) => (
+            {texts.map((text: Text) => (
                 <Link
                 key={text.id}
                 to={`/text/${encodeURIComponent(text.urn)}`}
@@ -92,6 +133,20 @@ export default function TextBrowser() {
                 </div>
                 </Link>
             ))}
+
+            {/* Sentinel for infinite scroll */}
+            <div ref={sentinelRef} className="h-1" />
+
+            {isFetchingNextPage && (
+                <div className="text-center py-6">
+                <div className="inline-block animate-spin rounded-full h-8 w-8 border-4 border-blue-600 border-t-transparent"></div>
+                <p className="mt-2 text-gray-500 text-sm">Loading more texts...</p>
+                </div>
+            )}
+
+            {!hasNextPage && texts.length > PAGE_SIZE && (
+                <p className="text-center text-gray-400 text-sm py-4">All texts loaded</p>
+            )}
             </div>
         ) : (
             <div className="text-center py-12 bg-white rounded-lg border">

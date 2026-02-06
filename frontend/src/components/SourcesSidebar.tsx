@@ -1,19 +1,59 @@
-import { useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { useInfiniteQuery } from '@tanstack/react-query';
 import { useNavigate, useParams } from 'react-router-dom';
 import { textApi } from '../services/api';
 import type { Text } from '../types';
+
+const PAGE_SIZE = 30;
 
 export default function SourcesSidebar() {
   const { urn } = useParams<{ urn: string }>();
   const navigate = useNavigate();
   const [search, setSearch] = useState('');
   const [isCollapsed, setIsCollapsed] = useState(false);
+  const sentinelRef = useRef<HTMLDivElement>(null);
 
-  const { data: texts, isLoading } = useQuery({
-    queryKey: ['texts', search],
-    queryFn: () => textApi.list({ search, limit: 50 }),
+  const {
+    data,
+    isLoading,
+    isFetchingNextPage,
+    hasNextPage,
+    fetchNextPage,
+  } = useInfiniteQuery({
+    queryKey: ['texts-sidebar', search],
+    queryFn: ({ pageParam = 0 }) =>
+      textApi.list({ search, skip: pageParam, limit: PAGE_SIZE }),
+    initialPageParam: 0,
+    getNextPageParam: (lastPage, _allPages, lastPageParam) => {
+      if (!lastPage.data || lastPage.data.length < PAGE_SIZE) return undefined;
+      return lastPageParam + PAGE_SIZE;
+    },
   });
+
+  const texts = data?.pages.flatMap((page) => page.data) ?? [];
+
+  // IntersectionObserver to trigger loading the next page
+  const handleObserver = useCallback(
+    (entries: IntersectionObserverEntry[]) => {
+      const [entry] = entries;
+      if (entry.isIntersecting && hasNextPage && !isFetchingNextPage) {
+        fetchNextPage();
+      }
+    },
+    [hasNextPage, isFetchingNextPage, fetchNextPage],
+  );
+
+  useEffect(() => {
+    const sentinel = sentinelRef.current;
+    if (!sentinel) return;
+
+    const observer = new IntersectionObserver(handleObserver, {
+      rootMargin: '100px',
+    });
+    observer.observe(sentinel);
+
+    return () => observer.disconnect();
+  }, [handleObserver]);
 
   // Collapsed state - just show a thin bar with expand button
   if (isCollapsed) {
@@ -63,7 +103,7 @@ export default function SourcesSidebar() {
       <div className="flex-1 overflow-y-auto p-2 space-y-1">
         {isLoading ? (
           <div className="text-center py-4 text-gray-500 text-sm">Loading...</div>
-        ) : texts?.data?.map((text: Text) => {
+        ) : texts.map((text: Text) => {
           const isActive = text.urn === urn;
           return (
             <div 
@@ -90,6 +130,12 @@ export default function SourcesSidebar() {
           );
         })}
 
+        {/* Sentinel for infinite scroll */}
+        <div ref={sentinelRef} className="h-1" />
+
+        {isFetchingNextPage && (
+          <div className="text-center py-3 text-gray-400 text-xs">Loading more...</div>
+        )}
       </div>
     </aside>
   );
