@@ -10,7 +10,7 @@ export default function SourcesSidebar() {
   const { textId } = useParams<{ textId: string }>();
   const navigate = useNavigate();
   const [search, setSearch] = useState('');
-  const [isCollapsed, setIsCollapsed] = useState(false);
+  const [isCollapsed, setIsCollapsed] = useState(!!urn);
   const sentinelRef = useRef<HTMLDivElement>(null);
 
   const {
