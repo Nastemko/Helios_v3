@@ -83,11 +83,15 @@ export default function TextReader() {
 
   if (isLoading) {
     return (
-      <div className="flex h-full items-center justify-center">
-        <div className="text-center">
-          <div className="inline-block animate-spin rounded-full h-12 w-12 border-4 border-blue-600 border-t-transparent mb-4"></div>
-          <p className="text-gray-600">Loading text...</p>
+      <div className="flex h-full w-full">
+        <SourcesSidebar />
+        <div className="flex-1 flex items-center justify-center bg-white">
+          <div className="text-center">
+            <div className="inline-block animate-spin rounded-full h-12 w-12 border-4 border-blue-600 border-t-transparent mb-4"></div>
+            <p className="text-gray-600">Loading text...</p>
+          </div>
         </div>
+        <ToolsPanel selectedWord={null} textId={0} onCloseWord={() => {}} />
       </div>
     );
   }
