@@ -20,11 +20,10 @@ from typing import Dict, List, Optional
 
 from sqlalchemy import func, select
 from sqlalchemy.dialects.postgresql import insert
-from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from config import settings
-from database import Base, SessionLocal, engine
+from database import SessionLocal
 from models.text import Text, TextSegment, TextSource
 from scripts.data_utils import prepare_metadata_for_jsonb, validate_inscription_data
 

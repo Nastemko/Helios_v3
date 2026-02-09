@@ -4,7 +4,7 @@ from typing import Annotated, List, Literal, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Path, Query
 from pydantic import BaseModel, field_validator
-from sqlalchemy import Integer, cast, func, select
+from sqlalchemy import Integer, case, cast, func, select
 from sqlalchemy.orm import Session
 
 from database import get_db
@@ -224,8 +224,17 @@ async def get_inscription_stats(db: Session = Depends(get_db)):
     # Optimized single query using extracted columns
     stats_query = select(
         func.count().label("total_inscriptions"),
-        func.count(
-            func.case((Text.date_min.isnot(None) | Text.date_max.isnot(None), 1))
+        # Use a CASE expression to yield 1 when either date_min or date_max is present,
+        # otherwise 0. SUM across rows to get the total inscriptions that have any date.
+        # Wrapped in COALESCE to ensure 0 instead of NULL.
+        func.coalesce(
+            func.sum(
+                case(
+                    ((Text.date_min.isnot(None) | Text.date_max.isnot(None)), 1),
+                    else_=0,
+                )
+            ),
+            0,
         ).label("inscriptions_with_dates"),
         func.count(func.distinct(Text.region_main)).label("regions_count"),
         func.min(Text.date_min).label("earliest_date"),
