@@ -20,12 +20,13 @@ from typing import Dict, List, Optional
 
 from sqlalchemy import func, select
 from sqlalchemy.dialects.postgresql import insert
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from config import settings
 from database import Base, SessionLocal, engine
 from models.text import Text, TextSegment, TextSource
-from scripts.data_utils import validate_inscription_data, prepare_metadata_for_jsonb
+from scripts.data_utils import prepare_metadata_for_jsonb, validate_inscription_data
 
 logger = logging.getLogger(__name__)
 
@@ -400,7 +401,6 @@ def load_phi_inscriptions(
 
     # Ensure tables exist
     logger.info("Creating database tables if needed...")
-    Base.metadata.create_all(bind=engine)
 
     db = SessionLocal()
     try:
