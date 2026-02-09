@@ -11,7 +11,7 @@ export default function TextBrowser() {
   const [language, setLanguage] = useState<string>("");
 
   // The scrollable container that holds the list of texts.
-  // We will use this as the `root` for IntersectionObserver so the sentinel
+  // We use this as the `root` for IntersectionObserver so the sentinel
   // is observed within the scrollable container rather than the viewport.
   const containerRef = useRef<HTMLDivElement | null>(null);
   const sentinelRef = useRef<HTMLDivElement | null>(null);
@@ -32,9 +32,9 @@ export default function TextBrowser() {
 
   const texts = data?.pages.flatMap((page) => page.data) ?? [];
 
-  // Attach IntersectionObserver with the scrollable container as root.
-  // Recreate observer when relevant state changes (hasNextPage, fetch state,
-  // or refs change). Clean up on effect teardown.
+  // IntersectionObserver to trigger loading the next page.
+  // Important: include texts.length in the dependency array so the effect
+  // re-runs when new items render and the sentinel may be attached to the DOM.
   useEffect(() => {
     const container = containerRef.current;
     const sentinel = sentinelRef.current;
@@ -61,7 +61,8 @@ export default function TextBrowser() {
     return () => {
       observer.disconnect();
     };
-  }, [hasNextPage, isFetchingNextPage, fetchNextPage /* refs are stable */]);
+    // texts.length ensures the observer is (re)created when the list grows/shrinks
+  }, [hasNextPage, isFetchingNextPage, fetchNextPage, texts.length]);
 
   return (
     <div ref={containerRef} className="flex-1 overflow-y-auto bg-gray-50">
