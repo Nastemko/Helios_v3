@@ -11,6 +11,7 @@ export default function SourcesSidebar() {
   const navigate = useNavigate();
   const [search, setSearch] = useState("");
   const [isCollapsed, setIsCollapsed] = useState(!!textId);
+  const containerRef = useRef<HTMLDivElement>(null);
   const sentinelRef = useRef<HTMLDivElement>(null);
 
   const { data, isLoading, isFetchingNextPage, hasNextPage, fetchNextPage } =
@@ -40,16 +41,22 @@ export default function SourcesSidebar() {
   );
 
   useEffect(() => {
+    const container = containerRef.current;
     const sentinel = sentinelRef.current;
-    if (!sentinel) return;
+    if (!container || !sentinel) return;
+
+    // If there is no next page, no need to observe.
+    if (!hasNextPage) return;
 
     const observer = new IntersectionObserver(handleObserver, {
+      root: container,
       rootMargin: "100px",
     });
     observer.observe(sentinel);
 
     return () => observer.disconnect();
-  }, [handleObserver]);
+    // texts.length ensures the observer is (re)created when the list grows/shrinks
+  }, [handleObserver, hasNextPage, texts.length]);
 
   // Collapsed state - just show a thin bar with expand button
   if (isCollapsed) {
@@ -120,7 +127,7 @@ export default function SourcesSidebar() {
         />
       </div>
 
-      <div className="flex-1 overflow-y-auto p-2 space-y-1">
+      <div ref={containerRef} className="flex-1 overflow-y-auto p-2 space-y-1">
         {isLoading ? (
           <div className="text-center py-4 text-gray-500 text-sm">
             Loading...
