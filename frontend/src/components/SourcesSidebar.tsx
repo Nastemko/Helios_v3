@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useInfiniteQuery } from "@tanstack/react-query";
 import { useNavigate, useParams } from "react-router-dom";
 import { textApi } from "../services/api";
@@ -29,17 +29,9 @@ export default function SourcesSidebar() {
 
   const texts = data?.pages.flatMap((page) => page.data) ?? [];
 
-  // IntersectionObserver to trigger loading the next page
-  const handleObserver = useCallback(
-    (entries: IntersectionObserverEntry[]) => {
-      const [entry] = entries;
-      if (entry.isIntersecting && hasNextPage && !isFetchingNextPage) {
-        fetchNextPage();
-      }
-    },
-    [hasNextPage, isFetchingNextPage, fetchNextPage],
-  );
-
+  // IntersectionObserver to trigger loading the next page.
+  // Important: include texts.length in the dependency array so the effect
+  // re-runs when new items render and the sentinel may be attached to the DOM.
   useEffect(() => {
     const container = containerRef.current;
     const sentinel = sentinelRef.current;
@@ -48,15 +40,23 @@ export default function SourcesSidebar() {
     // If there is no next page, no need to observe.
     if (!hasNextPage) return;
 
-    const observer = new IntersectionObserver(handleObserver, {
-      root: container,
-      rootMargin: "100px",
-    });
+    const observer = new IntersectionObserver(
+      (entries) => {
+        const [entry] = entries;
+        if (entry.isIntersecting && hasNextPage && !isFetchingNextPage) {
+          fetchNextPage();
+        }
+      },
+      {
+        root: container,
+        rootMargin: "100px",
+      },
+    );
     observer.observe(sentinel);
 
     return () => observer.disconnect();
     // texts.length ensures the observer is (re)created when the list grows/shrinks
-  }, [handleObserver, hasNextPage, texts.length]);
+  }, [hasNextPage, isFetchingNextPage, fetchNextPage, texts.length]);
 
   // Collapsed state - just show a thin bar with expand button
   if (isCollapsed) {
