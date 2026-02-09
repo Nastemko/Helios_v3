@@ -1,14 +1,14 @@
 """API endpoints for browsing and retrieving texts"""
 
-from typing import List, Optional
+from typing import Annotated, List, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Path, Query
 from pydantic import BaseModel
 from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
 from database import get_db
-from models.text import Text, TextSegment
+from models.text import Text, TextSegment, TextSource
 
 router = APIRouter(prefix="/api/texts", tags=["texts"])
 
@@ -18,7 +18,7 @@ class TextResponse(BaseModel):
     """Text metadata response"""
 
     id: int
-    urn: str
+    local_id: str
     author: str
     title: str
     language: str
@@ -68,7 +68,8 @@ async def list_texts(
 
     Returns paginated list of texts with optional filtering.
     """
-    query = db.query(Text)
+    # Base query - filter by source if specified
+    query = db.query(Text).filter(Text.source == TextSource.GreekLit)
 
     # Apply filters
     if search:
@@ -93,12 +94,12 @@ async def list_texts(
     # Apply pagination
     texts = query.offset(skip).limit(limit).all()
 
-    return texts
+    return [TextResponse.model_validate(t, extra="ignore") for t in texts]
 
 
-@router.get("/{urn:path}", response_model=TextDetailResponse)
+@router.get("/{text_id}", response_model=TextDetailResponse)
 async def get_text(
-    urn: str,
+    text_id: Annotated[int, Path()],
     skip: int = Query(0, ge=0, description="Skip segments (for pagination)"),
     limit: int = Query(1000, ge=1, le=5000, description="Limit segments"),
     db: Session = Depends(get_db),
@@ -106,14 +107,17 @@ async def get_text(
     """
     Get a specific text with its segments
 
-    The URN may contain slashes, so we use path parameter.
-    Example: urn:cts:greekLit:tlg0012.tlg001
+    Example: /api/texts/123
     """
-    # Find text by URN
-    text = db.query(Text).filter(Text.urn == urn).first()
+    # Find text by ID and source (GreekLit)
+    text = (
+        db.query(Text)
+        .filter(Text.id == text_id, Text.source == TextSource.GreekLit)
+        .first()
+    )
 
     if not text:
-        raise HTTPException(status_code=404, detail=f"Text not found: {urn}")
+        raise HTTPException(status_code=404, detail=f"Text not found: {text_id}")
 
     # Get segments with pagination
     segments_query = (
@@ -126,25 +130,33 @@ async def get_text(
     segments = segments_query.offset(skip).limit(limit).all()
 
     return TextDetailResponse(
-        text=TextResponse.from_orm(text),
-        segments=[TextSegmentResponse.from_orm(seg) for seg in segments],
+        text=TextResponse.model_validate(text, extra="ignore"),
+        segments=[
+            TextSegmentResponse.model_validate(seg, extra="ignore") for seg in segments
+        ],
         total_segments=total_segments,
     )
 
 
-@router.get("/{urn:path}/segment/{reference}")
-async def get_text_segment(urn: str, reference: str, db: Session = Depends(get_db)):
+@router.get("/{text_id}/segment/{reference}")
+async def get_text_segment(
+    text_id: Annotated[int, Path()], reference: str, db: Session = Depends(get_db)
+):
     """
     Get a specific segment of a text by reference
 
-    Example: /api/texts/urn:cts:greekLit:tlg0012.tlg001/segment/1.1
-    Returns book 1, line 1 of the Iliad
+    Example: /api/texts/123/segment/1.1
+    Returns book 1, line 1 of the text
     """
     # Find text
-    text = db.query(Text).filter(Text.urn == urn).first()
+    text = (
+        db.query(Text)
+        .filter(Text.id == text_id, Text.source == TextSource.GreekLit)
+        .first()
+    )
 
     if not text:
-        raise HTTPException(status_code=404, detail=f"Text not found: {urn}")
+        raise HTTPException(status_code=404, detail=f"Text not found: {text_id}")
 
     # Find segment by reference
     segment = (
@@ -156,7 +168,7 @@ async def get_text_segment(urn: str, reference: str, db: Session = Depends(get_d
     if not segment:
         raise HTTPException(status_code=404, detail=f"Segment not found: {reference}")
 
-    return TextSegmentResponse.from_orm(segment)
+    return TextSegmentResponse.model_validate(segment, extra="ignore")
 
 
 @router.get("/authors/list")
@@ -170,6 +182,7 @@ async def list_authors(db: Session = Depends(get_db)):
 
     authors = (
         db.query(Text.author, func.count(Text.id).label("work_count"))
+        .filter(Text.source == TextSource.GreekLit)
         .group_by(Text.author)
         .order_by(Text.author)
         .all()
@@ -196,7 +209,7 @@ async def get_stats(db: Session = Depends(get_db)):
         .all()
     )
 
-    fragment_count = db.query(Text).filter(Text.is_fragment == True).count()
+    fragment_count = db.query(Text).filter(Text.is_fragment).count()
 
     return {
         "total_texts": total_texts,

@@ -5,6 +5,7 @@ from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, field_serializer
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from database import get_db
@@ -69,16 +70,12 @@ async def create_annotation(
         raise HTTPException(status_code=404, detail="Text not found")
 
     segment = (
-        db.query(TextSegment).filter(TextSegment.id == annotation.segment_id).scalar()
+        db.query(TextSegment)
+        .filter(TextSegment.text_id == text.id, TextSegment.id == annotation.segment_id)
+        .scalar()
     )
     if not segment:
         raise HTTPException(status_code=404, detail="Text segment not found")
-
-    # Verify segment belongs to text
-    if segment.text_id != text.id:
-        raise HTTPException(
-            status_code=400, detail="Segment does not belong to specified text"
-        )
 
     # Create annotation
     db_annotation = Annotation(
@@ -153,7 +150,7 @@ async def get_annotation(
     if not annotation:
         raise HTTPException(status_code=404, detail="Annotation not found")
 
-    return AnnotationResponse.from_orm(annotation)
+    return AnnotationResponse.model_validate(annotation, extra="ignore")
 
 
 @router.put("/{annotation_id}", response_model=AnnotationResponse)
@@ -183,7 +180,7 @@ async def update_annotation(
     db.commit()
     db.refresh(annotation)
 
-    return AnnotationResponse.from_orm(annotation)
+    return AnnotationResponse.model_validate(annotation, extra="ignore")
 
 
 @router.delete("/{annotation_id}", status_code=204)
@@ -223,11 +220,6 @@ async def get_text_annotations_summary(
 
     Returns count of annotations and most annotated words.
     """
-    from sqlalchemy import func
-
-    # Verify text exists
-    from models.text import Text
-
     text = db.query(Text).filter(Text.id == text_id).first()
     if not text:
         raise HTTPException(status_code=404, detail="Text not found")

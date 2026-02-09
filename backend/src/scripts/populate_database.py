@@ -31,7 +31,7 @@ from sqlalchemy.orm import Session
 
 from config import settings
 from database import Base, SessionLocal, engine
-from models.text import Text, TextSegment
+from models.text import Text, TextSegment, TextSource
 from parsers.perseus_xml_parser import PerseusXMLParser
 
 logger = logging.getLogger(__name__)
@@ -63,24 +63,24 @@ class PopulateStats:
 
 
 class DatabasePopulator:
-    """Handles database population with batched operations and prefetched URN cache."""
+    """Handles database population with batched operations and prefetched local_id cache."""
 
     def __init__(self, config: PopulateConfig):
         self.config = config
         self.stats = PopulateStats()
-        self.existing_urns = set()
+        self.existing_local_ids = set()
 
-    def prefetch_existing_urns(self, db: Session) -> None:
-        """Prefetch all existing URNs to avoid individual database queries."""
-        logger.info("Prefetching existing URNs...")
-        existing_texts = db.execute(select(Text.urn)).all()
-        self.existing_urns = {row.urn for row in existing_texts}
-        logger.info(f"Prefetched {len(self.existing_urns)} existing URNs")
+    def prefetch_existing_local_ids(self, db: Session) -> None:
+        """Prefetch all existing local_ids to avoid individual database queries."""
+        logger.info("Prefetching existing local_ids...")
+        existing_texts = db.execute(select(Text.local_id)).all()
+        self.existing_local_ids = {row.local_id for row in existing_texts}
+        logger.info(f"Prefetched {len(self.existing_local_ids)} existing local_ids")
 
     def is_database_populated(self, db: Session) -> bool:
         """Check if the database already has texts loaded."""
-        if self.existing_urns:
-            return len(self.existing_urns) > 0
+        if self.existing_local_ids:
+            return len(self.existing_local_ids) > 0
         return db.scalar(select(Text).limit(1)) is not None
 
     def clear_database(self, db: Session) -> None:
@@ -89,11 +89,11 @@ class DatabasePopulator:
         db.query(TextSegment).delete()
         db.query(Text).delete()
         db.commit()
-        self.existing_urns.clear()  # Clear cache after clearing database
+        self.existing_local_ids.clear()  # Clear cache after clearing database
 
     def should_process_text(self, text_data: Dict) -> bool:
         """
-        Check if text should be processed based on language filter and existing URN cache.
+        Check if text should be processed based on language filter and existing local_id cache.
 
         Returns True if text should be processed, False if should be skipped.
         """
@@ -102,7 +102,7 @@ class DatabasePopulator:
             return False
 
         # Check if text already exists using prefetched cache
-        if text_data["urn"] in self.existing_urns:
+        if text_data["local_id"] in self.existing_local_ids:
             return False
 
         return True
@@ -154,11 +154,17 @@ class DatabasePopulator:
         for text_data in batch_data:
             text_values.append(
                 {
-                    "urn": text_data["urn"],
+                    "local_id": text_data["local_id"],
+                    "source": TextSource.GreekLit,
                     "author": text_data["author"],
                     "title": text_data["title"],
                     "language": text_data["language"],
                     "is_fragment": text_data["is_fragment"],
+                    # Extracted columns - set None for Perseus data (no inscription-specific fields)
+                    "region_main": None,
+                    "region_sub": None,
+                    "date_min": None,
+                    "date_max": None,
                     "text_metadata": text_data["text_metadata"],
                 }
             )
@@ -167,8 +173,8 @@ class DatabasePopulator:
         stmt = (
             insert(Text)
             .values(text_values)
-            .on_conflict_do_nothing(index_elements=["urn"])
-            .returning(Text.id, Text.urn)
+            .on_conflict_do_nothing(index_elements=["local_id"])
+            .returning(Text.id, Text.local_id)
         )
 
         try:
@@ -183,13 +189,13 @@ class DatabasePopulator:
                 self.stats.skipped += len(batch_data)
                 return
 
-            # Get mapping of URN to ID for inserted texts
-            urn_to_id = {row.urn: row.id for row in inserted_texts}
+            # Get mapping of local_id to ID for inserted texts
+            local_id_to_id = {row.local_id: row.id for row in inserted_texts}
 
             # Now insert segments for successfully inserted texts only
             for text_data in batch_data:
-                if text_data["urn"] in urn_to_id:
-                    text_id = urn_to_id[text_data["urn"]]
+                if text_data["local_id"] in local_id_to_id:
+                    text_id = local_id_to_id[text_data["local_id"]]
 
                     # Create TextSegment objects for this text
                     for seg_data in text_data["segments"]:
@@ -206,7 +212,7 @@ class DatabasePopulator:
 
                     self.stats.inserted += 1
                     # Add to cache to avoid re-processing within the same run
-                    self.existing_urns.add(text_data["urn"])
+                    self.existing_local_ids.add(text_data["local_id"])
                 else:
                     # Text already existed, count as skipped
                     self.stats.skipped += 1
@@ -264,15 +270,15 @@ class DatabasePopulator:
         """
         start_time = time.time()
 
-        # Prefetch existing URNs for efficient duplicate checking
-        self.prefetch_existing_urns(db)
+        # Prefetch existing local_ids for efficient duplicate checking
+        self.prefetch_existing_local_ids(db)
 
         # Check if already populated
         if not self.config.force and self.is_database_populated(db):
             logger.info(
-                f"Database already contains {len(self.existing_urns)} texts. Skipping population."
+                f"Database already contains {len(self.existing_local_ids)} texts. Skipping population."
             )
-            self.stats.skipped = len(self.existing_urns)
+            self.stats.skipped = len(self.existing_local_ids)
             return self.stats
 
         if self.config.force:

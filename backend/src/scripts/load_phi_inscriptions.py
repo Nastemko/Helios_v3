@@ -14,17 +14,18 @@ import json
 import logging
 import sys
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, List, Optional
 
-from sqlalchemy import func, select, text
+from sqlalchemy import func, select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import Session
 
 from config import settings
-from database import Base, SessionLocal, engine
-from models.text import Text, TextSegment
+from database import SessionLocal
+from models.text import Text, TextSegment, TextSource
+from scripts.data_utils import prepare_metadata_for_jsonb, validate_inscription_data
 
 logger = logging.getLogger(__name__)
 
@@ -54,12 +55,12 @@ class PHIStats:
 
 
 class PHIInscriptionLoader:
-    """Handles PHI inscription loading with batched operations and optimized queries."""
+    """Handles PHI inscription loading with batched operations and optimized local_id cache."""
 
     def __init__(self, config: PHIConfig):
         self.config = config
         self.stats = PHIStats()
-        self.existing_phi_urns = set()
+        self.existing_phi_local_ids = set()
 
     def get_json_path(self) -> Path:
         """Get the path to the PHI JSON file."""
@@ -76,35 +77,36 @@ class PHIInscriptionLoader:
 
         return phi_dir / "iphi.json"
 
-    def prefetch_existing_phi_urns(self, db: Session) -> None:
-        """Prefetch existing PHI URNs to avoid individual database queries."""
-        logger.info("Prefetching existing PHI URNs...")
+    def prefetch_existing_phi_local_ids(self, db: Session) -> None:
+        """Prefetch existing PHI local_ids to avoid individual database queries."""
+        logger.info("Prefetching existing PHI local_ids...")
 
-        # Only fetch PHI URNs (urn:phi:%) for efficiency
+        # Only fetch PHI texts (source = TextSource.PHI) for efficiency
         existing_phi = db.execute(
-            select(Text.urn).filter(Text.urn.like("urn:phi:%"))
+            select(Text.local_id).filter(Text.source == TextSource.PHI)
         ).all()
 
-        self.existing_phi_urns = {row.urn for row in existing_phi}
-        logger.info(f"Prefetched {len(self.existing_phi_urns)} existing PHI URNs")
+        self.existing_phi_local_ids = {row.local_id for row in existing_phi}
+        logger.info(
+            f"Prefetched {len(self.existing_phi_local_ids)} existing PHI local_ids"
+        )
 
     def is_database_populated_with_phi(self, db: Session) -> bool:
         """Check if database already has PHI inscriptions."""
-        if self.existing_phi_urns:
-            return len(self.existing_phi_urns) > 0
+        if self.existing_phi_local_ids:
+            return len(self.existing_phi_local_ids) > 0
         result = db.scalar(
-            select(func.count(Text.id)).filter(Text.urn.like("urn:phi:%")).limit(1)
+            select(func.count(Text.id)).filter(Text.source == TextSource.PHI).limit(1)
         )
         return result is not None and result > 0
 
     def should_process_inscription(self, inscription: Dict) -> bool:
-        """Check if inscription should be processed based on existing URN cache."""
+        """Check if inscription should be processed based on existing local_id cache."""
         phi_id = inscription.get("id")
         if not phi_id:
             return False
 
-        urn = f"urn:phi:{phi_id}"
-        return urn not in self.existing_phi_urns
+        return str(phi_id) not in self.existing_phi_local_ids
 
     def prepare_batch_data(self, inscriptions: List[Dict]) -> List[Dict]:
         """Prepare batch data for database insertion."""
@@ -176,39 +178,35 @@ class PHIInscriptionLoader:
         inscription_values = []
         for inscription in batch_data:
             phi_id = inscription.get("id")
-            urn = f"urn:phi:{phi_id}"
+            local_id = str(phi_id)
 
-            # Build title
+            # Validate and canonicalize inscription data
+            validated_data = validate_inscription_data(inscription)
+
+            # Build title using canonicalized region names
             title = f"PHI {phi_id}"
-            region_sub = inscription.get("region_sub")
-            region_main = inscription.get("region_main")
-
-            if region_sub:
-                title = f"{region_sub} - PHI {phi_id}"
-            elif region_main:
-                title = f"{region_main} - PHI {phi_id}"
+            if validated_data["region_sub"]:
+                title = f"{validated_data['region_sub']} - PHI {phi_id}"
+            elif validated_data["region_main"]:
+                title = f"{validated_data['region_main']} - PHI {phi_id}"
 
             inscription_values.append(
                 {
-                    "urn": urn,
+                    "local_id": local_id,
+                    "source": TextSource.PHI,
                     "author": "[Inscription]",
                     "title": title,
                     "language": "grc",
                     "is_fragment": True,
-                    "text_metadata": {
-                        "text_type": "inscription",
-                        "phi_id": phi_id,
-                        "source": "Packard Humanities Institute",
-                        "region_main": region_main,
-                        "region_main_id": inscription.get("region_main_id"),
-                        "region_sub": region_sub,
-                        "region_sub_id": inscription.get("region_sub_id"),
-                        "date_str": inscription.get("date_str"),
-                        "date_min": inscription.get("date_min"),
-                        "date_max": inscription.get("date_max"),
-                        "date_circa": inscription.get("date_circa"),
-                        "metadata_raw": inscription.get("metadata"),
-                    },
+                    # Extracted performance columns
+                    "region_main": validated_data["region_main"],
+                    "region_sub": validated_data["region_sub"],
+                    "date_min": validated_data["date_min"],
+                    "date_max": validated_data["date_max"],
+                    # JSONB metadata without extracted fields
+                    "text_metadata": prepare_metadata_for_jsonb(
+                        inscription, str(phi_id)
+                    ),
                 }
             )
 
@@ -216,8 +214,8 @@ class PHIInscriptionLoader:
         stmt = (
             insert(Text)
             .values(inscription_values)
-            .on_conflict_do_nothing(index_elements=["urn"])
-            .returning(Text.id, Text.urn)
+            .on_conflict_do_nothing(index_elements=["local_id"])
+            .returning(Text.id, Text.local_id)
         )
 
         try:
@@ -233,19 +231,19 @@ class PHIInscriptionLoader:
                 self.stats.skipped += len(batch_data)
                 return
 
-            # Get mapping of URN to ID for inserted texts
-            urn_to_id = {row.urn: row.id for row in inserted_texts}
+            # Get mapping of local_id to ID for inserted texts
+            local_id_to_id = {row.local_id: row.id for row in inserted_texts}
 
             # Create segments for successfully inserted texts
             for inscription in batch_data:
                 phi_id = inscription.get("id")
-                urn = f"urn:phi:{phi_id}"
+                local_id = str(phi_id)
 
-                if urn in urn_to_id:
-                    text_id = urn_to_id[urn]
+                if local_id in local_id_to_id:
+                    text_id = local_id_to_id[local_id]
                     self.create_segments_for_text(db, inscription, text_id)
                     self.stats.inserted += 1
-                    self.existing_phi_urns.add(urn)
+                    self.existing_phi_local_ids.add(local_id)
                 else:
                     # Already existed
                     self.stats.skipped += 1
@@ -322,15 +320,15 @@ class PHIInscriptionLoader:
             inscriptions = inscriptions[: self.config.limit]
             logger.info(f"Limiting to first {self.config.limit} inscriptions")
 
-        # Prefetch existing URNs
-        self.prefetch_existing_phi_urns(db)
+        # Prefetch existing local_ids
+        self.prefetch_existing_phi_local_ids(db)
 
         # Check if already populated
         if not self.config.force and self.is_database_populated_with_phi(db):
             logger.info(
-                f"Database already contains {len(self.existing_phi_urns)} PHI inscriptions. Skipping loading."
+                f"Database already contains {len(self.existing_phi_local_ids)} PHI inscriptions. Skipping loading."
             )
-            self.stats.skipped = len(self.existing_phi_urns)
+            self.stats.skipped = len(self.existing_phi_local_ids)
             return self.stats
 
         # Clear existing if force mode
@@ -358,9 +356,9 @@ class PHIInscriptionLoader:
         """Remove all PHI inscriptions from database."""
         logger.warning("Clearing all PHI inscriptions from database...")
 
-        # Find all inscription texts by URN prefix
+        # Find all inscription texts by source
         inscription_texts = db.execute(
-            select(Text).filter(Text.urn.like("urn:phi:%"))
+            select(Text).filter(Text.source == TextSource.PHI)
         ).all()
 
         count = len(inscription_texts)
@@ -402,7 +400,6 @@ def load_phi_inscriptions(
 
     # Ensure tables exist
     logger.info("Creating database tables if needed...")
-    Base.metadata.create_all(bind=engine)
 
     db = SessionLocal()
     try:
@@ -421,7 +418,7 @@ def load_phi_inscriptions(
         total_texts = db.scalar(select(func.count(Text.id)))
         total_segments = db.scalar(select(func.count(TextSegment.id)))
         inscription_count = db.scalar(
-            select(func.count(Text.id)).filter(Text.urn.like("urn:phi:%"))
+            select(func.count(Text.id)).filter(Text.source == TextSource.PHI)
         )
 
         logger.info("=" * 50)

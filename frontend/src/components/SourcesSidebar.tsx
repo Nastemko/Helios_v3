@@ -5,7 +5,7 @@ import { textApi } from '../services/api';
 import type { Text } from '../types';
 
 export default function SourcesSidebar() {
-  const { urn } = useParams<{ urn: string }>();
+  const { textId } = useParams<{ textId: string }>();
   const navigate = useNavigate();
   const [search, setSearch] = useState('');
   const [isCollapsed, setIsCollapsed] = useState(false);
@@ -64,11 +64,11 @@ export default function SourcesSidebar() {
         {isLoading ? (
           <div className="text-center py-4 text-gray-500 text-sm">Loading...</div>
         ) : texts?.data?.map((text: Text) => {
-          const isActive = text.urn === urn;
+          const isActive = text.id.toString() === textId;
           return (
             <div 
               key={text.id}
-              onClick={() => navigate(`/text/${encodeURIComponent(text.urn)}`)}
+              onClick={() => navigate(`/text/${text.id}`)}
               className={`p-3 rounded-lg cursor-pointer group transition-all ${
                 isActive 
                   ? 'bg-helios-teal/10 border border-helios-teal/20' 

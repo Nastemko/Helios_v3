@@ -29,7 +29,7 @@ function App() {
       <Route path="/" element={<PrivateRoute><Layout /></PrivateRoute>}>
         <Route index element={<Home />} />
         <Route path="browse" element={<TextBrowser />} />
-        <Route path="text/:urn" element={<TextReader />} />
+        <Route path="text/:textId" element={<TextReader />} />
         <Route path="inscriptions" element={<InscriptionWorkbench />} />
       </Route>
     </Routes>

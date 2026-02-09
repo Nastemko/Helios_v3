@@ -9,7 +9,7 @@ export interface User {
 
 export interface Text {
   id: number;
-  urn: string;
+  local_id: string;
   author: string;
   title: string;
   language: string;
@@ -52,10 +52,6 @@ export interface Annotation {
   updated_at?: string;
 }
 
-
-
-
-
 // Translation Assist types
 export interface TranslationResult {
   source_text: string;
@@ -89,8 +85,8 @@ export interface TranslateAssistStatus {
 
 export interface Inscription {
   id: number;
+  local_id: string;
   phi_id: number;
-  urn: string;
   title: string;
   text: string;
   region_main: string | null;
@@ -104,8 +100,8 @@ export interface Inscription {
 
 export interface InscriptionListItem {
   id: number;
+  local_id: string;
   phi_id: number;
-  urn: string;
   title: string;
   text_preview: string;
   region_main: string | null;
@@ -194,4 +190,3 @@ export interface IthacaModelStatus {
   features: string[];
   supported_languages: string[];
 }
-
