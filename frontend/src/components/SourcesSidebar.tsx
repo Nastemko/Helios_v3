@@ -55,8 +55,10 @@ export default function SourcesSidebar() {
     observer.observe(sentinel);
 
     return () => observer.disconnect();
-    // texts.length ensures the observer is (re)created when the list grows/shrinks
-  }, [hasNextPage, isFetchingNextPage, fetchNextPage, texts.length]);
+    // texts.length ensures the observer is (re)created when the list grows/shrinks.
+    // isCollapsed ensures the observer is created when the sidebar expands
+    // (refs are null while collapsed, so the effect must re-run after expanding).
+  }, [hasNextPage, isFetchingNextPage, fetchNextPage, texts.length, isCollapsed]);
 
   // Collapsed state - just show a thin bar with expand button
   if (isCollapsed) {
