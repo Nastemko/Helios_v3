@@ -19,7 +19,11 @@ class Text(Base):
     """Canonical text model (e.g., Homer's Iliad)"""
 
     __tablename__ = "texts"
-    __table_args__ = (Index("idx_author_title", "author", "title"),)
+    __table_args__ = (
+        Index("idx_author_title", "author", "title"),
+        # Composite index for common region + date queries
+        Index("idx_region_date_combo", "region_main", "date_min", "date_max"),
+    )
 
     id = Column(Integer, primary_key=True, index=True, nullable=False)
 
@@ -37,6 +41,13 @@ class Text(Base):
     title = Column(String, nullable=False, index=True)
     language = Column(String, nullable=False, index=True)  # 'grc', 'lat'
     is_fragment = Column(Boolean, default=False, index=True)
+
+    # Extracted performance columns for fast querying
+    region_main = Column(String, nullable=True, index=True)
+    region_sub = Column(String, nullable=True, index=True)
+    date_min = Column(Integer, nullable=True, index=True)
+    date_max = Column(Integer, nullable=True, index=True)
+
     text_metadata = Column(JSONB)  # Additional metadata (editor, edition, etc.)
 
     # Relationships

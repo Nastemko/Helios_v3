@@ -160,6 +160,11 @@ class DatabasePopulator:
                     "title": text_data["title"],
                     "language": text_data["language"],
                     "is_fragment": text_data["is_fragment"],
+                    # Extracted columns - set None for Perseus data (no inscription-specific fields)
+                    "region_main": None,
+                    "region_sub": None,
+                    "date_min": None,
+                    "date_max": None,
                     "text_metadata": text_data["text_metadata"],
                 }
             )

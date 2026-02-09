@@ -25,6 +25,7 @@ from sqlalchemy.orm import Session
 from config import settings
 from database import Base, SessionLocal, engine
 from models.text import Text, TextSegment, TextSource
+from scripts.data_utils import validate_inscription_data, prepare_metadata_for_jsonb
 
 logger = logging.getLogger(__name__)
 
@@ -179,15 +180,15 @@ class PHIInscriptionLoader:
             phi_id = inscription.get("id")
             local_id = str(phi_id)
 
-            # Build title
-            title = f"PHI {phi_id}"
-            region_sub = inscription.get("region_sub")
-            region_main = inscription.get("region_main")
+            # Validate and canonicalize inscription data
+            validated_data = validate_inscription_data(inscription)
 
-            if region_sub:
-                title = f"{region_sub} - PHI {phi_id}"
-            elif region_main:
-                title = f"{region_main} - PHI {phi_id}"
+            # Build title using canonicalized region names
+            title = f"PHI {phi_id}"
+            if validated_data["region_sub"]:
+                title = f"{validated_data['region_sub']} - PHI {phi_id}"
+            elif validated_data["region_main"]:
+                title = f"{validated_data['region_main']} - PHI {phi_id}"
 
             inscription_values.append(
                 {
@@ -197,20 +198,15 @@ class PHIInscriptionLoader:
                     "title": title,
                     "language": "grc",
                     "is_fragment": True,
-                    "text_metadata": {
-                        "text_type": "inscription",
-                        "phi_id": phi_id,
-                        "source": "Packard Humanities Institute",
-                        "region_main": region_main,
-                        "region_main_id": inscription.get("region_main_id"),
-                        "region_sub": region_sub,
-                        "region_sub_id": inscription.get("region_sub_id"),
-                        "date_str": inscription.get("date_str"),
-                        "date_min": inscription.get("date_min"),
-                        "date_max": inscription.get("date_max"),
-                        "date_circa": inscription.get("date_circa"),
-                        "metadata_raw": inscription.get("metadata"),
-                    },
+                    # Extracted performance columns
+                    "region_main": validated_data["region_main"],
+                    "region_sub": validated_data["region_sub"],
+                    "date_min": validated_data["date_min"],
+                    "date_max": validated_data["date_max"],
+                    # JSONB metadata without extracted fields
+                    "text_metadata": prepare_metadata_for_jsonb(
+                        inscription, str(phi_id)
+                    ),
                 }
             )
 
