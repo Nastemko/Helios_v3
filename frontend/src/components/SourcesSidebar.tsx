@@ -49,7 +49,7 @@ export default function SourcesSidebar() {
       },
       {
         root: container,
-        rootMargin: "100px",
+        rootMargin: "200px",
       },
     );
     observer.observe(sentinel);
@@ -61,7 +61,7 @@ export default function SourcesSidebar() {
   // Collapsed state - just show a thin bar with expand button
   if (isCollapsed) {
     return (
-      <aside className="w-12 bg-gray-50 border-r border-gray-200 flex flex-col shrink-0">
+      <aside className="w-12 bg-gray-50 border-r border-gray-200 flex flex-col shrink-0 h-full min-h-0">
         <button
           onClick={() => setIsCollapsed(false)}
           className="h-12 flex items-center justify-center hover:bg-gray-100 transition-colors"
@@ -91,7 +91,7 @@ export default function SourcesSidebar() {
   }
 
   return (
-    <aside className="w-64 bg-gray-50 border-r border-gray-200 flex flex-col shrink-0">
+    <aside className="w-64 bg-gray-50 border-r border-gray-200 flex flex-col shrink-0 h-full min-h-0">
       <div className="p-4 border-b border-gray-200 flex justify-between items-center bg-white">
         <h2 className="font-semibold text-sm uppercase tracking-wider text-gray-500">
           Sources
