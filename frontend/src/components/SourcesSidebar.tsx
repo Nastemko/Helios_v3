@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useInfiniteQuery } from "@tanstack/react-query";
 import { useNavigate, useParams } from "react-router-dom";
 import { textApi } from "../services/api";
@@ -11,6 +11,7 @@ export default function SourcesSidebar() {
   const navigate = useNavigate();
   const [search, setSearch] = useState("");
   const [isCollapsed, setIsCollapsed] = useState(!!textId);
+  const containerRef = useRef<HTMLDivElement>(null);
   const sentinelRef = useRef<HTMLDivElement>(null);
 
   const { data, isLoading, isFetchingNextPage, hasNextPage, fetchNextPage } =
@@ -28,33 +29,39 @@ export default function SourcesSidebar() {
 
   const texts = data?.pages.flatMap((page) => page.data) ?? [];
 
-  // IntersectionObserver to trigger loading the next page
-  const handleObserver = useCallback(
-    (entries: IntersectionObserverEntry[]) => {
-      const [entry] = entries;
-      if (entry.isIntersecting && hasNextPage && !isFetchingNextPage) {
-        fetchNextPage();
-      }
-    },
-    [hasNextPage, isFetchingNextPage, fetchNextPage],
-  );
-
+  // IntersectionObserver to trigger loading the next page.
+  // Important: include texts.length in the dependency array so the effect
+  // re-runs when new items render and the sentinel may be attached to the DOM.
   useEffect(() => {
+    const container = containerRef.current;
     const sentinel = sentinelRef.current;
-    if (!sentinel) return;
+    if (!container || !sentinel) return;
 
-    const observer = new IntersectionObserver(handleObserver, {
-      rootMargin: "100px",
-    });
+    // If there is no next page, no need to observe.
+    if (!hasNextPage) return;
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        const [entry] = entries;
+        if (entry.isIntersecting && hasNextPage && !isFetchingNextPage) {
+          fetchNextPage();
+        }
+      },
+      {
+        root: container,
+        rootMargin: "200px",
+      },
+    );
     observer.observe(sentinel);
 
     return () => observer.disconnect();
-  }, [handleObserver]);
+    // texts.length ensures the observer is (re)created when the list grows/shrinks
+  }, [hasNextPage, isFetchingNextPage, fetchNextPage, texts.length]);
 
   // Collapsed state - just show a thin bar with expand button
   if (isCollapsed) {
     return (
-      <aside className="w-12 bg-gray-50 border-r border-gray-200 flex flex-col shrink-0">
+      <aside className="w-12 bg-gray-50 border-r border-gray-200 flex flex-col shrink-0 h-full min-h-0">
         <button
           onClick={() => setIsCollapsed(false)}
           className="h-12 flex items-center justify-center hover:bg-gray-100 transition-colors"
@@ -84,7 +91,7 @@ export default function SourcesSidebar() {
   }
 
   return (
-    <aside className="w-64 bg-gray-50 border-r border-gray-200 flex flex-col shrink-0">
+    <aside className="w-64 bg-gray-50 border-r border-gray-200 flex flex-col shrink-0 h-full min-h-0">
       <div className="p-4 border-b border-gray-200 flex justify-between items-center bg-white">
         <h2 className="font-semibold text-sm uppercase tracking-wider text-gray-500">
           Sources
@@ -120,7 +127,7 @@ export default function SourcesSidebar() {
         />
       </div>
 
-      <div className="flex-1 overflow-y-auto p-2 space-y-1">
+      <div ref={containerRef} className="flex-1 overflow-y-auto p-2 space-y-1">
         {isLoading ? (
           <div className="text-center py-4 text-gray-500 text-sm">
             Loading...
