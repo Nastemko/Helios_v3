@@ -69,7 +69,7 @@ export default function InscriptionInput({
   const [showExamples, setShowExamples] = useState(false);
   
   const charCount = value.length;
-  const isValidLength = charCount >= 50 && charCount <= 760;
+  const isValidLength = charCount >= 1 && charCount <= 760;
   const hasGaps = value.includes('-') || value.includes('?') || value.includes('#');
   
   const examples = language === 'greek' ? GREEK_EXAMPLES : LATIN_EXAMPLES;
@@ -123,7 +123,7 @@ Use ----- for known-length gaps (5 missing chars)`;
       {value.length > 0 && !isValidLength && (
         <div className="mt-2 text-sm text-red-600">
           {charCount < 50 
-            ? `Text too short (minimum 50 characters, currently ${charCount})`
+            ? `Text too short (minimum 1 character, currently ${charCount})`
             : `Text too long (maximum 760 characters, currently ${charCount})`
           }
         </div>

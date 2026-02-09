@@ -1,19 +1,55 @@
-import { useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
-import { useNavigate, useParams } from 'react-router-dom';
-import { textApi } from '../services/api';
-import type { Text } from '../types';
+import { useCallback, useEffect, useRef, useState } from "react";
+import { useInfiniteQuery } from "@tanstack/react-query";
+import { useNavigate, useParams } from "react-router-dom";
+import { textApi } from "../services/api";
+import type { Text } from "../types";
+
+const PAGE_SIZE = 30;
 
 export default function SourcesSidebar() {
   const { textId } = useParams<{ textId: string }>();
   const navigate = useNavigate();
-  const [search, setSearch] = useState('');
-  const [isCollapsed, setIsCollapsed] = useState(false);
+  const [search, setSearch] = useState("");
+  const [isCollapsed, setIsCollapsed] = useState(!!textId);
+  const sentinelRef = useRef<HTMLDivElement>(null);
 
-  const { data: texts, isLoading } = useQuery({
-    queryKey: ['texts', search],
-    queryFn: () => textApi.list({ search, limit: 50 }),
-  });
+  const { data, isLoading, isFetchingNextPage, hasNextPage, fetchNextPage } =
+    useInfiniteQuery({
+      queryKey: ["texts-sidebar", search],
+      queryFn: ({ pageParam = 0 }) =>
+        textApi.list({ search, skip: pageParam, limit: PAGE_SIZE }),
+      initialPageParam: 0,
+      getNextPageParam: (lastPage, _allPages, lastPageParam) => {
+        if (!lastPage.data || lastPage.data.length < PAGE_SIZE)
+          return undefined;
+        return lastPageParam + PAGE_SIZE;
+      },
+    });
+
+  const texts = data?.pages.flatMap((page) => page.data) ?? [];
+
+  // IntersectionObserver to trigger loading the next page
+  const handleObserver = useCallback(
+    (entries: IntersectionObserverEntry[]) => {
+      const [entry] = entries;
+      if (entry.isIntersecting && hasNextPage && !isFetchingNextPage) {
+        fetchNextPage();
+      }
+    },
+    [hasNextPage, isFetchingNextPage, fetchNextPage],
+  );
+
+  useEffect(() => {
+    const sentinel = sentinelRef.current;
+    if (!sentinel) return;
+
+    const observer = new IntersectionObserver(handleObserver, {
+      rootMargin: "100px",
+    });
+    observer.observe(sentinel);
+
+    return () => observer.disconnect();
+  }, [handleObserver]);
 
   // Collapsed state - just show a thin bar with expand button
   if (isCollapsed) {
@@ -24,12 +60,24 @@ export default function SourcesSidebar() {
           className="h-12 flex items-center justify-center hover:bg-gray-100 transition-colors"
           title="Expand Sources"
         >
-          <svg className="w-5 h-5 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 5l7 7-7 7M5 5l7 7-7 7" />
+          <svg
+            className="w-5 h-5 text-gray-500"
+            fill="none"
+            stroke="currentColor"
+            viewBox="0 0 24 24"
+          >
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              strokeWidth="2"
+              d="M13 5l7 7-7 7M5 5l7 7-7 7"
+            />
           </svg>
         </button>
         <div className="flex-1 flex items-center justify-center">
-          <span className="text-xs text-gray-400 transform -rotate-90 whitespace-nowrap">Sources</span>
+          <span className="text-xs text-gray-400 transform -rotate-90 whitespace-nowrap">
+            Sources
+          </span>
         </div>
       </aside>
     );
@@ -38,18 +86,30 @@ export default function SourcesSidebar() {
   return (
     <aside className="w-64 bg-gray-50 border-r border-gray-200 flex flex-col shrink-0">
       <div className="p-4 border-b border-gray-200 flex justify-between items-center bg-white">
-        <h2 className="font-semibold text-sm uppercase tracking-wider text-gray-500">Sources</h2>
+        <h2 className="font-semibold text-sm uppercase tracking-wider text-gray-500">
+          Sources
+        </h2>
         <button
           onClick={() => setIsCollapsed(true)}
           className="p-1 hover:bg-gray-100 rounded text-gray-400 hover:text-gray-600"
           title="Collapse Panel"
         >
-          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M11 19l-7-7 7-7m8 14l-7-7 7-7" />
+          <svg
+            className="w-5 h-5"
+            fill="none"
+            stroke="currentColor"
+            viewBox="0 0 24 24"
+          >
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              strokeWidth="2"
+              d="M11 19l-7-7 7-7m8 14l-7-7 7-7"
+            />
           </svg>
         </button>
       </div>
-      
+
       <div className="p-2 border-b border-gray-200 bg-white">
         <input
           type="text"
@@ -62,34 +122,52 @@ export default function SourcesSidebar() {
 
       <div className="flex-1 overflow-y-auto p-2 space-y-1">
         {isLoading ? (
-          <div className="text-center py-4 text-gray-500 text-sm">Loading...</div>
-        ) : texts?.data?.map((text: Text) => {
-          const isActive = text.id.toString() === textId;
-          return (
-            <div 
-              key={text.id}
-              onClick={() => navigate(`/text/${text.id}`)}
-              className={`p-3 rounded-lg cursor-pointer group transition-all ${
-                isActive 
-                  ? 'bg-helios-teal/10 border border-helios-teal/20' 
-                  : 'hover:bg-white hover:shadow-sm border border-transparent hover:border-gray-200'
-              }`}
-            >
-              <div className="flex items-start justify-between mb-1">
-                <span className={`font-medium text-sm ${isActive ? 'text-helios-teal' : 'text-gray-700'}`}>
-                  {text.title}
-                </span>
-                {isActive && (
-                  <span className="text-xs text-helios-teal bg-helios-teal/10 px-1.5 py-0.5 rounded">Active</span>
-                )}
+          <div className="text-center py-4 text-gray-500 text-sm">
+            Loading...
+          </div>
+        ) : (
+          texts.map((text: Text) => {
+            const isActive = text.id.toString() === textId;
+            return (
+              <div
+                key={text.id}
+                onClick={() => navigate(`/text/${text.id}`)}
+                className={`p-3 rounded-lg cursor-pointer group transition-all ${
+                  isActive
+                    ? "bg-helios-teal/10 border border-helios-teal/20"
+                    : "hover:bg-white hover:shadow-sm border border-transparent hover:border-gray-200"
+                }`}
+              >
+                <div className="flex items-start justify-between mb-1">
+                  <span
+                    className={`font-medium text-sm ${isActive ? "text-helios-teal" : "text-gray-700"}`}
+                  >
+                    {text.title}
+                  </span>
+                  {isActive && (
+                    <span className="text-xs text-helios-teal bg-helios-teal/10 px-1.5 py-0.5 rounded">
+                      Active
+                    </span>
+                  )}
+                </div>
+                <p
+                  className={`text-xs truncate ${isActive ? "text-helios-teal/70" : "text-gray-500"}`}
+                >
+                  {text.author}
+                </p>
               </div>
-              <p className={`text-xs truncate ${isActive ? 'text-helios-teal/70' : 'text-gray-500'}`}>
-                {text.author}
-              </p>
-            </div>
-          );
-        })}
+            );
+          })
+        )}
 
+        {/* Sentinel for infinite scroll */}
+        <div ref={sentinelRef} className="h-1" />
+
+        {isFetchingNextPage && (
+          <div className="text-center py-3 text-gray-400 text-xs">
+            Loading more...
+          </div>
+        )}
       </div>
     </aside>
   );
