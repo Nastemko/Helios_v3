@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useInfiniteQuery } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
 import { textApi } from "../services/api";
@@ -9,7 +9,12 @@ const PAGE_SIZE = 30;
 export default function TextBrowser() {
   const [search, setSearch] = useState("");
   const [language, setLanguage] = useState<string>("");
-  const sentinelRef = useRef<HTMLDivElement>(null);
+
+  // The scrollable container that holds the list of texts.
+  // We will use this as the `root` for IntersectionObserver so the sentinel
+  // is observed within the scrollable container rather than the viewport.
+  const containerRef = useRef<HTMLDivElement | null>(null);
+  const sentinelRef = useRef<HTMLDivElement | null>(null);
 
   const { data, isLoading, isFetchingNextPage, hasNextPage, fetchNextPage } =
     useInfiniteQuery({
@@ -27,31 +32,39 @@ export default function TextBrowser() {
 
   const texts = data?.pages.flatMap((page) => page.data) ?? [];
 
-  // IntersectionObserver to trigger loading the next page
-  const handleObserver = useCallback(
-    (entries: IntersectionObserverEntry[]) => {
-      const [entry] = entries;
-      if (entry.isIntersecting && hasNextPage && !isFetchingNextPage) {
-        fetchNextPage();
-      }
-    },
-    [hasNextPage, isFetchingNextPage, fetchNextPage],
-  );
-
+  // Attach IntersectionObserver with the scrollable container as root.
+  // Recreate observer when relevant state changes (hasNextPage, fetch state,
+  // or refs change). Clean up on effect teardown.
   useEffect(() => {
+    const container = containerRef.current;
     const sentinel = sentinelRef.current;
-    if (!sentinel) return;
+    if (!container || !sentinel) return;
 
-    const observer = new IntersectionObserver(handleObserver, {
-      rootMargin: "200px",
-    });
+    // If there is no next page, no need to observe.
+    if (!hasNextPage) return;
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        const [entry] = entries;
+        if (entry.isIntersecting && hasNextPage && !isFetchingNextPage) {
+          fetchNextPage();
+        }
+      },
+      {
+        root: container,
+        rootMargin: "200px",
+      },
+    );
+
     observer.observe(sentinel);
 
-    return () => observer.disconnect();
-  }, [handleObserver]);
+    return () => {
+      observer.disconnect();
+    };
+  }, [hasNextPage, isFetchingNextPage, fetchNextPage /* refs are stable */]);
 
   return (
-    <div className="flex-1 overflow-y-auto bg-gray-50">
+    <div ref={containerRef} className="flex-1 overflow-y-auto bg-gray-50">
       <div className="max-w-7xl mx-auto px-4 py-8">
         <h1 className="text-4xl font-bold mb-8">Browse Classical Texts</h1>
 
