@@ -2,7 +2,15 @@
 
 from enum import Enum
 
-from sqlalchemy import Boolean, Column, ForeignKey, Index, Integer, String
+from sqlalchemy import (
+    Boolean,
+    Column,
+    ForeignKey,
+    Index,
+    Integer,
+    String,
+    UniqueConstraint,
+)
 from sqlalchemy import Text as TextType
 from sqlalchemy.dialects.postgresql import ENUM, JSONB
 from sqlalchemy.orm import relationship
@@ -13,6 +21,12 @@ from database import Base
 class TextSource(Enum):
     PHI = 0
     GreekLit = 1
+
+
+class Language(Enum):
+    GRC = "grc"  # Ancient Greek
+    LAT = "lat"  # Latin
+    EN = "en"  # English (for translations)
 
 
 class Text(Base):
@@ -39,7 +53,11 @@ class Text(Base):
 
     author = Column(String, nullable=False, index=True)
     title = Column(String, nullable=False, index=True)
-    language = Column(String, nullable=False, index=True)  # 'grc', 'lat'
+    language = Column(
+        ENUM(Language, name="language_enum", native_enum=True),
+        nullable=False,
+        index=True,
+    )
     is_fragment = Column(Boolean, default=False, index=True)
 
     # Extracted performance columns for fast querying
@@ -57,9 +75,38 @@ class Text(Base):
     annotations = relationship(
         "Annotation", back_populates="text", cascade="all, delete-orphan"
     )
+    translations = relationship(
+        "TextTranslation", back_populates="text", cascade="all, delete-orphan"
+    )
 
     def __repr__(self):
         return f"<Text(local_id='{self.local_id}', source='{self.source}', author='{self.author}', title='{self.title}')>"
+
+
+class TextTranslation(Base):
+    """English translations for canonical texts"""
+
+    __tablename__ = "text_translations"
+    __table_args__ = (
+        UniqueConstraint("text_id", "language", name="uq_text_language"),
+        Index("idx_text_language", "text_id", "language"),
+    )
+
+    id = Column(Integer, primary_key=True)
+    text_id = Column(Integer, ForeignKey("texts.id"), index=True, nullable=False)
+    language = Column(
+        ENUM(Language, name="language_enum", native_enum=True),
+        nullable=False,
+        index=True,
+    )
+    author = Column(String, index=True)
+    title = Column(String, index=True)
+
+    # Relationships
+    text = relationship("Text", back_populates="translations")
+
+    def __repr__(self):
+        return f"<TextTranslation(text_id={self.text_id}, language='{self.language}')>"
 
 
 class TextSegment(Base):
