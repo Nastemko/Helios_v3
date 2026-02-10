@@ -32,9 +32,6 @@ class Inscription(Base):
     phi_id = Column(Integer, unique=True, nullable=False, index=True)
     title = Column(String, nullable=False, index=True)
 
-    # Work classification
-    is_fragment = Column(Boolean, default=False, index=True)
-
     # Extracted PHI fields (NOT duplicated in JSONB)
     region_main = Column(String, nullable=True, index=True)
     region_sub = Column(String, nullable=True, index=True)
