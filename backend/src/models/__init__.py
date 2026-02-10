@@ -2,13 +2,18 @@
 
 from database import Base
 from models.annotation import Annotation
-from models.text import Text, TextSegment
+from models.inscription import Inscription, InscriptionSegment
+from models.text import LiteraryText, TextSegment, TextMetadata, Language
 from models.user import User
 
 __all__ = [
     "Base",
     "User",
-    "Text",
+    "LiteraryText",
     "TextSegment",
+    "TextMetadata",
+    "Language",
+    "Inscription",
+    "InscriptionSegment",
     "Annotation",
 ]
