@@ -29,19 +29,16 @@ class Language(Enum):
     EN = "en"  # English (for translations)
 
 
-class Text(Base):
-    """Canonical text model (e.g., Homer's Iliad)"""
+class TextMetadata(Base):
+    """Language-agnostic metadata for texts"""
 
-    __tablename__ = "texts"
+    __tablename__ = "text_metadata"
     __table_args__ = (
-        Index("idx_author_title", "author", "title"),
         # Composite index for common region + date queries
         Index("idx_region_date_combo", "region_main", "date_min", "date_max"),
     )
 
-    id = Column(Integer, primary_key=True, index=True, nullable=False)
-
-    local_id = Column(String, unique=True, nullable=False, index=True)
+    id = Column(Integer, primary_key=True)
 
     # Postgres enum column for source/origin of the text.
     # Possible values: PHI, GreekLit
@@ -50,15 +47,10 @@ class Text(Base):
         nullable=False,
         index=True,
     )
-
-    author = Column(String, nullable=False, index=True)
-    title = Column(String, nullable=False, index=True)
-    language = Column(
-        ENUM(Language, name="language_enum", native_enum=True),
-        nullable=False,
-        index=True,
-    )
     is_fragment = Column(Boolean, default=False, index=True)
+
+    # Base local ID (without language suffix) - shared across all language versions
+    local_id = Column(String, unique=True, nullable=False, index=True)
 
     # Extracted performance columns for fast querying
     region_main = Column(String, nullable=True, index=True)
@@ -66,47 +58,54 @@ class Text(Base):
     date_min = Column(Integer, nullable=True, index=True)
     date_max = Column(Integer, nullable=True, index=True)
 
-    text_metadata = Column(JSONB)  # Additional metadata (editor, edition, etc.)
+    text_metadata = Column(JSONB)  # Merged metadata from all language versions
 
     # Relationships
+    texts = relationship("Text", back_populates="metadata")
+
+    def __repr__(self):
+        return f"<TextMetadata(id={self.id}, source='{self.source}')>"
+
+
+class Text(Base):
+    """Text model for all languages (originals and translations)"""
+
+    __tablename__ = "texts"
+    __table_args__ = (
+        Index("idx_author_title", "author", "title"),
+        Index("idx_metadata_language", "metadata_id", "language"),
+    )
+
+    id = Column(Integer, primary_key=True, index=True, nullable=False)
+
+    # Foreign key to language-agnostic metadata
+    metadata_id = Column(
+        Integer, ForeignKey("text_metadata.id"), index=True, nullable=False
+    )
+
+    # Language-specific fields
+    author = Column(String, nullable=False, index=True)
+    title = Column(String, nullable=False, index=True)
+    translator = Column(
+        String, index=True
+    )  # NULL = original, "unknown" = unknown translator
+    language = Column(
+        ENUM(Language, name="language_enum", native_enum=True),
+        nullable=False,
+        index=True,
+    )
+
+    # Relationships
+    metadata = relationship("TextMetadata", back_populates="texts")
     segments = relationship(
         "TextSegment", back_populates="text", cascade="all, delete-orphan"
     )
     annotations = relationship(
         "Annotation", back_populates="text", cascade="all, delete-orphan"
     )
-    translations = relationship(
-        "TextTranslation", back_populates="text", cascade="all, delete-orphan"
-    )
 
     def __repr__(self):
-        return f"<Text(local_id='{self.local_id}', source='{self.source}', author='{self.author}', title='{self.title}')>"
-
-
-class TextTranslation(Base):
-    """English translations for canonical texts"""
-
-    __tablename__ = "text_translations"
-    __table_args__ = (
-        UniqueConstraint("text_id", "language", name="uq_text_language"),
-        Index("idx_text_language", "text_id", "language"),
-    )
-
-    id = Column(Integer, primary_key=True)
-    text_id = Column(Integer, ForeignKey("texts.id"), index=True, nullable=False)
-    language = Column(
-        ENUM(Language, name="language_enum", native_enum=True),
-        nullable=False,
-        index=True,
-    )
-    author = Column(String, index=True)
-    title = Column(String, index=True)
-
-    # Relationships
-    text = relationship("Text", back_populates="translations")
-
-    def __repr__(self):
-        return f"<TextTranslation(text_id={self.text_id}, language='{self.language}')>"
+        return f"<Text(local_id='{self.local_id}', language='{self.language.value}', author='{self.author}', title='{self.title}')>"
 
 
 class TextSegment(Base):
@@ -121,8 +120,8 @@ class TextSegment(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     text_id = Column(Integer, ForeignKey("texts.id"), index=True, nullable=False)
-    book = Column(String)  # Book number/name (e.g., "1")
-    line = Column(String)  # Line number (e.g., "1")
+    book = Column(String, index=True)  # Book number/name (e.g., "1")
+    line = Column(String, index=True)  # Line number (e.g., "1")
     sequence = Column(Integer, nullable=False, index=True)  # For ordering
     content = Column(TextType, nullable=False)  # The actual Greek/Latin text
     reference = Column(
