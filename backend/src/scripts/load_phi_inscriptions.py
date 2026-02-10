@@ -24,7 +24,7 @@ from sqlalchemy.orm import Session
 
 from config import settings
 from database import SessionLocal
-from models.text import Text, TextSegment, TextSource
+from models.inscription import Inscription, InscriptionSegment
 from scripts.data_utils import prepare_metadata_for_jsonb, validate_inscription_data
 
 logger = logging.getLogger(__name__)
@@ -77,36 +77,30 @@ class PHIInscriptionLoader:
 
         return phi_dir / "iphi.json"
 
-    def prefetch_existing_phi_local_ids(self, db: Session) -> None:
-        """Prefetch existing PHI local_ids to avoid individual database queries."""
-        logger.info("Prefetching existing PHI local_ids...")
+    def prefetch_existing_phi_ids(self, db: Session) -> None:
+        """Prefetch existing PHI phi_ids to avoid individual database queries."""
+        logger.info("Prefetching existing PHI phi_ids...")
 
-        # Only fetch PHI texts (source = TextSource.PHI) for efficiency
-        existing_phi = db.execute(
-            select(Text.local_id).filter(Text.source == TextSource.PHI)
-        ).all()
+        # Fetch all PHI inscription phi_ids
+        existing_phi = db.execute(select(Inscription.phi_id).distinct()).all()
 
-        self.existing_phi_local_ids = {row.local_id for row in existing_phi}
-        logger.info(
-            f"Prefetched {len(self.existing_phi_local_ids)} existing PHI local_ids"
-        )
+        self.existing_phi_ids = {row.phi_id for row in existing_phi}
+        logger.info(f"Prefetched {len(self.existing_phi_ids)} existing PHI phi_ids")
 
     def is_database_populated_with_phi(self, db: Session) -> bool:
         """Check if database already has PHI inscriptions."""
-        if self.existing_phi_local_ids:
-            return len(self.existing_phi_local_ids) > 0
-        result = db.scalar(
-            select(func.count(Text.id)).filter(Text.source == TextSource.PHI).limit(1)
-        )
+        if self.existing_phi_ids:
+            return len(self.existing_phi_ids) > 0
+        result = db.scalar(select(func.count(Inscription.id)).limit(1))
         return result is not None and result > 0
 
     def should_process_inscription(self, inscription: Dict) -> bool:
-        """Check if inscription should be processed based on existing local_id cache."""
+        """Check if inscription should be processed based on existing phi_id cache."""
         phi_id = inscription.get("id")
         if not phi_id:
             return False
 
-        return str(phi_id) not in self.existing_phi_local_ids
+        return phi_id not in self.existing_phi_ids
 
     def prepare_batch_data(self, inscriptions: List[Dict]) -> List[Dict]:
         """Prepare batch data for database insertion."""
@@ -132,10 +126,10 @@ class PHIInscriptionLoader:
 
         return batch_data
 
-    def create_segments_for_text(
-        self, db: Session, inscription: Dict, text_id: int
+    def create_segments_for_inscription(
+        self, db: Session, inscription: Dict, inscription_id: int
     ) -> None:
-        """Create text segments for an inscription."""
+        """Create inscription segments."""
         content = inscription.get("text", "").strip()
 
         if not content:
@@ -146,25 +140,20 @@ class PHIInscriptionLoader:
 
         if sentences:
             for seq, sentence in enumerate(sentences, 1):
-                segment = TextSegment(
-                    text_id=text_id,
-                    book="1",
-                    line=str(seq),
-                    reference=f"1.{seq}",
-                    content=sentence,
+                segment = InscriptionSegment(
+                    inscription_id=inscription_id,
                     sequence=seq,
+                    content=sentence,
                 )
+                # TODO: Is it done in a transaction?
                 db.add(segment)
                 self.stats.total_segments += 1
         else:
             # Single segment for whole inscription if no periods
-            segment = TextSegment(
-                text_id=text_id,
-                book="1",
-                line="1",
-                reference="1.1",
-                content=content,
+            segment = InscriptionSegment(
+                inscription_id=inscription_id,
                 sequence=1,
+                content=content,
             )
             db.add(segment)
             self.stats.total_segments += 1
@@ -178,7 +167,6 @@ class PHIInscriptionLoader:
         inscription_values = []
         for inscription in batch_data:
             phi_id = inscription.get("id")
-            local_id = str(phi_id)
 
             # Validate and canonicalize inscription data
             validated_data = validate_inscription_data(inscription)
@@ -192,30 +180,28 @@ class PHIInscriptionLoader:
 
             inscription_values.append(
                 {
-                    "local_id": local_id,
-                    "source": TextSource.PHI,
-                    "author": "[Inscription]",
+                    "phi_id": phi_id,  # Integer, not string
                     "title": title,
-                    "language": "grc",
-                    "is_fragment": True,
-                    # Extracted performance columns
                     "region_main": validated_data["region_main"],
                     "region_sub": validated_data["region_sub"],
                     "date_min": validated_data["date_min"],
                     "date_max": validated_data["date_max"],
-                    # JSONB metadata without extracted fields
-                    "text_metadata": prepare_metadata_for_jsonb(
-                        inscription, str(phi_id)
-                    ),
+                    "date_str": inscription.get("date_str"),  # Dedicated column
+                    "date_circa": inscription.get(
+                        "date_circa", False
+                    ),  # Dedicated column
+                    "metadata_raw": prepare_metadata_for_jsonb(
+                        inscription
+                    ),  # Updated function
                 }
             )
 
         # Use SQLAlchemy's PostgreSQL insert() dialect
         stmt = (
-            insert(Text)
+            insert(Inscription)
             .values(inscription_values)
-            .on_conflict_do_nothing(index_elements=["local_id"])
-            .returning(Text.id, Text.local_id)
+            .on_conflict_do_nothing(index_elements=["phi_id"])
+            .returning(Inscription.id, Inscription.phi_id)
         )
 
         try:
@@ -231,19 +217,20 @@ class PHIInscriptionLoader:
                 self.stats.skipped += len(batch_data)
                 return
 
-            # Get mapping of local_id to ID for inserted texts
-            local_id_to_id = {row.local_id: row.id for row in inserted_texts}
+            # Get mapping of phi_id to ID for inserted inscriptions
+            phi_id_to_id = {row.phi_id: row.id for row in inserted_inscriptions}
 
-            # Create segments for successfully inserted texts
+            # Create segments for successfully inserted inscriptions
             for inscription in batch_data:
                 phi_id = inscription.get("id")
-                local_id = str(phi_id)
 
-                if local_id in local_id_to_id:
-                    text_id = local_id_to_id[local_id]
-                    self.create_segments_for_text(db, inscription, text_id)
+                if phi_id in phi_id_to_id:
+                    inscription_id = phi_id_to_id[phi_id]
+                    self.create_segments_for_inscription(
+                        db, inscription, inscription_id
+                    )
                     self.stats.inserted += 1
-                    self.existing_phi_local_ids.add(local_id)
+                    self.existing_phi_ids.add(phi_id)
                 else:
                     # Already existed
                     self.stats.skipped += 1
@@ -356,15 +343,13 @@ class PHIInscriptionLoader:
         """Remove all PHI inscriptions from database."""
         logger.warning("Clearing all PHI inscriptions from database...")
 
-        # Find all inscription texts by source
-        inscription_texts = db.execute(
-            select(Text).filter(Text.source == TextSource.PHI)
-        ).all()
+        # Find all inscription records
+        inscription_records = db.execute(select(Inscription)).all()
 
-        count = len(inscription_texts)
+        count = len(inscription_records)
 
-        for text in inscription_texts:
-            db.delete(text)  # Segments cascade deleted
+        for inscription in inscription_records:
+            db.delete(inscription)  # Segments cascade deleted
 
         db.commit()
         logger.info(f"Deleted {count} PHI inscriptions")
@@ -415,16 +400,12 @@ def load_phi_inscriptions(
         logger.info(f"  Processing time: {stats.processing_time:.2f} seconds")
 
         # Show database totals
-        total_texts = db.scalar(select(func.count(Text.id)))
-        total_segments = db.scalar(select(func.count(TextSegment.id)))
-        inscription_count = db.scalar(
-            select(func.count(Text.id)).filter(Text.source == TextSource.PHI)
-        )
+        total_inscriptions = db.scalar(select(func.count(Inscription.id)))
+        total_segments = db.scalar(select(func.count(InscriptionSegment.id)))
 
         logger.info("=" * 50)
         logger.info("Database totals:")
-        logger.info(f"  Total texts: {total_texts}")
-        logger.info(f"  Total inscriptions: {inscription_count}")
+        logger.info(f"  Total inscriptions: {total_inscriptions}")
         logger.info(f"  Total segments: {total_segments}")
 
         return stats
