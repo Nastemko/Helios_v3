@@ -25,9 +25,87 @@ from sqlalchemy.orm import Session
 from config import settings
 from database import SessionLocal
 from models.inscription import Inscription, InscriptionSegment
-from scripts.data_utils import prepare_metadata_for_jsonb, validate_inscription_data
 
 logger = logging.getLogger(__name__)
+
+# Data validation and canonicalization functions (moved from data_utils.py)
+
+
+def canonicalize_region_name(region: Optional[str]) -> Optional[str]:
+    """
+    Canonicalize region names: trim whitespace, proper capitalization, preserve acronyms.
+
+    Accepts None safely and returns None for non-string inputs.
+
+    Examples:
+        "  attica (ig i-iii)  " → "Attica (IG I-III)"
+        "athens: agora" → "Athens: Agora"
+        "" → None
+    """
+    if not region or not isinstance(region, str):
+        return None
+
+    # Trim whitespace
+    canonical = region.strip()
+
+    # Convert to title case, but preserve geographical terms
+    canonical = canonical.title()
+
+    # Handle geographical and archaeological terms properly
+    # Preserve acronyms like IG, SEG, etc.
+    acronyms = [
+        "IG",
+        "SEG",
+        "I",
+        "II",
+        "III",
+        "IV",
+        "V",
+        "VI",
+        "VII",
+        "VIII",
+        "IX",
+        "X",
+    ]
+
+    for acronym in acronyms:
+        canonical = canonical.replace(f"({acronym.lower()} ", f"({acronym}) ")
+
+    return canonical if canonical else None
+
+
+def parse_date_value(date_val: Optional[object]) -> Optional[int]:
+    """
+    Parse date value with None fallback for invalid values.
+
+    BC dates should remain negative, AD dates positive.
+
+    Examples:
+        "-350" → -350 (350 BC)
+        "100" → 100 (100 AD)
+        None → None
+    """
+    if date_val is None:
+        return None
+
+    try:
+        return int(str(date_val).strip())
+    except (ValueError, TypeError):
+        return None
+
+
+def validate_inscription_data(inscription: dict) -> dict:
+    """
+    Validate and canonicalize inscription data for loading.
+
+    Returns dictionary with validated and canonicalized data.
+    """
+    return {
+        "region_main": canonicalize_region_name(inscription.get("region_main")),
+        "region_sub": canonicalize_region_name(inscription.get("region_sub")),
+        "date_min": parse_date_value(inscription.get("date_min")),
+        "date_max": parse_date_value(inscription.get("date_max")),
+    }
 
 
 @dataclass
@@ -39,7 +117,6 @@ class PHIConfig:
     dry_run: bool = False
     batch_size: int = 500
     fail_fast: bool = True
-    force: bool = False
 
 
 @dataclass
@@ -60,7 +137,7 @@ class PHIInscriptionLoader:
     def __init__(self, config: PHIConfig):
         self.config = config
         self.stats = PHIStats()
-        self.existing_phi_local_ids = set()
+        self.existing_phi_ids = set()
 
     def get_json_path(self) -> Path:
         """Get the path to the PHI JSON file."""
@@ -190,9 +267,7 @@ class PHIInscriptionLoader:
                     "date_circa": inscription.get(
                         "date_circa", False
                     ),  # Dedicated column
-                    "metadata_raw": prepare_metadata_for_jsonb(
-                        inscription
-                    ),  # Updated function
+                    "metadata_raw": inscription.get("metadata"),
                 }
             )
 
@@ -218,7 +293,7 @@ class PHIInscriptionLoader:
                 return
 
             # Get mapping of phi_id to ID for inserted inscriptions
-            phi_id_to_id = {row.phi_id: row.id for row in inserted_inscriptions}
+            phi_id_to_id = {row.phi_id: row.id for row in inserted_texts}
 
             # Create segments for successfully inserted inscriptions
             for inscription in batch_data:
@@ -307,20 +382,16 @@ class PHIInscriptionLoader:
             inscriptions = inscriptions[: self.config.limit]
             logger.info(f"Limiting to first {self.config.limit} inscriptions")
 
-        # Prefetch existing local_ids
-        self.prefetch_existing_phi_local_ids(db)
+        # Prefetch existing phi_ids
+        self.prefetch_existing_phi_ids(db)
 
         # Check if already populated
-        if not self.config.force and self.is_database_populated_with_phi(db):
+        if self.is_database_populated_with_phi(db):
             logger.info(
-                f"Database already contains {len(self.existing_phi_local_ids)} PHI inscriptions. Skipping loading."
+                f"Database already contains {len(self.existing_phi_ids)} PHI inscriptions. Skipping loading."
             )
-            self.stats.skipped = len(self.existing_phi_local_ids)
+            self.stats.skipped = len(self.existing_phi_ids)
             return self.stats
-
-        # Clear existing if force mode
-        if self.config.force:
-            self.clear_inscriptions(db)
 
         # Process inscriptions in batches
         batch_size = self.config.batch_size
@@ -338,21 +409,6 @@ class PHIInscriptionLoader:
         self.stats.processing_time = time.time() - start_time
 
         return self.stats
-
-    def clear_inscriptions(self, db: Session) -> None:
-        """Remove all PHI inscriptions from database."""
-        logger.warning("Clearing all PHI inscriptions from database...")
-
-        # Find all inscription records
-        inscription_records = db.execute(select(Inscription)).all()
-
-        count = len(inscription_records)
-
-        for inscription in inscription_records:
-            db.delete(inscription)  # Segments cascade deleted
-
-        db.commit()
-        logger.info(f"Deleted {count} PHI inscriptions")
 
 
 def load_phi_inscriptions(
@@ -418,23 +474,6 @@ def load_phi_inscriptions(
         db.close()
 
 
-def clear_inscriptions():
-    """Remove all PHI inscriptions from database (use with caution!)."""
-    logger.warning("Clearing all PHI inscriptions from database...")
-    db = SessionLocal()
-    try:
-        # Use the optimized class-based approach
-        loader = PHIInscriptionLoader(PHIConfig())
-        loader.clear_inscriptions(db)
-        logger.info("PHI inscriptions cleared successfully")
-    except Exception as e:
-        logger.error(f"Error clearing inscriptions: {e}")
-        db.rollback()
-        raise
-    finally:
-        db.close()
-
-
 def initialize_phi_inscriptions():
     """
     Load PHI inscriptions into database on FastAPI startup.
@@ -456,93 +495,3 @@ def initialize_phi_inscriptions():
     except Exception as e:
         logger.error(f"Error initializing PHI inscriptions: {e}")
         return {"status": "error", "message": str(e)}
-
-
-if __name__ == "__main__":
-    """CLI interface for PHI inscription loading."""
-    import argparse
-
-    parser = argparse.ArgumentParser(
-        description="Load PHI inscriptions into database (optimized)",
-        formatter_class=argparse.RawDescriptionHelpFormatter,
-        epilog="""
-Examples:
-  # Load all inscriptions
-  python load_phi_inscriptions.py
-
-  # Dry run to see what would be processed
-  python load_phi_inscriptions.py --dry-run
-
-  # Process only first 100 inscriptions
-  python load_phi_inscriptions.py --limit 100
-
-  # Force reload (clear existing)
-  python load_phi_inscriptions.py --force
-
-  # Custom batch size
-  python load_phi_inscriptions.py --batch-size 200
-        """,
-    )
-
-    parser.add_argument(
-        "--phi-json-path",
-        type=str,
-        help="Path to iphi.json file (uses default if not provided)",
-    )
-    parser.add_argument(
-        "--limit", type=int, help="Limit number of inscriptions to load (for testing)"
-    )
-    parser.add_argument(
-        "--dry-run",
-        action="store_true",
-        help="Parse files but don't insert into database",
-    )
-    parser.add_argument(
-        "--batch-size",
-        type=int,
-        default=500,
-        help="Batch size for database transactions (default: 500)",
-    )
-    parser.add_argument(
-        "--force",
-        action="store_true",
-        help="Clear existing inscriptions and reload (use with caution!)",
-    )
-    parser.add_argument(
-        "--continue-on-error",
-        action="store_true",
-        help="Continue processing on individual errors (default: fail-fast)",
-    )
-
-    args = parser.parse_args()
-
-    # Configure logging
-    logging.basicConfig(
-        level=logging.INFO,
-        format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-    )
-
-    # Safety check for force operation
-    if args.force:
-        response = input(
-            "Are you sure you want to clear all existing PHI inscriptions and reload? (yes/no): "
-        )
-        if response.lower() != "yes":
-            logger.info("Force operation cancelled")
-            sys.exit(0)
-
-    try:
-        stats = load_phi_inscriptions(
-            phi_json_path=args.phi_json_path,
-            limit=args.limit,
-            dry_run=args.dry_run,
-            batch_size=args.batch_size,
-            fail_fast=not args.continue_on_error,
-        )
-        sys.exit(0 if stats.errors == 0 else 1)
-    except KeyboardInterrupt:
-        logger.info("PHI loading interrupted by user")
-        sys.exit(130)
-    except Exception as e:
-        logger.error(f"PHI loading failed: {e}")
-        sys.exit(1)
