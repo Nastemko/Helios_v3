@@ -56,7 +56,7 @@ class LiteraryText(Base):
     )
 
     # Relationships
-    metadata = relationship("TextMetadata", back_populates="texts")
+    text_metadata = relationship("TextMetadata", back_populates="texts")
     segments = relationship(
         "TextSegment", back_populates="text", cascade="all, delete-orphan"
     )
@@ -77,7 +77,7 @@ class TextMetadata(Base):
     local_id = Column(
         String, unique=True, nullable=False, index=True
     )  # Base ID for sharing
-    text_metadata = Column(JSONB)  # Merged metadata from all language versions
+    metadata_content = Column(JSONB)  # Merged metadata from all language versions
 
     # Relationships
     texts = relationship("LiteraryText", back_populates="metadata")

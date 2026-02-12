@@ -129,7 +129,7 @@ class DatabasePopulator:
                 new_metadata_values.append(
                     {
                         "local_id": local_id,
-                        "text_metadata": metadata,
+                        "metadata_content": metadata,
                     }
                 )
 
