@@ -19,7 +19,9 @@ class Annotation(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id"), index=True, nullable=False)
-    text_id = Column(Integer, ForeignKey("texts.id"), index=True, nullable=False)
+    text_id = Column(
+        Integer, ForeignKey("literary_texts.id"), index=True, nullable=False
+    )
     segment_id = Column(
         Integer, ForeignKey("text_segments.id"), index=True, nullable=False
     )
@@ -32,7 +34,7 @@ class Annotation(Base):
 
     # Relationships
     user = relationship("User", back_populates="annotations")
-    text = relationship("Text", back_populates="annotations")
+    text = relationship("LiteraryText", back_populates="annotations")
     segment = relationship("TextSegment", back_populates="annotations")
 
     def __repr__(self):
