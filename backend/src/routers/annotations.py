@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session
 from database import get_db
 from middleware.auth import get_current_user
 from models.annotation import Annotation
-from models.text import Text, TextSegment
+from models.text import LiteraryText, TextSegment
 from models.user import User
 
 router = APIRouter(prefix="/api/annotations", tags=["annotations"])
@@ -65,7 +65,7 @@ async def create_annotation(
     """
     # Verify text exists
 
-    text = db.query(Text).filter(Text.id == annotation.text_id).scalar()
+    text = db.query(LiteraryText).filter(LiteraryText.id == annotation.text_id).scalar()
     if not text:
         raise HTTPException(status_code=404, detail="Text not found")
 
@@ -220,7 +220,7 @@ async def get_text_annotations_summary(
 
     Returns count of annotations and most annotated words.
     """
-    text = db.query(Text).filter(Text.id == text_id).first()
+    text = db.query(LiteraryText).filter(LiteraryText.id == text_id).first()
     if not text:
         raise HTTPException(status_code=404, detail="Text not found")
 

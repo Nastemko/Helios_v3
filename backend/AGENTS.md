@@ -75,6 +75,7 @@ from models.text import LiteraryText, Language
 - **Type Hints**: Required on all function parameters and return values
 - **Docstrings**: Triple quotes, descriptive format for all public functions
 - **Union Types**: Use `|` syntax (Python 3.10+): `str | None` instead of `Optional[str]`
+- **Imports**: imports should be always on the top of a file, never inside a function or method, that's a huge antipattern
 
 ### Naming Conventions
 - **Classes**: PascalCase (`MorphologyService`, `UserResponse`)
@@ -239,6 +240,7 @@ class TestService(unittest.TestCase):
 - Separate `LiteraryText` (for literary texts) from `Inscription` (for PHI inscriptions)
 - Use `TextMetadata` for shared metadata across language versions
 - All models must inherit from `Base` in `database.py`
+- remember the root for python project is src, so set PYTHONPATH=./src
 
 ### API Development
 - All routers must use `APIRouter` with descriptive prefix
