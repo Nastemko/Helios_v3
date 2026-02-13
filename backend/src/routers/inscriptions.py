@@ -8,7 +8,7 @@ from sqlalchemy import Integer, case, cast, func, select
 from sqlalchemy.orm import Session
 
 from database import get_db
-from models.text import Text, TextSegment, TextSource
+from models.inscription import Inscription, InscriptionSegment
 from services.ithaca_service.ithaca_service import (
     get_ithaca_service,
     initialize_all_models,
@@ -21,8 +21,8 @@ Language = Literal["greek", "latin"]
 
 
 # Response models
-class InscriptionResponse(BaseModel):
-    """Inscription metadata response"""
+class TextResponse(BaseModel):
+    """Text metadata response"""
 
     id: int
     phi_id: Optional[int] = None
@@ -40,8 +40,8 @@ class InscriptionResponse(BaseModel):
         from_attributes = True
 
 
-class InscriptionListItem(BaseModel):
-    """Inscription list item (lighter version)"""
+class TextListItem(BaseModel):
+    """Text list item (lighter version)"""
 
     id: int
     phi_id: Optional[int] = None
@@ -65,7 +65,7 @@ class RegionCount(BaseModel):
     count: int
 
 
-class InscriptionStats(BaseModel):
+class TextStats(BaseModel):
     """Statistics about the inscription corpus"""
 
     total_inscriptions: int
@@ -74,18 +74,18 @@ class InscriptionStats(BaseModel):
     date_range: dict
 
 
-def _get_full_text(db: Session, text_id: int) -> str:
+def _get_full_text(db: Session, inscription_id: int) -> str:
     """Get full inscription text by joining segments"""
     segments = db.scalars(
-        select(TextSegment)
-        .filter(TextSegment.text_id == text_id)
-        .order_by(TextSegment.sequence)
+        select(InscriptionSegment)
+        .filter(InscriptionSegment.inscription_id == inscription_id)
+        .order_by(InscriptionSegment.sequence)
     ).all()
 
     return ". ".join(str(seg.content) for seg in segments if str(seg.content))
 
 
-@router.get("/", response_model=List[InscriptionListItem])
+@router.get("/", response_model=List[TextListItem])
 async def list_inscriptions(
     search: Optional[str] = Query(None, description="Search in text content"),
     region_main: Optional[str] = Query(None, description="Filter by main region"),
@@ -102,42 +102,44 @@ async def list_inscriptions(
     Date format: negative values are BC (e.g., -350 = 350 BC), positive are AD.
     """
     # Base query - only inscriptions
-    query = select(Text).filter(Text.source == TextSource.PHI)
+    query = select(Inscription)
 
-    # Search in text content
+    # Search in inscription content
     if search:
-        # Get texts that have matching segments
+        # Get inscriptions that have matching segments
         search_pattern = f"%{search}%"
-        matching_text_ids = db.scalars(
-            select(TextSegment.text_id)
-            .filter(TextSegment.content.ilike(search_pattern))
+        matching_inscription_ids = db.scalars(
+            select(InscriptionSegment.inscription_id)
+            .filter(InscriptionSegment.content.ilike(search_pattern))
             .distinct()
         ).all()
-        query = query.filter(Text.id.in_(matching_text_ids))
+        query = query.filter(Inscription.id.in_(matching_inscription_ids))
 
     # Region filters - use extracted columns for better performance
     if region_main:
-        query = query.filter(Text.region_main == region_main)
+        query = query.filter(Inscription.region_main == region_main)
 
     if region_sub:
-        query = query.filter(Text.region_sub == region_sub)
+        query = query.filter(Inscription.region_sub == region_sub)
 
     # Add date filtering to query using extracted columns
     if date_min is not None:
-        query = query.filter(Text.date_max >= date_min)
+        query = query.filter(Inscription.date_max >= date_min)
     if date_max is not None:
-        query = query.filter(Text.date_min <= date_max)
+        query = query.filter(Inscription.date_min <= date_max)
 
     # Apply pagination after all filters
-    texts = db.scalars(query.order_by(Text.id).offset(skip).limit(limit)).all()
+    inscriptions = db.scalars(
+        query.order_by(Inscription.id).offset(skip).limit(limit)
+    ).all()
 
-    # Build response with text previews
+    # Build response with inscription previews
     results = []
-    for text in texts:
-        # Get text preview from first segment
+    for inscription in inscriptions:
+        # Get inscription preview from first segment
         first_segment_content = db.scalar(
-            select(TextSegment.content)
-            .filter(TextSegment.text_id == text.id)
+            select(InscriptionSegment.content)
+            .filter(InscriptionSegment.inscription_id == inscription.id)
             .order_by(TextSegment.sequence)
             .limit(1)
         )
@@ -146,18 +148,16 @@ async def list_inscriptions(
             first_segment_content = first_segment_content[:150] + "..."
 
         results.append(
-            InscriptionListItem(
-                id=text.id,
-                phi_id=int(text.local_id)
-                if (text.local_id and text.local_id.isdigit())
-                else None,
-                title=text.title,
+            TextListItem(
+                id=inscription.id,
+                phi_id=inscription.phi_id,
+                title=inscription.title,
                 text_preview=first_segment_content or "",
-                region_main=text.region_main,
-                region_sub=text.region_sub,
-                date_str=(text.text_metadata or {}).get("date_str"),
-                date_min=text.date_min,
-                date_max=text.date_max,
+                region_main=inscription.region_main,
+                region_sub=inscription.region_sub,
+                date_str=inscription.date_str,
+                date_min=inscription.date_min,
+                date_max=inscription.date_max,
             )
         )
     return results
@@ -179,28 +179,32 @@ async def list_regions(
         # Use direct column queries for main regions and extract region_id from JSON metadata
         query = (
             select(
-                Text.region_main.label("region"),
+                Inscription.region_main.label("region"),
                 func.min(
-                    cast(Text.text_metadata["region_main_id"].astext, Integer)
+                    cast(Inscription.metadata_raw["region_main_id"].astext, Integer)
                 ).label("region_id"),
                 func.count().label("count"),
             )
-            .filter(Text.source == TextSource.PHI, Text.region_main.isnot(None))
-            .group_by(Text.region_main)
+            .filter(
+                Inscription.region_main.isnot(None),
+            )
+            .group_by(Inscription.region_main)
             .order_by(func.count().desc())
         )
     else:
         # Use direct column queries for sub regions and extract region_id from JSON metadata
         query = (
             select(
-                Text.region_sub.label("region"),
+                Inscription.region_sub.label("region"),
                 func.min(
-                    cast(Text.text_metadata["region_sub_id"].astext, Integer)
+                    cast(Inscription.metadata_raw["region_sub_id"].astext, Integer)
                 ).label("region_id"),
                 func.count().label("count"),
             )
-            .filter(Text.source == TextSource.PHI, Text.region_sub.isnot(None))
-            .group_by(Text.region_sub)
+            .filter(
+                Inscription.region_sub.isnot(None),
+            )
+            .group_by(Inscription.region_sub)
             .order_by(func.count().desc())
         )
 
@@ -216,7 +220,7 @@ async def list_regions(
     ]
 
 
-@router.get("/stats", response_model=InscriptionStats)
+@router.get("/stats", response_model=TextStats)
 async def get_inscription_stats(db: Session = Depends(get_db)):
     """
     Get statistics about the inscription corpus.
@@ -230,7 +234,10 @@ async def get_inscription_stats(db: Session = Depends(get_db)):
         func.coalesce(
             func.sum(
                 case(
-                    ((Text.date_min.isnot(None) | Text.date_max.isnot(None)), 1),
+                    (
+                        (Text.date_min.isnot(None) | Text.date_max.isnot(None)),
+                        1,
+                    ),
                     else_=0,
                 )
             ),
@@ -244,14 +251,14 @@ async def get_inscription_stats(db: Session = Depends(get_db)):
     result = db.execute(stats_query).first()
 
     if not result:
-        return InscriptionStats(
+        return TextStats(
             total_inscriptions=0,
             inscriptions_with_dates=0,
             regions_count=0,
             date_range={"earliest": None, "latest": None},
         )
 
-    return InscriptionStats(
+    return TextStats(
         total_inscriptions=result.total_inscriptions,
         inscriptions_with_dates=result.inscriptions_with_dates,
         regions_count=result.regions_count,
@@ -262,7 +269,7 @@ async def get_inscription_stats(db: Session = Depends(get_db)):
     )
 
 
-@router.get("/{text_id}", response_model=InscriptionResponse)
+@router.get("/{text_id}", response_model=TextResponse)
 async def get_inscription(
     text_id: Annotated[int, Path()], db: Session = Depends(get_db)
 ):
@@ -276,12 +283,12 @@ async def get_inscription(
     )
 
     if not text:
-        raise HTTPException(status_code=404, detail=f"Inscription not found: {text_id}")
+        raise HTTPException(status_code=404, detail=f"Text not found: {text_id}")
 
     full_text = _get_full_text(db, text.id)
     meta = text.text_metadata or {}
 
-    return InscriptionResponse(
+    return TextResponse(
         id=text.id,
         phi_id=int(text.local_id)
         if (text.local_id and text.local_id.isdigit())
@@ -376,7 +383,7 @@ class ContextualizeRequest(BaseModel):
     top_k: int = 20
 
 
-class SimilarInscription(BaseModel):
+class SimilarText(BaseModel):
     """A similar inscription"""
 
     id: str  # PHI ID as string
@@ -392,7 +399,7 @@ class SimilarInscription(BaseModel):
 class ContextualizeResponse(BaseModel):
     """Response with similar inscriptions"""
 
-    similar: List[SimilarInscription]
+    similar: List[SimilarText]
     language: str
     available: bool
     message: Optional[str] = None
@@ -530,7 +537,7 @@ async def contextualize_inscription(request: ContextualizeRequest):
 
     return ContextualizeResponse(
         similar=[
-            SimilarInscription(
+            SimilarText(
                 id=str(s.id),
                 ids_alt=s.ids_alt,
                 text=s.text,
