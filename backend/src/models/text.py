@@ -80,7 +80,7 @@ class TextMetadata(Base):
     metadata_content = Column(JSONB)  # Merged metadata from all language versions
 
     # Relationships
-    texts = relationship("LiteraryText", back_populates="metadata")
+    texts = relationship("LiteraryText", back_populates="text_metadata")
 
     def __repr__(self):
         return f"<TextMetadata(local_id='{self.local_id}')>"
