@@ -25,7 +25,6 @@ class LangVersionResponse(BaseModel):
     local_id: str
     language: str
     translator: Optional[str] = None
-    is_translation: bool = False
 
     class Config:
         from_attributes = True
@@ -112,7 +111,6 @@ async def list_works(
                     local_id=v.local_id,
                     language=v.language.value,
                     translator=v.translator,
-                    is_translation=v.is_translation,
                 )
                 for v in w.lang_versions
             ],
@@ -125,9 +123,6 @@ async def list_works(
 async def list_versions(
     language: Optional[str] = Query(
         None, description="Filter by language (grc, lat, en)"
-    ),
-    is_translation: Optional[bool] = Query(
-        None, description="Filter translations only"
     ),
     skip: int = Query(0, ge=0),
     limit: int = Query(50, ge=1, le=100),
@@ -147,9 +142,6 @@ async def list_versions(
         except ValueError:
             pass
 
-    if is_translation is not None:
-        query = query.filter(LiteraryTextLangVersion.is_translation == is_translation)
-
     query = query.order_by(LiteraryTextLangVersion.local_id)
     versions = query.offset(skip).limit(limit).all()
 
@@ -159,7 +151,6 @@ async def list_versions(
             local_id=v.local_id,
             language=v.language.value,
             translator=v.translator,
-            is_translation=v.is_translation,
         )
         for v in versions
     ]
@@ -191,7 +182,6 @@ async def get_work(
                 local_id=v.local_id,
                 language=v.language.value,
                 translator=v.translator,
-                is_translation=v.is_translation,
             )
             for v in work.lang_versions
         ],
@@ -236,7 +226,6 @@ async def get_version(
             local_id=version.local_id,
             language=version.language.value,
             translator=version.translator,
-            is_translation=version.is_translation,
         ),
         work=LiteraryTextResponse(
             id=work.id,
@@ -327,7 +316,7 @@ async def get_stats(db: Session = Depends(get_db)):
 
     translation_count = (
         db.query(LiteraryTextLangVersion)
-        .filter(LiteraryTextLangVersion.is_translation == True)
+        .filter(LiteraryTextLangVersion.translator.isnot(None))
         .count()
     )
 

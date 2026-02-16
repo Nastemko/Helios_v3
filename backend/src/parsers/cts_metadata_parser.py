@@ -17,6 +17,7 @@ import lxml.etree as ET
 logger = logging.getLogger(__name__)
 
 CTS_NS = "{http://chs.harvard.edu/xmlns/cts}"
+XML_NS = "{http://www.w3.org/XML/1998/namespace}"
 
 
 @dataclass
@@ -26,7 +27,6 @@ class VersionInfo:
     local_id: str
     work_local_id: str
     language: str
-    is_translation: bool
     translator: Optional[str] = None
     label: Optional[str] = None
     description: Optional[str] = None
@@ -88,14 +88,11 @@ class CTSMetadataParser:
         tree = ET.parse(str(cts_file))
         root = tree.getroot()
 
-        textgroup = root.find(f"{CTS_NS}textgroup")
-        if textgroup is None:
-            raise ValueError(f"No textgroup element in {cts_file}")
-
-        projid = textgroup.get("projid", "")
+        # The textgroup element is the root element
+        projid = root.get("projid", "")
         textgroup_id = projid.split(":")[-1] if ":" in projid else projid
 
-        groupname = textgroup.find(f"{CTS_NS}groupname")
+        groupname = root.find(f"{CTS_NS}groupname")
         author = (
             groupname.text.strip()
             if groupname is not None and groupname.text
@@ -126,8 +123,9 @@ class CTSMetadataParser:
         tree = ET.parse(str(cts_file))
         root = tree.getroot()
 
-        work = root.find(f"{CTS_NS}work")
-        if work is None:
+        # The work element is the root element
+        work = root
+        if not work.tag.endswith("work"):
             raise ValueError(f"No work element in {cts_file}")
 
         urn = work.get("urn", "")
@@ -137,12 +135,27 @@ class CTSMetadataParser:
 
         textgroup_id = work_local_id.split(".")[0]
 
-        title_elem = work.find(f"{CTS_NS}title")
-        title = (
-            title_elem.text.strip()
-            if title_elem is not None and title_elem.text
-            else "Unknown"
-        )
+        # Try to get Greek title first, then any title, then English
+        title = "Unknown"
+        title_elem_grc = work.find(f"{CTS_NS}title[@{XML_NS}lang='grc']")
+        if title_elem_grc is not None and title_elem_grc.text:
+            title = title_elem_grc.text.strip()
+        else:
+            # Find any title that's not English
+            for title_elem in work.findall(f"{CTS_NS}title"):
+                lang = title_elem.get(f"{XML_NS}lang", "")
+                if lang != "eng" and title_elem.text:
+                    title = title_elem.text.strip()
+                    break
+            else:
+                # Fall back to English title
+                title_elem_eng = work.find(f"{CTS_NS}title[@{XML_NS}lang='eng']")
+                if title_elem_eng is not None and title_elem_eng.text:
+                    title = title_elem_eng.text.strip()
+                else:
+                    title_elem = work.find(f"{CTS_NS}title")
+                    if title_elem is not None and title_elem.text:
+                        title = title_elem.text.strip()
 
         author = self._textgroup_cache.get(textgroup_id, "Unknown")
 
@@ -153,16 +166,12 @@ class CTSMetadataParser:
         )
 
         for edition in work.findall(f"{CTS_NS}edition"):
-            version_info = self._parse_version(
-                edition, work_local_id, is_translation=False
-            )
+            version_info = self._parse_version(edition, work_local_id)
             if version_info:
                 work_info.versions.append(version_info)
 
         for translation in work.findall(f"{CTS_NS}translation"):
-            version_info = self._parse_version(
-                translation, work_local_id, is_translation=True
-            )
+            version_info = self._parse_version(translation, work_local_id)
             if version_info:
                 work_info.versions.append(version_info)
 
@@ -170,7 +179,7 @@ class CTSMetadataParser:
         return work_info
 
     def _parse_version(
-        self, element: ET.Element, work_local_id: str, is_translation: bool
+        self, element: ET.Element, work_local_id: str
     ) -> Optional[VersionInfo]:
         """
         Parse a version (edition or translation) element.
@@ -178,7 +187,6 @@ class CTSMetadataParser:
         Args:
             element: The edition or translation XML element
             work_local_id: The work's local ID
-            is_translation: Whether this is a translation
 
         Returns:
             VersionInfo or None
@@ -190,18 +198,37 @@ class CTSMetadataParser:
 
         language = element.get("{http://www.w3.org/XML/1998/namespace}lang", "grc")
 
-        label_elem = element.find(f"{CTS_NS}label")
-        label = (
-            label_elem.text.strip()
-            if label_elem is not None and label_elem.text
-            else None
-        )
+        # Detect if this is a translation by element tag
+        is_translation = element.tag == f"{CTS_NS}translation"
+
+        # Try to get Greek label first, then any label
+        label = None
+        label_elem_grc = element.find(f"{CTS_NS}label[@{XML_NS}lang='grc']")
+        if label_elem_grc is not None and label_elem_grc.text:
+            label = label_elem_grc.text.strip()
+        else:
+            # Find any label that's not English
+            for label_elem in element.findall(f"{CTS_NS}label"):
+                lang = label_elem.get(f"{XML_NS}lang", "")
+                if lang != "eng" and label_elem.text:
+                    label = label_elem.text.strip()
+                    break
+            else:
+                # Fall back to English label
+                label_elem_eng = element.find(f"{CTS_NS}label[@{XML_NS}lang='eng']")
+                if label_elem_eng is not None and label_elem_eng.text:
+                    label = label_elem_eng.text.strip()
+                else:
+                    label_elem = element.find(f"{CTS_NS}label")
+                    if label_elem is not None and label_elem.text:
+                        label = label_elem.text.strip()
 
         desc_elem = element.find(f"{CTS_NS}description")
         description = (
             desc_elem.text.strip() if desc_elem is not None and desc_elem.text else None
         )
 
+        # Extract translator from translation descriptions
         translator = None
         if is_translation and description:
             translator = self._extract_translator(description)
@@ -210,7 +237,6 @@ class CTSMetadataParser:
             local_id=local_id,
             work_local_id=work_local_id,
             language=language,
-            is_translation=is_translation,
             translator=translator,
             label=label,
             description=description,
@@ -248,20 +274,82 @@ class CTSMetadataParser:
 
         description = description.strip()
 
-        patterns = [
-            r"([A-Z][a-zA-Z]+(?:\s+[A-Z]\.?)?(?:\s+[A-Z][a-zA-Z]+)+),\s*(?:translator|translated)",
-            r"translator[.,]\s*([^.]+)",
-            r"translated by\s+([^.]+)",
-            r"([A-Z][a-zA-Z]+(?:\s+[A-Z]\.?)?\s*[A-Z][a-zA-Z]+)\s*,\s*(?:translator|translated)",
-        ]
+        # Pattern 1: Match "Last, First, translator" format (e.g., "Long, George, translator")
+        # This handles the common format where the last name comes first
+        pattern = r"([A-Z][a-zA-Z]*,\s*[A-Z][a-zA-Z]*(?:\s+[A-Z][a-zA-Z]*)?),\s*(?:translator|translated)"
+        match = re.search(pattern, description, re.IGNORECASE)
+        if match:
+            translator = match.group(1).strip()
+            translator = re.sub(r"\s+", " ", translator)
+            if len(translator) > 3 and not any(
+                x in translator.lower() for x in ["london", "new york", "press", "sons"]
+            ):
+                return translator
 
-        for pattern in patterns:
-            match = re.search(pattern, description, re.IGNORECASE)
-            if match:
-                translator = match.group(1).strip()
-                translator = re.sub(r"\s+", " ", translator)
-                if len(translator) > 3:
-                    return translator
+        # Pattern 2: Match "First Last, translator" format (e.g., "Thomas Wentworth, translator")
+        pattern = r"([A-Z][a-zA-Z]*(?:\s+[A-Z]\.?)?(?:\s+[A-Z][a-zA-Z]*)+),\s*(?:translator|translated)"
+        match = re.search(pattern, description, re.IGNORECASE)
+        if match:
+            translator = match.group(1).strip()
+            translator = re.sub(r"\s+", " ", translator)
+            if len(translator) > 3 and not any(
+                x in translator.lower() for x in ["london", "new york", "press", "sons"]
+            ):
+                return translator
+
+        # Pattern 3: Match "translator. Name" but only capture the name part
+        # Be more restrictive - translator name should not contain colons or publication info
+        pattern = (
+            r"translator[.,]\s+([A-Z][a-zA-Z]*(?:\s+[A-Z]\.?)?(?:\s+[A-Z][a-zA-Z]*)+)"
+        )
+        match = re.search(pattern, description, re.IGNORECASE)
+        if match:
+            translator = match.group(1).strip()
+            translator = re.sub(r"\s+", " ", translator)
+            if len(translator) > 3 and not any(
+                x in translator.lower() for x in ["london", "new york", "press", "sons"]
+            ):
+                return translator
+
+        # Pattern 4: Match "translated by Name"
+        pattern = (
+            r"translated by\s+([A-Z][a-zA-Z]*(?:\s+[A-Z]\.?)?(?:\s+[A-Z][a-zA-Z]*)+)"
+        )
+        match = re.search(pattern, description, re.IGNORECASE)
+        if match:
+            translator = match.group(1).strip()
+            translator = re.sub(r"\s+", " ", translator)
+            if len(translator) > 3 and not any(
+                x in translator.lower() for x in ["london", "new york", "press", "sons"]
+            ):
+                return translator
+
+        # Pattern 2: Match "translator. Name" but only capture the name part
+        # Be more restrictive - translator name should not contain colons or publication info
+        pattern = (
+            r"translator[.,]\s+([A-Z][a-zA-Z]*(?:\s+[A-Z]\.?)?(?:\s+[A-Z][a-zA-Z]*)+)"
+        )
+        match = re.search(pattern, description, re.IGNORECASE)
+        if match:
+            translator = match.group(1).strip()
+            translator = re.sub(r"\s+", " ", translator)
+            if len(translator) > 3 and not any(
+                x in translator.lower() for x in ["london", "new york", "press", "sons"]
+            ):
+                return translator
+
+        # Pattern 3: Match "translated by Name"
+        pattern = (
+            r"translated by\s+([A-Z][a-zA-Z]*(?:\s+[A-Z]\.?)?(?:\s+[A-Z][a-zA-Z]*)+)"
+        )
+        match = re.search(pattern, description, re.IGNORECASE)
+        if match:
+            translator = match.group(1).strip()
+            translator = re.sub(r"\s+", " ", translator)
+            if len(translator) > 3 and not any(
+                x in translator.lower() for x in ["london", "new york", "press", "sons"]
+            ):
+                return translator
 
         return None
 
@@ -270,11 +358,15 @@ class CTSMetadataParser:
         Get version info for a specific local_id.
 
         Args:
-            local_id: Full local_id like "tlg0012.tlg001.perseus-eng3"
+            local_id: Full local_id like "tlg0012.tlg001.perseus-eng3" or "greekLit:tlg0012.tlg001.perseus-eng3"
 
         Returns:
             VersionInfo or None if not found
         """
+        # Normalize local_id by stripping namespace prefix if present
+        if ":" in local_id:
+            local_id = local_id.split(":")[-1]
+
         work_local_id = ".".join(local_id.split(".")[:2])
 
         work_info = self._work_cache.get(work_local_id)

@@ -79,10 +79,20 @@ class PerseusXMLParser:
         if div is not None:
             urn = div.get("n")
             if urn:
-                # Extract everything after 2nd colon: greekLit:tlg0013.tlg001.perseus-grc2
-                parts = urn.split(":", 2)
-                if len(parts) >= 3:
-                    return parts[2]
+                # Extract everything after 3rd colon: urn:cts:greekLit:tlg0013.tlg001.perseus-grc2
+                parts = urn.split(":", 3)
+                if len(parts) >= 4:
+                    return parts[3]
+
+        # Also check div[@type='translation']
+        div = root.find(f".//{self.TEI_NS}div[@type='translation']")
+        if div is not None:
+            urn = div.get("n")
+            if urn:
+                # Extract everything after 3rd colon: urn:cts:greekLit:tlg0013.tlg001.perseus-grc2
+                parts = urn.split(":", 3)
+                if len(parts) >= 4:
+                    return parts[3]
 
         # Fallback to file path parsing
         # tl tlg0013/tlg001/tlg0013.tlg001.perseus-grc2.xml -> tlg0013.tlg001.perseus-grc2
@@ -211,9 +221,11 @@ class PerseusXMLParser:
                             {
                                 "book": section_num,
                                 "line": line_num,
-                                "reference": f"{section_num}.{line_num}"
-                                if section_num
-                                else line_num,
+                                "reference": (
+                                    f"{section_num}.{line_num}"
+                                    if section_num
+                                    else line_num
+                                ),
                                 "content": content,
                                 "sequence": sequence,
                             }

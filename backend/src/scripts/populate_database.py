@@ -115,7 +115,10 @@ class DatabasePopulator:
         logger.info(f"Found {total_versions} total versions")
 
         translations = sum(
-            1 for w in self.cts_data.values() for v in w.versions if v.is_translation
+            1
+            for w in self.cts_data.values()
+            for v in w.versions
+            if v.translator is not None
         )
         logger.info(f"Found {translations} translations")
 
@@ -139,9 +142,6 @@ class DatabasePopulator:
                         "local_id": work_local_id,
                         "author": work_info.author,
                         "title": work_info.title,
-                        "metadata_content": {
-                            "versions": [v.local_id for v in work_info.versions]
-                        },
                     }
                 )
 
@@ -186,12 +186,10 @@ class DatabasePopulator:
 
         language = "grc"
         translator = None
-        is_translation = False
 
         if version_info:
             language = version_info.language
             translator = version_info.translator
-            is_translation = version_info.is_translation
         else:
             language = text_data.get("language", "grc")
 
@@ -202,7 +200,6 @@ class DatabasePopulator:
             literary_text_id=parent_id,
             language=lang_enum,
             translator=translator,
-            is_translation=is_translation,
         )
         db.add(version)
         db.flush()
@@ -287,14 +284,21 @@ class DatabasePopulator:
                 parent_id = parent_ids.get(work_local_id)
 
                 if not parent_id:
-                    author = text_data.get("author", "Unknown")
-                    title = text_data.get("title", "Unknown")
+                    # Try to get author/title from CTS metadata first (prefer Greek)
+                    cts_work = self.cts_data.get(work_local_id)
+                    if cts_work:
+                        author = cts_work.author
+                        title = cts_work.title
+                    else:
+                        # Fall back to XML file data
+                        author = text_data.get("author", "Unknown")
+                        title = text_data.get("title", "Unknown")
+
                     logger.debug(f"Creating parent record for {work_local_id}")
                     new_parent = LiteraryText(
                         local_id=work_local_id,
                         author=author,
                         title=title,
-                        metadata_content={"versions": []},
                     )
                     db.add(new_parent)
                     db.flush()
