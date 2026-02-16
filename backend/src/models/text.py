@@ -11,7 +11,7 @@ from sqlalchemy import (
     String,
 )
 from sqlalchemy import Text as TextType
-from sqlalchemy.dialects.postgresql import ENUM, JSONB
+from sqlalchemy.dialects.postgresql import ENUM
 from sqlalchemy.orm import relationship
 
 from database import Base
@@ -38,7 +38,6 @@ class LiteraryText(Base):
     local_id = Column(String, unique=True, nullable=False, index=True)
     author = Column(String, nullable=False, index=True)
     title = Column(String, nullable=False, index=True)
-    metadata_content = Column(JSONB)
 
     lang_versions = relationship(
         "LiteraryTextLangVersion",
@@ -76,7 +75,6 @@ class LiteraryTextLangVersion(Base):
         index=True,
     )
     translator = Column(String, index=True)
-    is_translation = Column(Boolean, default=False, index=True)
 
     literary_text = relationship("LiteraryText", back_populates="lang_versions")
     segments = relationship(
