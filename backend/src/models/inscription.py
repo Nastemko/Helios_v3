@@ -19,12 +19,7 @@ class Inscription(Base):
     """PHI inscription model with structured and flexible metadata"""
 
     __tablename__ = "inscriptions"
-    __table_args__ = (
-        Index("idx_region_main", "region_main"),
-        Index("idx_region_sub", "region_sub"),
-        Index("idx_date_range", "date_min", "date_max"),
-        Index("idx_phi_id", "phi_id"),
-    )
+    __table_args__ = (Index("idx_date_range", "date_min", "date_max"),)
 
     id = Column(Integer, primary_key=True)
 

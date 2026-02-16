@@ -17,7 +17,7 @@ class Annotation(Base):
         Index("idx_annotation_user_segment", "user_id", "segment_id"),
     )
 
-    id = Column(Integer, primary_key=True, index=True)
+    id = Column(Integer, primary_key=True)
     user_id = Column(Integer, ForeignKey("users.id"), index=True, nullable=False)
     lang_version_id = Column(
         Integer,

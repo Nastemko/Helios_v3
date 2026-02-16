@@ -140,7 +140,7 @@ async def list_inscriptions(
         first_segment_content = db.scalar(
             select(InscriptionSegment.content)
             .filter(InscriptionSegment.inscription_id == inscription.id)
-            .order_by(TextSegment.sequence)
+            .order_by(InscriptionSegment.sequence)
             .limit(1)
         )
 
