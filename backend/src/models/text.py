@@ -57,11 +57,6 @@ class LiteraryTextLangVersion(Base):
     """
 
     __tablename__ = "literary_text_lang_versions"
-    __table_args__ = (
-        Index("idx_lang_version_local_id", "local_id"),
-        Index("idx_lang_version_lang", "language"),
-        Index("idx_lang_version_literary_text", "literary_text_id"),
-    )
 
     id = Column(Integer, primary_key=True)
 
@@ -93,7 +88,6 @@ class TextSegment(Base):
 
     __tablename__ = "text_segments"
     __table_args__ = (
-        Index("idx_segment_lang_version_id", "lang_version_id"),
         Index("idx_segment_reference", "lang_version_id", "reference"),
         Index("idx_segment_sequence", "lang_version_id", "sequence"),
     )
