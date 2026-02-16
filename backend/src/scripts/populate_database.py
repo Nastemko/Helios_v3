@@ -106,7 +106,7 @@ class DatabasePopulator:
         data_dir = self.config.data_dir or Path(settings.assets.PERSEUS_DATA_DIR)
         logger.info(f"Loading CTS metadata from {data_dir}...")
 
-        self.cts_parser = CTSMetadataParser(data_dir.parent)
+        self.cts_parser = CTSMetadataParser(data_dir)
         self.cts_data = self.cts_parser.parse_all()
 
         logger.info(f"Loaded {len(self.cts_data)} works from CTS metadata")
@@ -287,10 +287,23 @@ class DatabasePopulator:
                 parent_id = parent_ids.get(work_local_id)
 
                 if not parent_id:
-                    logger.warning(f"No parent found for {local_id}, skipping")
-                    self.stats.skipped += 1
-                    continue
+                    author = text_data.get("author", "Unknown")
+                    title = text_data.get("title", "Unknown")
+                    logger.debug(f"Creating parent record for {work_local_id}")
+                    new_parent = LiteraryText(
+                        local_id=work_local_id,
+                        author=author,
+                        title=title,
+                        metadata_content={"versions": []},
+                    )
+                    db.add(new_parent)
+                    db.flush()
+                    db.refresh(new_parent, ["id"])
+                    parent_id: int = new_parent.id  # type: ignore[assignment]
+                    parent_ids[work_local_id] = parent_id
+                    self.stats.inserted_works += 1
 
+                assert parent_id is not None
                 self.insert_version(db, text_data, version_info, parent_id)
                 self.stats.files_processed += 1
                 batch_count += 1
