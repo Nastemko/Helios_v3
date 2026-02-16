@@ -4,26 +4,41 @@ from typing import Annotated, List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Path, Query
 from pydantic import BaseModel
-from sqlalchemy import or_
+from sqlalchemy import func, or_
 from sqlalchemy.orm import Session
 
 from database import get_db
-from models.text import LiteraryText, TextSegment, Language
+from models.text import (
+    Language,
+    LiteraryText,
+    LiteraryTextLangVersion,
+    TextSegment,
+)
 
 router = APIRouter(prefix="/api/texts", tags=["texts"])
 
 
-# Response models
-class TextResponse(BaseModel):
-    """Text metadata response"""
+class LangVersionResponse(BaseModel):
+    """Language version response (brief)"""
+
+    id: int
+    local_id: str
+    language: str
+    translator: Optional[str] = None
+    is_translation: bool = False
+
+    class Config:
+        from_attributes = True
+
+
+class LiteraryTextResponse(BaseModel):
+    """Literary work response (parent record)"""
 
     id: int
     local_id: str
     author: str
     title: str
-    language: str
-    is_fragment: bool
-    text_metadata: dict = {}
+    versions: List[LangVersionResponse] = []
 
     class Config:
         from_attributes = True
@@ -33,8 +48,8 @@ class TextSegmentResponse(BaseModel):
     """Text segment response"""
 
     id: int
-    book: str
-    line: str
+    book: Optional[str] = None
+    line: Optional[str] = None
     reference: str
     content: str
     sequence: int
@@ -43,20 +58,18 @@ class TextSegmentResponse(BaseModel):
         from_attributes = True
 
 
-class TextDetailResponse(BaseModel):
-    """Detailed text response with segments"""
+class LangVersionDetailResponse(BaseModel):
+    """Detailed language version response with segments"""
 
-    text: TextResponse
+    version: LangVersionResponse
+    work: LiteraryTextResponse
     segments: List[TextSegmentResponse]
     total_segments: int
 
 
-@router.get("/", response_model=List[TextResponse])
-async def list_texts(
+@router.get("/", response_model=List[LiteraryTextResponse])
+async def list_works(
     search: Optional[str] = Query(None, description="Search by author or title"),
-    language: Optional[str] = Query(
-        None, description="Filter by language (grc, lat, en)"
-    ),
     author: Optional[str] = Query(None, description="Filter by author name"),
     skip: int = Query(0, ge=0, description="Number of records to skip"),
     limit: int = Query(
@@ -65,13 +78,12 @@ async def list_texts(
     db: Session = Depends(get_db),
 ):
     """
-    List and search available texts
+    List literary works (parent records)
 
-    Returns paginated list of texts with optional filtering.
+    Each work can have multiple language versions (original + translations).
     """
     query = db.query(LiteraryText)
 
-    # Apply filters
     if search:
         search_pattern = f"%{search}%"
         query = query.filter(
@@ -81,56 +93,158 @@ async def list_texts(
             )
         )
 
-    if language:
-        try:
-            lang_enum = Language[language.upper()]
-            query = query.filter(LiteraryText.language == lang_enum)
-        except KeyError:
-            pass
-
     if author:
         author_pattern = f"%{author}%"
         query = query.filter(LiteraryText.author.ilike(author_pattern))
 
-    # Order by author and title
     query = query.order_by(LiteraryText.author, LiteraryText.title)
+    works = query.offset(skip).limit(limit).all()
 
-    # Apply pagination
-    texts = query.offset(skip).limit(limit).all()
+    return [
+        LiteraryTextResponse(
+            id=w.id,
+            local_id=w.local_id,
+            author=w.author,
+            title=w.title,
+            versions=[
+                LangVersionResponse(
+                    id=v.id,
+                    local_id=v.local_id,
+                    language=v.language.value,
+                    translator=v.translator,
+                    is_translation=v.is_translation,
+                )
+                for v in w.lang_versions
+            ],
+        )
+        for w in works
+    ]
 
-    return [TextResponse.model_validate(t, extra="ignore") for t in texts]
+
+@router.get("/versions/", response_model=List[LangVersionResponse])
+async def list_versions(
+    language: Optional[str] = Query(
+        None, description="Filter by language (grc, lat, en)"
+    ),
+    is_translation: Optional[bool] = Query(
+        None, description="Filter translations only"
+    ),
+    skip: int = Query(0, ge=0),
+    limit: int = Query(50, ge=1, le=100),
+    db: Session = Depends(get_db),
+):
+    """
+    List language versions (specific translations/editions)
+
+    Use this to browse all versions with a specific language filter.
+    """
+    query = db.query(LiteraryTextLangVersion)
+
+    if language:
+        try:
+            lang_enum = Language(language.lower())
+            query = query.filter(LiteraryTextLangVersion.language == lang_enum)
+        except ValueError:
+            pass
+
+    if is_translation is not None:
+        query = query.filter(LiteraryTextLangVersion.is_translation == is_translation)
+
+    query = query.order_by(LiteraryTextLangVersion.local_id)
+    versions = query.offset(skip).limit(limit).all()
+
+    return [
+        LangVersionResponse(
+            id=v.id,
+            local_id=v.local_id,
+            language=v.language.value,
+            translator=v.translator,
+            is_translation=v.is_translation,
+        )
+        for v in versions
+    ]
 
 
-@router.get("/{text_id}", response_model=TextDetailResponse)
-async def get_text(
-    text_id: Annotated[int, Path()],
+@router.get("/{work_id}", response_model=LiteraryTextResponse)
+async def get_work(
+    work_id: Annotated[int, Path()],
+    db: Session = Depends(get_db),
+):
+    """
+    Get a specific work with all its language versions
+
+    Example: /api/texts/123
+    """
+    work = db.query(LiteraryText).filter(LiteraryText.id == work_id).first()
+
+    if not work:
+        raise HTTPException(status_code=404, detail=f"Work not found: {work_id}")
+
+    return LiteraryTextResponse(
+        id=work.id,
+        local_id=work.local_id,
+        author=work.author,
+        title=work.title,
+        versions=[
+            LangVersionResponse(
+                id=v.id,
+                local_id=v.local_id,
+                language=v.language.value,
+                translator=v.translator,
+                is_translation=v.is_translation,
+            )
+            for v in work.lang_versions
+        ],
+    )
+
+
+@router.get("/versions/{version_id}", response_model=LangVersionDetailResponse)
+async def get_version(
+    version_id: Annotated[int, Path()],
     skip: int = Query(0, ge=0, description="Skip segments (for pagination)"),
     limit: int = Query(1000, ge=1, le=5000, description="Limit segments"),
     db: Session = Depends(get_db),
 ):
     """
-    Get a specific text with its segments
+    Get a specific version with its segments
 
-    Example: /api/texts/123
+    Example: /api/texts/versions/456
     """
-    # Find text by ID
-    text = db.query(LiteraryText).filter(LiteraryText.id == text_id).first()
+    version = (
+        db.query(LiteraryTextLangVersion)
+        .filter(LiteraryTextLangVersion.id == version_id)
+        .first()
+    )
 
-    if not text:
-        raise HTTPException(status_code=404, detail=f"Text not found: {text_id}")
+    if not version:
+        raise HTTPException(status_code=404, detail=f"Version not found: {version_id}")
 
-    # Get segments with pagination
     segments_query = (
         db.query(TextSegment)
-        .filter(TextSegment.text_id == text.id)
+        .filter(TextSegment.lang_version_id == version.id)
         .order_by(TextSegment.sequence)
     )
 
     total_segments = segments_query.count()
     segments = segments_query.offset(skip).limit(limit).all()
 
-    return TextDetailResponse(
-        text=TextResponse.model_validate(text, extra="ignore"),
+    work = version.literary_text
+
+    return LangVersionDetailResponse(
+        version=LangVersionResponse(
+            id=version.id,
+            local_id=version.local_id,
+            language=version.language.value,
+            translator=version.translator,
+            is_translation=version.is_translation,
+        ),
+        work=LiteraryTextResponse(
+            id=work.id,
+            local_id=work.local_id,
+            author=work.author,
+            title=work.title,
+            versions=[],
+        ),
         segments=[
             TextSegmentResponse.model_validate(seg, extra="ignore") for seg in segments
         ],
@@ -138,26 +252,33 @@ async def get_text(
     )
 
 
-@router.get("/{text_id}/segment/{reference}")
-async def get_text_segment(
-    text_id: Annotated[int, Path()], reference: str, db: Session = Depends(get_db)
+@router.get("/versions/{version_id}/segment/{reference}")
+async def get_segment(
+    version_id: Annotated[int, Path()],
+    reference: str,
+    db: Session = Depends(get_db),
 ):
     """
-    Get a specific segment of a text by reference
+    Get a specific segment of a version by reference
 
-    Example: /api/texts/123/segment/1.1
-    Returns book 1, line 1 of the text
+    Example: /api/texts/versions/456/segment/1.1
+    Returns book 1, line 1 of the version
     """
-    # Find text
-    text = db.query(LiteraryText).filter(LiteraryText.id == text_id).first()
+    version = (
+        db.query(LiteraryTextLangVersion)
+        .filter(LiteraryTextLangVersion.id == version_id)
+        .first()
+    )
 
-    if not text:
-        raise HTTPException(status_code=404, detail=f"Text not found: {text_id}")
+    if not version:
+        raise HTTPException(status_code=404, detail=f"Version not found: {version_id}")
 
-    # Find segment by reference
     segment = (
         db.query(TextSegment)
-        .filter(TextSegment.text_id == text.id, TextSegment.reference == reference)
+        .filter(
+            TextSegment.lang_version_id == version.id,
+            TextSegment.reference == reference,
+        )
         .first()
     )
 
@@ -174,11 +295,8 @@ async def list_authors(db: Session = Depends(get_db)):
 
     Returns list of unique authors with count of their works
     """
-    from sqlalchemy import func
-
     authors = (
         db.query(LiteraryText.author, func.count(LiteraryText.id).label("work_count"))
-        .filter(LiteraryText.source == TextSource.GreekLit)
         .group_by(LiteraryText.author)
         .order_by(LiteraryText.author)
         .all()
@@ -192,24 +310,35 @@ async def get_stats(db: Session = Depends(get_db)):
     """
     Get database statistics
 
-    Returns counts of texts, segments, languages, etc.
+    Returns counts of works, versions, segments, languages, etc.
     """
-    from sqlalchemy import func
-
-    total_texts = db.query(Text).count()
+    total_works = db.query(LiteraryText).count()
+    total_versions = db.query(LiteraryTextLangVersion).count()
     total_segments = db.query(TextSegment).count()
 
-    texts_by_language = (
-        db.query(LiteraryText.language, func.count(LiteraryText.id).label("count"))
-        .group_by(LiteraryText.language)
+    versions_by_language = (
+        db.query(
+            LiteraryTextLangVersion.language,
+            func.count(LiteraryTextLangVersion.id).label("count"),
+        )
+        .group_by(LiteraryTextLangVersion.language)
         .all()
     )
 
-    fragment_count = db.query(Text).filter(LiteraryText.is_fragment).count()
+    translation_count = (
+        db.query(LiteraryTextLangVersion)
+        .filter(LiteraryTextLangVersion.is_translation == True)
+        .count()
+    )
 
     return {
-        "total_texts": total_texts,
+        "total_works": total_works,
+        "total_versions": total_versions,
         "total_segments": total_segments,
-        "texts_by_language": {lang: count for lang, count in texts_by_language},
-        "fragment_count": fragment_count,
+        "versions_by_language": {
+            lang.value if hasattr(lang, "value") else str(lang): count
+            for lang, count in versions_by_language
+        },
+        "translation_count": translation_count,
+        "original_count": total_versions - translation_count,
     }

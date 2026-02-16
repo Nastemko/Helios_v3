@@ -1,0 +1,300 @@
+"""Parser for CTS (__cts__.xml) metadata files.
+
+Parses the Canonical Text Services metadata format to extract:
+- Author from textgroup files
+- Title from work files
+- Language and translator from edition/translation elements
+"""
+
+import logging
+import re
+from dataclasses import dataclass, field
+from pathlib import Path
+from typing import Dict, List, Optional
+
+import lxml.etree as ET
+
+logger = logging.getLogger(__name__)
+
+CTS_NS = "{http://chs.harvard.edu/xmlns/cts}"
+
+
+@dataclass
+class VersionInfo:
+    """Information about a specific version (edition or translation)."""
+
+    local_id: str
+    work_local_id: str
+    language: str
+    is_translation: bool
+    translator: Optional[str] = None
+    label: Optional[str] = None
+    description: Optional[str] = None
+
+
+@dataclass
+class WorkInfo:
+    """Information about a work and all its versions."""
+
+    work_local_id: str
+    author: str
+    title: str
+    versions: List[VersionInfo] = field(default_factory=list)
+
+
+class CTSMetadataParser:
+    """Parse CTS metadata files to build a lookup table for text processing."""
+
+    def __init__(self, data_dir: Path):
+        """
+        Initialize parser.
+
+        Args:
+            data_dir: Path to canonical-greekLit/data directory
+        """
+        self.data_dir = Path(data_dir)
+        self._textgroup_cache: Dict[str, str] = {}
+        self._work_cache: Dict[str, WorkInfo] = {}
+
+    def parse_all(self) -> Dict[str, WorkInfo]:
+        """
+        Parse all CTS metadata files in the data directory.
+
+        Returns:
+            Dictionary mapping work_local_id to WorkInfo
+        """
+        self._parse_all_textgroups()
+        self._parse_all_works()
+        return self._work_cache
+
+    def _parse_all_textgroups(self) -> None:
+        """Parse all textgroup __cts__.xml files to extract author names."""
+        for cts_file in self.data_dir.glob("*/__cts__.xml"):
+            try:
+                self._parse_textgroup(cts_file)
+            except Exception as e:
+                logger.warning(f"Error parsing textgroup {cts_file}: {e}")
+
+    def _parse_textgroup(self, cts_file: Path) -> str:
+        """
+        Parse a textgroup __cts__.xml file.
+
+        Args:
+            cts_file: Path to textgroup __cts__.xml
+
+        Returns:
+            Textgroup ID (e.g., "tlg0012")
+        """
+        tree = ET.parse(str(cts_file))
+        root = tree.getroot()
+
+        textgroup = root.find(f"{CTS_NS}textgroup")
+        if textgroup is None:
+            raise ValueError(f"No textgroup element in {cts_file}")
+
+        projid = textgroup.get("projid", "")
+        textgroup_id = projid.split(":")[-1] if ":" in projid else projid
+
+        groupname = textgroup.find(f"{CTS_NS}groupname")
+        author = (
+            groupname.text.strip()
+            if groupname is not None and groupname.text
+            else "Unknown"
+        )
+
+        self._textgroup_cache[textgroup_id] = author
+        return textgroup_id
+
+    def _parse_all_works(self) -> None:
+        """Parse all work __cts__.xml files to extract work and version info."""
+        for cts_file in self.data_dir.glob("*/*/__cts__.xml"):
+            try:
+                self._parse_work(cts_file)
+            except Exception as e:
+                logger.warning(f"Error parsing work {cts_file}: {e}")
+
+    def _parse_work(self, cts_file: Path) -> Optional[WorkInfo]:
+        """
+        Parse a work __cts__.xml file.
+
+        Args:
+            cts_file: Path to work __cts__.xml
+
+        Returns:
+            WorkInfo object or None if parsing fails
+        """
+        tree = ET.parse(str(cts_file))
+        root = tree.getroot()
+
+        work = root.find(f"{CTS_NS}work")
+        if work is None:
+            raise ValueError(f"No work element in {cts_file}")
+
+        urn = work.get("urn", "")
+        work_local_id = self._extract_local_id_from_urn(urn)
+        if not work_local_id:
+            raise ValueError(f"Could not extract work_local_id from urn: {urn}")
+
+        textgroup_id = work_local_id.split(".")[0]
+
+        title_elem = work.find(f"{CTS_NS}title")
+        title = (
+            title_elem.text.strip()
+            if title_elem is not None and title_elem.text
+            else "Unknown"
+        )
+
+        author = self._textgroup_cache.get(textgroup_id, "Unknown")
+
+        work_info = WorkInfo(
+            work_local_id=work_local_id,
+            author=author,
+            title=title,
+        )
+
+        for edition in work.findall(f"{CTS_NS}edition"):
+            version_info = self._parse_version(
+                edition, work_local_id, is_translation=False
+            )
+            if version_info:
+                work_info.versions.append(version_info)
+
+        for translation in work.findall(f"{CTS_NS}translation"):
+            version_info = self._parse_version(
+                translation, work_local_id, is_translation=True
+            )
+            if version_info:
+                work_info.versions.append(version_info)
+
+        self._work_cache[work_local_id] = work_info
+        return work_info
+
+    def _parse_version(
+        self, element: ET.Element, work_local_id: str, is_translation: bool
+    ) -> Optional[VersionInfo]:
+        """
+        Parse a version (edition or translation) element.
+
+        Args:
+            element: The edition or translation XML element
+            work_local_id: The work's local ID
+            is_translation: Whether this is a translation
+
+        Returns:
+            VersionInfo or None
+        """
+        urn = element.get("urn", "")
+        local_id = self._extract_local_id_from_urn(urn)
+        if not local_id:
+            return None
+
+        language = element.get("{http://www.w3.org/XML/1998/namespace}lang", "grc")
+
+        label_elem = element.find(f"{CTS_NS}label")
+        label = (
+            label_elem.text.strip()
+            if label_elem is not None and label_elem.text
+            else None
+        )
+
+        desc_elem = element.find(f"{CTS_NS}description")
+        description = (
+            desc_elem.text.strip() if desc_elem is not None and desc_elem.text else None
+        )
+
+        translator = None
+        if is_translation and description:
+            translator = self._extract_translator(description)
+
+        return VersionInfo(
+            local_id=local_id,
+            work_local_id=work_local_id,
+            language=language,
+            is_translation=is_translation,
+            translator=translator,
+            label=label,
+            description=description,
+        )
+
+    def _extract_local_id_from_urn(self, urn: str) -> Optional[str]:
+        """
+        Extract local_id from a CTS URN.
+
+        Args:
+            urn: CTS URN like "urn:cts:greekLit:tlg0012.tlg001.perseus-grc2"
+
+        Returns:
+            Local ID like "tlg0012.tlg001.perseus-grc2" or None
+        """
+        if not urn:
+            return None
+        parts = urn.split(":")
+        if len(parts) >= 4:
+            return parts[3]
+        return None
+
+    def _extract_translator(self, description: str) -> Optional[str]:
+        """
+        Extract translator name from description text.
+
+        Args:
+            description: Description text like "Homer. The Iliad... Murray, A. T., translator."
+
+        Returns:
+            Translator name or None
+        """
+        if not description:
+            return None
+
+        description = description.strip()
+
+        patterns = [
+            r"([A-Z][a-zA-Z]+(?:\s+[A-Z]\.?)?(?:\s+[A-Z][a-zA-Z]+)+),\s*(?:translator|translated)",
+            r"translator[.,]\s*([^.]+)",
+            r"translated by\s+([^.]+)",
+            r"([A-Z][a-zA-Z]+(?:\s+[A-Z]\.?)?\s*[A-Z][a-zA-Z]+)\s*,\s*(?:translator|translated)",
+        ]
+
+        for pattern in patterns:
+            match = re.search(pattern, description, re.IGNORECASE)
+            if match:
+                translator = match.group(1).strip()
+                translator = re.sub(r"\s+", " ", translator)
+                if len(translator) > 3:
+                    return translator
+
+        return None
+
+    def get_version_info(self, local_id: str) -> Optional[VersionInfo]:
+        """
+        Get version info for a specific local_id.
+
+        Args:
+            local_id: Full local_id like "tlg0012.tlg001.perseus-eng3"
+
+        Returns:
+            VersionInfo or None if not found
+        """
+        work_local_id = ".".join(local_id.split(".")[:2])
+
+        work_info = self._work_cache.get(work_local_id)
+        if not work_info:
+            return None
+
+        for version in work_info.versions:
+            if version.local_id == local_id:
+                return version
+
+        return None
+
+    def get_work_info(self, work_local_id: str) -> Optional[WorkInfo]:
+        """
+        Get work info for a specific work_local_id.
+
+        Args:
+            work_local_id: Work ID like "tlg0012.tlg001"
+
+        Returns:
+            WorkInfo or None if not found
+        """
+        return self._work_cache.get(work_local_id)
