@@ -18,72 +18,76 @@ from database import Base
 
 
 class Language(Enum):
-    GRC = "grc"  # Ancient Greek
-    LAT = "lat"  # Latin
-    EN = "en"  # English (for translations)
+    GRC = "grc"
+    LAT = "lat"
+    EN = "en"
 
 
 class LiteraryText(Base):
-    """GreekLit literary text model for originals and translations"""
+    """Parent record for a literary work - language agnostic.
+
+    One LiteraryText can have multiple LiteraryTextLangVersion children
+    (original + translations).
+    """
 
     __tablename__ = "literary_texts"
+    __table_args__ = (Index("idx_literary_text_author_title", "author", "title"),)
+
+    id = Column(Integer, primary_key=True)
+
+    local_id = Column(String, unique=True, nullable=False, index=True)
+    author = Column(String, nullable=False, index=True)
+    title = Column(String, nullable=False, index=True)
+    metadata_content = Column(JSONB)
+
+    lang_versions = relationship(
+        "LiteraryTextLangVersion",
+        back_populates="literary_text",
+        cascade="all, delete-orphan",
+    )
+
+    def __repr__(self):
+        return f"<LiteraryText(local_id='{self.local_id}', author='{self.author}', title='{self.title}')>"
+
+
+class LiteraryTextLangVersion(Base):
+    """A specific language version of a literary text.
+
+    This can be the original Greek/Latin text or a translation.
+    Linked to parent LiteraryText for grouping all versions together.
+    """
+
+    __tablename__ = "literary_text_lang_versions"
     __table_args__ = (
-        Index("idx_author_title", "author", "title"),
-        Index("idx_local_id_language", "local_id", "language"),
+        Index("idx_lang_version_local_id", "local_id"),
+        Index("idx_lang_version_lang", "language"),
+        Index("idx_lang_version_literary_text", "literary_text_id"),
     )
 
     id = Column(Integer, primary_key=True)
 
-    # Core identification
-    local_id = Column(String, unique=True, nullable=False, index=True)  # Base ID
-    author = Column(String, nullable=False, index=True)
-    title = Column(String, nullable=False, index=True)
-
-    # Language and translation data
+    literary_text_id = Column(
+        Integer, ForeignKey("literary_texts.id"), index=True, nullable=False
+    )
+    local_id = Column(String, unique=True, nullable=False, index=True)
     language = Column(
         ENUM(Language, name="language_enum", native_enum=True),
         nullable=False,
         index=True,
     )
-    translator = Column(
-        String, index=True
-    )  # NULL = original, "unknown" = unknown translator
+    translator = Column(String, index=True)
     is_translation = Column(Boolean, default=False, index=True)
 
-    # Foreign key to shared metadata
-    metadata_id = Column(
-        Integer, ForeignKey("text_metadata.id"), index=True, nullable=False
-    )
-
-    # Relationships
-    text_metadata = relationship("TextMetadata", back_populates="texts")
+    literary_text = relationship("LiteraryText", back_populates="lang_versions")
     segments = relationship(
-        "TextSegment", back_populates="text", cascade="all, delete-orphan"
+        "TextSegment", back_populates="lang_version", cascade="all, delete-orphan"
     )
     annotations = relationship(
-        "Annotation", back_populates="text", cascade="all, delete-orphan"
+        "Annotation", back_populates="lang_version", cascade="all, delete-orphan"
     )
 
     def __repr__(self):
-        return f"<LiteraryText(local_id='{self.local_id}', language='{self.language.value}', author='{self.author}', title='{self.title}')>"
-
-
-class TextMetadata(Base):
-    """Language-agnostic metadata for literary texts"""
-
-    __tablename__ = "text_metadata"
-
-    id = Column(Integer, primary_key=True)
-    local_id = Column(
-        String, unique=True, nullable=False, index=True
-    )  # Base ID for sharing
-    metadata_content = Column(JSONB)  # Merged metadata from all language versions
-
-    # Relationships
-    texts = relationship("LiteraryText", back_populates="text_metadata")
-
-    def __repr__(self):
-        return f"<TextMetadata(local_id='{self.local_id}')>"
+        return f"<LiteraryTextLangVersion(local_id='{self.local_id}', language='{self.language.value}')>"
 
 
 class TextSegment(Base):
@@ -91,28 +95,28 @@ class TextSegment(Base):
 
     __tablename__ = "text_segments"
     __table_args__ = (
-        Index("idx_text_id", "text_id"),
-        Index("idx_text_reference", "text_id", "reference"),
-        Index("idx_sequence", "text_id", "sequence"),
+        Index("idx_segment_lang_version_id", "lang_version_id"),
+        Index("idx_segment_reference", "lang_version_id", "reference"),
+        Index("idx_segment_sequence", "lang_version_id", "sequence"),
     )
 
     id = Column(Integer, primary_key=True)
-    text_id = Column(
-        Integer, ForeignKey("literary_texts.id"), index=True, nullable=False
+    lang_version_id = Column(
+        Integer,
+        ForeignKey("literary_text_lang_versions.id"),
+        index=True,
+        nullable=False,
     )
-    book = Column(String, index=True)  # Book number/name (e.g., "1")
-    line = Column(String, index=True)  # Line number (e.g., "1")
-    sequence = Column(Integer, nullable=False, index=True)  # For ordering
-    content = Column(TextType, nullable=False)  # The actual Greek/Latin text
-    reference = Column(
-        String, nullable=False, index=True
-    )  # e.g., "1.1" for book 1, line 1
+    book = Column(String, index=True)
+    line = Column(String, index=True)
+    sequence = Column(Integer, nullable=False, index=True)
+    content = Column(TextType, nullable=False)
+    reference = Column(String, nullable=False, index=True)
 
-    # Relationships
-    text = relationship("LiteraryText", back_populates="segments")
+    lang_version = relationship("LiteraryTextLangVersion", back_populates="segments")
     annotations = relationship(
         "Annotation", back_populates="segment", cascade="all, delete-orphan"
     )
 
     def __repr__(self):
-        return f"<TextSegment(text_id={self.text_id}, reference='{self.reference}')>"
+        return f"<TextSegment(lang_version_id={self.lang_version_id}, reference='{self.reference}')>"

@@ -225,17 +225,16 @@ async def get_inscription_stats(db: Session = Depends(get_db)):
     """
     Get statistics about the inscription corpus.
     """
-    # Optimized single query using extracted columns
     stats_query = select(
         func.count().label("total_inscriptions"),
-        # Use a CASE expression to yield 1 when either date_min or date_max is present,
-        # otherwise 0. SUM across rows to get the total inscriptions that have any date.
-        # Wrapped in COALESCE to ensure 0 instead of NULL.
         func.coalesce(
             func.sum(
                 case(
                     (
-                        (Text.date_min.isnot(None) | Text.date_max.isnot(None)),
+                        (
+                            Inscription.date_min.isnot(None)
+                            | Inscription.date_max.isnot(None)
+                        ),
                         1,
                     ),
                     else_=0,
@@ -243,10 +242,10 @@ async def get_inscription_stats(db: Session = Depends(get_db)):
             ),
             0,
         ).label("inscriptions_with_dates"),
-        func.count(func.distinct(Text.region_main)).label("regions_count"),
-        func.min(Text.date_min).label("earliest_date"),
-        func.max(Text.date_max).label("latest_date"),
-    ).filter(Text.source == TextSource.PHI)
+        func.count(func.distinct(Inscription.region_main)).label("regions_count"),
+        func.min(Inscription.date_min).label("earliest_date"),
+        func.max(Inscription.date_max).label("latest_date"),
+    )
 
     result = db.execute(stats_query).first()
 
@@ -276,30 +275,24 @@ async def get_inscription(
     """
     Get a specific inscription by its text ID.
     """
-    text = (
-        db.query(Text)
-        .filter(Text.id == text_id, Text.source == TextSource.PHI)
-        .scalar()
-    )
+    inscription = db.query(Inscription).filter(Inscription.id == text_id).scalar()
 
-    if not text:
+    if not inscription:
         raise HTTPException(status_code=404, detail=f"Text not found: {text_id}")
 
-    full_text = _get_full_text(db, text.id)
-    meta = text.text_metadata or {}
+    full_text = _get_full_text(db, inscription.id)
+    meta = inscription.metadata_raw or {}
 
     return TextResponse(
-        id=text.id,
-        phi_id=int(text.local_id)
-        if (text.local_id and text.local_id.isdigit())
-        else None,
-        title=text.title,
+        id=inscription.id,
+        phi_id=inscription.phi_id,
+        title=inscription.title,
         text=full_text,
-        region_main=text.region_main,
-        region_sub=text.region_sub,
+        region_main=inscription.region_main,
+        region_sub=inscription.region_sub,
         date_str=meta.get("date_str"),
-        date_min=text.date_min,
-        date_max=text.date_max,
+        date_min=inscription.date_min,
+        date_max=inscription.date_max,
         date_circa=meta.get("date_circa"),
         metadata_raw=meta.get("metadata_raw"),
     )
