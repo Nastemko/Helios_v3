@@ -192,6 +192,9 @@ class DatabasePopulator:
             translator = version_info.translator
         else:
             language = text_data.get("language", "grc")
+            # If it's not Greek or Latin and we have no CTS info, assume it's a translation
+            if language not in ["grc", "lat"]:
+                translator = "unknown"
 
         lang_enum = LANGUAGE_MAP.get(language, Language.GRC)
 

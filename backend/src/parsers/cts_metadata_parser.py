@@ -230,8 +230,13 @@ class CTSMetadataParser:
 
         # Extract translator from translation descriptions
         translator = None
-        if is_translation and description:
-            translator = self._extract_translator(description)
+        if is_translation:
+            if description:
+                translator = self._extract_translator(description)
+
+            # If it's a translation and we still don't have a translator, use "unknown"
+            if not translator:
+                translator = "unknown"
 
         return VersionInfo(
             local_id=local_id,
@@ -312,33 +317,6 @@ class CTSMetadataParser:
                 return translator
 
         # Pattern 4: Match "translated by Name"
-        pattern = (
-            r"translated by\s+([A-Z][a-zA-Z]*(?:\s+[A-Z]\.?)?(?:\s+[A-Z][a-zA-Z]*)+)"
-        )
-        match = re.search(pattern, description, re.IGNORECASE)
-        if match:
-            translator = match.group(1).strip()
-            translator = re.sub(r"\s+", " ", translator)
-            if len(translator) > 3 and not any(
-                x in translator.lower() for x in ["london", "new york", "press", "sons"]
-            ):
-                return translator
-
-        # Pattern 2: Match "translator. Name" but only capture the name part
-        # Be more restrictive - translator name should not contain colons or publication info
-        pattern = (
-            r"translator[.,]\s+([A-Z][a-zA-Z]*(?:\s+[A-Z]\.?)?(?:\s+[A-Z][a-zA-Z]*)+)"
-        )
-        match = re.search(pattern, description, re.IGNORECASE)
-        if match:
-            translator = match.group(1).strip()
-            translator = re.sub(r"\s+", " ", translator)
-            if len(translator) > 3 and not any(
-                x in translator.lower() for x in ["london", "new york", "press", "sons"]
-            ):
-                return translator
-
-        # Pattern 3: Match "translated by Name"
         pattern = (
             r"translated by\s+([A-Z][a-zA-Z]*(?:\s+[A-Z]\.?)?(?:\s+[A-Z][a-zA-Z]*)+)"
         )
