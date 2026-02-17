@@ -53,7 +53,7 @@ class TranslationResponse(BaseModel):
         description="Brief explanation of key grammar, vocabulary, or interpretive choices"
     )
     confidence: float = Field(
-        description="Your confidence in the translation accuracy (0.0 to 1.0)",
+        description="Your confidence in the translation accuracy. It must be between 0.0 and 1.0. 0.0 is no confidene, 1.0 is fully confident.",
         ge=0,
         le=1,
     )
@@ -111,7 +111,9 @@ class TranslateAssistService:
             )
         except Exception as exc:
             logger.exception("LLM provider error: %s", exc)
-            raise TranslateAssistError("Unable to reach LLM provider", status_code=502)
+            raise TranslateAssistError(
+                "Unable to generate a translation, try again", status_code=502
+            )
 
         return self._parse_response(
             raw_response=llm_response,
@@ -151,7 +153,9 @@ class TranslateAssistService:
     ) -> TranslationResult:
         """Parse LLM response into structured result."""
         if not raw_response:
-            logger.warning("Failed to parse JSON from LLM, returning raw text")
+            logger.warning(
+                "Response not provided, a placeholder response will be used instead"
+            )
             return TranslationResult(
                 source_text=source_text,
                 translation="Translation cannot be perfromed at the moment, try again later.",
