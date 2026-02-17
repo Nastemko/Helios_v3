@@ -58,7 +58,13 @@ export default function SourcesSidebar() {
     // texts.length ensures the observer is (re)created when the list grows/shrinks.
     // isCollapsed ensures the observer is created when the sidebar expands
     // (refs are null while collapsed, so the effect must re-run after expanding).
-  }, [hasNextPage, isFetchingNextPage, fetchNextPage, texts.length, isCollapsed]);
+  }, [
+    hasNextPage,
+    isFetchingNextPage,
+    fetchNextPage,
+    texts.length,
+    isCollapsed,
+  ]);
 
   // Collapsed state - just show a thin bar with expand button
   if (isCollapsed) {
@@ -113,7 +119,7 @@ export default function SourcesSidebar() {
               strokeLinecap="round"
               strokeLinejoin="round"
               strokeWidth="2"
-              d="M11 19l-7-7 7-7m8 14l-7-7 7-7"
+              d="M13 5l7 7-7 7M5 5l7 7-7 7"
             />
           </svg>
         </button>

@@ -7,8 +7,9 @@ interface InscriptionInputProps {
   onChange: (value: string) => void;
   temperature: number;
   onTemperatureChange: (temp: number) => void;
-  onAttributeOnly: () => void;
-  onFullAnalysis: () => void;
+  onContextualize: () => void;
+  onAttribute: () => void;
+  onRestore: () => void;
   onClear: () => void;
   isProcessing: boolean;
   modelAvailable: boolean;
@@ -59,8 +60,9 @@ export default function InscriptionInput({
   onChange,
   temperature,
   onTemperatureChange,
-  onAttributeOnly,
-  onFullAnalysis,
+  onContextualize,
+  onAttribute,
+  onRestore,
   onClear,
   isProcessing,
   modelAvailable,
@@ -150,7 +152,7 @@ Use ----- for known-length gaps (5 missing chars)`;
       {/* Action Buttons */}
       <div className="mt-6 flex flex-wrap items-center gap-3">
         <button
-          onClick={onAttributeOnly}
+          onClick={onContextualize}
           disabled={isProcessing || !isValidLength}
           className="px-5 py-2.5 bg-helios-teal text-white font-medium rounded-full hover:bg-teal-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center gap-2"
         >
@@ -163,17 +165,25 @@ Use ----- for known-length gaps (5 missing chars)`;
               Processing...
             </>
           ) : (
-            'Contextualise and Attribute'
+            'Contextualise'
           )}
         </button>
 
         <button
-          onClick={onFullAnalysis}
-          disabled={isProcessing || !isValidLength || !hasGaps}
+          onClick={onAttribute}
+          disabled={isProcessing || !isValidLength}
           className="px-5 py-2.5 bg-teal-600 text-white font-medium rounded-full hover:bg-teal-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+        >
+          Attribute
+        </button>
+
+        <button
+          onClick={onRestore}
+          disabled={isProcessing || !isValidLength || !hasGaps}
+          className="px-5 py-2.5 bg-teal-700 text-white font-medium rounded-full hover:bg-teal-800 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
           title={!hasGaps ? 'Add gaps (?, #, or -----) to enable restoration' : ''}
         >
-          Contextualise, Restore and Attribute
+          Restore
         </button>
 
         {value && (
