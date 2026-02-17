@@ -6,9 +6,12 @@ import logging
 from abc import ABC, abstractmethod
 from functools import lru_cache
 
-import httpx
+from openai import AsyncOpenAI
+from openai.types import Reasoning
+from openai.types.shared.reasoning_effort import ReasoningEffort
+from pydantic import BaseModel
 
-from config import settings
+from config import ThinkLevel, settings
 
 logger = logging.getLogger(__name__)
 
@@ -21,58 +24,62 @@ class LLMProvider(ABC):
         self,
         prompt: str,
         *,
-        system_prompt: str | None = None,
-    ) -> str:
+        system_prompt: str,
+        response_model: BaseModel,
+    ) -> BaseModel | None:
         """Return a string response for the provided prompt."""
 
 
 class OllamaLLMProvider(LLMProvider):
-    """LLM provider backed by a local Ollama instance."""
+    """LLM provider backed by a local Ollama instance (via OpenAI-compatible API)."""
 
     def __init__(
         self,
         base_url: str | None = None,
         model: str | None = None,
+        api_key: str | None = None,
         timeout: int | None = None,
         temperature: float | None = None,
         think: str | None = None,
     ) -> None:
-        self.base_url = (base_url or settings.llm.BASE_URL).rstrip("/")
+        base_url = (base_url or settings.llm.BASE_URL).rstrip("/")
         self.model = model or settings.llm.MODEL
-        self.timeout = timeout or settings.llm.TIMEOUT
         self.temperature = temperature or settings.llm.TEMPERATURE
         self.think = think or settings.llm.THINK
+
+        # Initialize OpenAI client with configured endpoint
+        self.client = AsyncOpenAI(
+            base_url=base_url,
+            api_key=api_key or settings.llm.API_KEY,
+            timeout=timeout or settings.llm.TIMEOUT,
+        )
 
     async def suggest_translation(
         self,
         prompt: str,
         *,
-        system_prompt: str | None = None,
-    ) -> str:
-        payload = {
-            "model": self.model,
-            "prompt": prompt,
-            "stream": False,
-            "think": self.think,
-            "options": {
-                "temperature": self.temperature,
-            },
-        }
+        system_prompt: str,
+        response_model: BaseModel,
+    ) -> BaseModel | None:
+        messages = []
+
         if system_prompt:
-            payload["system"] = system_prompt
+            messages.append({"role": "system", "content": system_prompt})
 
-        url = f"{self.base_url}/api/generate"
-        logger.debug("Sending prompt to Ollama model %s", self.model)
+        # Add user prompt
+        messages.append({"role": "user", "content": prompt})
 
-        async with httpx.AsyncClient(timeout=self.timeout) as client:
-            response = await client.post(url, json=payload)
-        response.raise_for_status()
-        data = response.json()
+        logger.debug("Sending prompt to Ollama model %s via OpenAI API", self.model)
 
-        text: str = data.get("response", "")
-        if not text:
-            logger.warning("Empty response from Ollama")
-        return text.strip()
+        response = await self.client.responses.parse(
+            model=self.model,
+            input=messages,
+            temperature=self.temperature,
+            reasoning=Reasoning(effort=self.think) if self.think else None,
+            text_format=response_model,
+        )
+
+        return response.output_parsed
 
 
 @lru_cache(maxsize=1)
