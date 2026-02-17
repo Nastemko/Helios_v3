@@ -15,10 +15,6 @@ from services.llm import LLMProvider, get_llm_provider
 
 logger = logging.getLogger(__name__)
 
-CODE_FENCE_REGEX = re.compile(
-    r"^```(?:json)?\s*(.*?)\s*```$", re.DOTALL | re.IGNORECASE
-)
-
 
 class TranslateAssistError(Exception):
     """Raised when the translation assist service cannot fulfill a request."""
@@ -45,13 +41,22 @@ class TranslationResult(BaseModel):
     language: str = Field(default="grc", description="Source language code")
 
 
-class LLMTranslationResponse(BaseModel):
-    """Expected payload from the LLM."""
-
-    translation: str
-    rationale: str
-    literal_gloss: Optional[str] = None
-    confidence: Optional[float] = None
+class TranslationResponse(BaseModel):
+    translation: str = Field(
+        description="A clear, readable English translation (max 300 characters)",
+        max_length=300,
+    )
+    literal_gloss: str = Field(
+        description="A more literal word-by-word rendering (optional, can be empty)"
+    )
+    rationale: str = Field(
+        description="Brief explanation of key grammar, vocabulary, or interpretive choices"
+    )
+    confidence: float = Field(
+        description="Your confidence in the translation accuracy (0.0 to 1.0)",
+        ge=0,
+        le=1,
+    )
 
 
 class TranslateAssistService:
@@ -100,7 +105,9 @@ class TranslateAssistService:
 
         try:
             llm_response = await self._llm_provider.suggest_translation(
-                prompt, system_prompt=self.SYSTEM_PROMPT
+                prompt,
+                system_prompt=self.SYSTEM_PROMPT,
+                response_model=TranslationResponse,
             )
         except Exception as exc:
             logger.exception("LLM provider error: %s", exc)
@@ -118,88 +125,48 @@ class TranslateAssistService:
 
     def _build_prompt(self, text: str, language: str) -> str:
         """Build the prompt for the LLM."""
-        lang_name = (
-            "Ancient Greek"
-            if language == "grc"
-            else "Latin"
-            if language == "lat"
-            else language
-        )
+
+        match language:
+            case "grc":
+                lang_name = "Ancient Greek"
+            case "lat":
+                lang_name = "Latin"
+            case _:
+                raise ValueError(f"unknown language requested: {language}")
 
         template = f"""
-Translate the following {lang_name} text into English.
+            Translate the following {lang_name} text into English.
 
-Return a JSON object with these fields:
-- "translation": A clear, readable English translation (max 300 characters)
-- "literal_gloss": A more literal word-by-word rendering (optional, can be null)
-- "rationale": Brief explanation of key grammar, vocabulary, or interpretive choices
-- "confidence": Your confidence in the translation accuracy (0.0 to 1.0)
-
-TEXT TO TRANSLATE:
-{text}
-
-JSON RESPONSE:
-"""
+            TEXT TO TRANSLATE:
+            {text}
+        """
         return textwrap.dedent(template).strip()
 
     def _parse_response(
         self,
         *,
-        raw_response: str,
+        raw_response: TranslationResponse | None,
         source_text: str,
         language: str,
     ) -> TranslationResult:
         """Parse LLM response into structured result."""
-        cleaned = raw_response.strip()
-
-        # Remove markdown code fences if present
-        fence_match = CODE_FENCE_REGEX.match(cleaned)
-        if fence_match:
-            cleaned = fence_match.group(1).strip()
-
-        # Some models prefix with 'json'
-        if cleaned.lower().startswith("json"):
-            cleaned = cleaned[4:].strip()
-
-        try:
-            payload = json.loads(cleaned)
-        except json.JSONDecodeError:
+        if not raw_response:
             logger.warning("Failed to parse JSON from LLM, returning raw text")
             return TranslationResult(
                 source_text=source_text,
-                translation=cleaned,
+                translation="Translation cannot be perfromed at the moment, try again later.",
                 literal_gloss=None,
                 rationale="Raw response from LLM (unable to parse structured JSON).",
                 confidence=0.4,
                 language=language,
             )
 
-        try:
-            normalized = LLMTranslationResponse.model_validate(payload)
-        except ValidationError as exc:
-            logger.warning("LLM response schema mismatch: %s", exc)
-            return TranslationResult(
-                source_text=source_text,
-                translation=str(payload),
-                literal_gloss=None,
-                rationale="LLM response did not match expected schema.",
-                confidence=0.4,
-                language=language,
-            )
-
-        confidence = (
-            normalized.confidence if normalized.confidence is not None else 0.65
-        )
-        confidence = max(0.0, min(1.0, confidence))
-
         return TranslationResult(
             source_text=source_text,
-            translation=normalized.translation.strip(),
-            literal_gloss=normalized.literal_gloss.strip()
-            if normalized.literal_gloss
-            else None,
-            rationale=normalized.rationale.strip(),
-            confidence=confidence,
+            translation=raw_response.translation,
+            literal_gloss=raw_response.literal_gloss,
+            rationale=raw_response.rationale,
+            confidence=raw_response.confidence,
             language=language,
         )
 

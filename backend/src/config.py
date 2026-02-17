@@ -6,18 +6,21 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class ThinkLevel(StrEnum):
+    none = auto()
     low = auto()
     medium = auto()
     high = auto()
+    xhigh = auto()
 
 
 class LLMSettings(BaseSettings):
     """LLM configuration settings"""
 
-    BASE_URL: str = "http://localhost:11434"
+    BASE_URL: str = "http://localhost:11434/v1"
     MODEL: str = "llama3.2:3b"
+    API_KEY: str = "ollama"  # Placeholder for Ollama; required for other providers
     TEMPERATURE: float = 0.2
-    THINK: ThinkLevel | bool = True
+    THINK: ThinkLevel = ThinkLevel.none
     TIMEOUT: int = 120  # 2 minutes for inference
     ENABLED: bool = True
 
