@@ -80,8 +80,8 @@ async def startup_event():
 
     try:
         stats = await populate_on_startup()
-        if stats["inserted"] > 0:
-            logger.info(f"Populated database with {stats['inserted']} Greek texts")
+        if stats["inserted_versions"] > 0:
+            logger.info(f"Populated database with {stats['inserted_versions']} text versions")
         elif stats["skipped"] > 0:
             logger.info(f"Database already contains {stats['skipped']} texts")
     except Exception as e:
