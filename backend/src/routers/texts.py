@@ -4,7 +4,7 @@ from typing import Annotated, List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Path, Query
 from pydantic import BaseModel
-from sqlalchemy import func, or_
+from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
 from database import get_db
@@ -130,18 +130,28 @@ async def list_texts(
     List Greek and Latin texts available for reading.
 
     Each entry is a specific language edition of a literary work.
+    When searching, queries across all languages but returns only original versions.
     """
-    query = db.query(LiteraryTextLangVersion).filter(
-        LiteraryTextLangVersion.language.in_(ALLOWED_LANGUAGES)
-    )
-
     if search:
         search_pattern = f"%{search}%"
-        query = query.filter(
-            or_(
-                LiteraryTextLangVersion.author.ilike(search_pattern),
-                LiteraryTextLangVersion.title.ilike(search_pattern),
+        matching_text_ids = (
+            select(LiteraryTextLangVersion.literary_text_id)
+            .filter(
+                or_(
+                    LiteraryTextLangVersion.author.ilike(search_pattern),
+                    LiteraryTextLangVersion.title.ilike(search_pattern),
+                )
             )
+            .distinct()
+            .scalar_subquery()
+        )
+        query = db.query(LiteraryTextLangVersion).filter(
+            LiteraryTextLangVersion.language.in_(ALLOWED_LANGUAGES),
+            LiteraryTextLangVersion.literary_text_id.in_(matching_text_ids),
+        )
+    else:
+        query = db.query(LiteraryTextLangVersion).filter(
+            LiteraryTextLangVersion.language.in_(ALLOWED_LANGUAGES)
         )
 
     if author:
