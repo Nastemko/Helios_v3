@@ -27,6 +27,8 @@ class VersionInfo:
     local_id: str
     work_local_id: str
     language: str
+    author: str
+    title: str
     translator: Optional[str] = None
     label: Optional[str] = None
     description: Optional[str] = None
@@ -166,12 +168,14 @@ class CTSMetadataParser:
         )
 
         for edition in work.findall(f"{CTS_NS}edition"):
-            version_info = self._parse_version(edition, work_local_id)
+            version_info = self._parse_version(edition, work_local_id, author, title)
             if version_info:
                 work_info.versions.append(version_info)
 
         for translation in work.findall(f"{CTS_NS}translation"):
-            version_info = self._parse_version(translation, work_local_id)
+            version_info = self._parse_version(
+                translation, work_local_id, author, title
+            )
             if version_info:
                 work_info.versions.append(version_info)
 
@@ -179,7 +183,11 @@ class CTSMetadataParser:
         return work_info
 
     def _parse_version(
-        self, element: ET.Element, work_local_id: str
+        self,
+        element: ET.Element,
+        work_local_id: str,
+        work_author: str,
+        work_title: str,
     ) -> Optional[VersionInfo]:
         """
         Parse a version (edition or translation) element.
@@ -187,6 +195,8 @@ class CTSMetadataParser:
         Args:
             element: The edition or translation XML element
             work_local_id: The work's local ID
+            work_author: The author's name (for storing in version)
+            work_title: The work's title (for fallback if no localized title)
 
         Returns:
             VersionInfo or None
@@ -198,43 +208,28 @@ class CTSMetadataParser:
 
         language = element.get("{http://www.w3.org/XML/1998/namespace}lang", "grc")
 
-        # Detect if this is a translation by element tag
         is_translation = element.tag == f"{CTS_NS}translation"
 
-        # Try to get Greek label first, then any label
-        label = None
-        label_elem_grc = element.find(f"{CTS_NS}label[@{XML_NS}lang='grc']")
-        if label_elem_grc is not None and label_elem_grc.text:
-            label = label_elem_grc.text.strip()
-        else:
-            # Find any label that's not English
-            for label_elem in element.findall(f"{CTS_NS}label"):
-                lang = label_elem.get(f"{XML_NS}lang", "")
-                if lang != "eng" and label_elem.text:
-                    label = label_elem.text.strip()
-                    break
-            else:
-                # Fall back to English label
-                label_elem_eng = element.find(f"{CTS_NS}label[@{XML_NS}lang='eng']")
-                if label_elem_eng is not None and label_elem_eng.text:
-                    label = label_elem_eng.text.strip()
-                else:
-                    label_elem = element.find(f"{CTS_NS}label")
-                    if label_elem is not None and label_elem.text:
-                        label = label_elem.text.strip()
+        title = work_title
+        title_elem = element.find(f"{CTS_NS}label[@{XML_NS}lang='{language}']")
+        if title_elem is None:
+            title_elem = element.find(f"{CTS_NS}label[@{XML_NS}lang='eng']")
+        if title_elem is None:
+            title_elem = element.find(f"{CTS_NS}label")
+        if title_elem is not None and title_elem.text:
+            title = title_elem.text.strip()
+
+        label = title
 
         desc_elem = element.find(f"{CTS_NS}description")
         description = (
             desc_elem.text.strip() if desc_elem is not None and desc_elem.text else None
         )
 
-        # Extract translator from translation descriptions
         translator = None
         if is_translation:
             if description:
                 translator = self._extract_translator(description)
-
-            # If it's a translation and we still don't have a translator, use "unknown"
             if not translator:
                 translator = "unknown"
 
@@ -242,6 +237,8 @@ class CTSMetadataParser:
             local_id=local_id,
             work_local_id=work_local_id,
             language=language,
+            author=work_author,
+            title=title,
             translator=translator,
             label=label,
             description=description,
