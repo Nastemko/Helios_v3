@@ -12,7 +12,6 @@ Features:
 """
 
 import argparse
-import itertools
 import logging
 import sys
 import time
@@ -25,7 +24,7 @@ from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import Session
 
 from config import settings
-from database import Base, SessionLocal, engine
+from database import SessionLocal
 from models.text import (
     Language,
     LiteraryText,
@@ -140,8 +139,6 @@ class DatabasePopulator:
                 new_parents.append(
                     {
                         "local_id": work_local_id,
-                        "author": work_info.author,
-                        "title": work_info.title,
                     }
                 )
 
@@ -186,13 +183,18 @@ class DatabasePopulator:
 
         language = "grc"
         translator = None
+        author = "Unknown"
+        title = "Unknown"
 
         if version_info:
             language = version_info.language
             translator = version_info.translator
+            author = version_info.author
+            title = version_info.title
         else:
             language = text_data.get("language", "grc")
-            # If it's not Greek or Latin and we have no CTS info, assume it's a translation
+            author = text_data.get("author", "Unknown")
+            title = text_data.get("title", "Unknown")
             if language not in ["grc", "lat"]:
                 translator = "unknown"
 
@@ -202,6 +204,8 @@ class DatabasePopulator:
             local_id=local_id,
             literary_text_id=parent_id,
             language=lang_enum,
+            author=author,
+            title=title,
             translator=translator,
         )
         db.add(version)
@@ -287,21 +291,9 @@ class DatabasePopulator:
                 parent_id = parent_ids.get(work_local_id)
 
                 if not parent_id:
-                    # Try to get author/title from CTS metadata first (prefer Greek)
-                    cts_work = self.cts_data.get(work_local_id)
-                    if cts_work:
-                        author = cts_work.author
-                        title = cts_work.title
-                    else:
-                        # Fall back to XML file data
-                        author = text_data.get("author", "Unknown")
-                        title = text_data.get("title", "Unknown")
-
                     logger.debug(f"Creating parent record for {work_local_id}")
                     new_parent = LiteraryText(
                         local_id=work_local_id,
-                        author=author,
-                        title=title,
                     )
                     db.add(new_parent)
                     db.flush()
