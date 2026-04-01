@@ -4,13 +4,12 @@ from typing import Annotated, List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Path, Query
 from pydantic import BaseModel
-from sqlalchemy import func, or_
-from sqlalchemy.orm import Session, joinedload
+from sqlalchemy import func, or_, select
+from sqlalchemy.orm import Session
 
 from database import get_db
 from models.text import (
     Language,
-    LiteraryText,
     LiteraryTextLangVersion,
     TextSegment,
 )
@@ -65,13 +64,12 @@ async def list_authors(db: Session = Depends(get_db)):
     """
     authors = (
         db.query(
-            LiteraryText.author,
+            LiteraryTextLangVersion.author,
             func.count(LiteraryTextLangVersion.id).label("work_count"),
         )
-        .join(LiteraryTextLangVersion)
         .filter(LiteraryTextLangVersion.language.in_(ALLOWED_LANGUAGES))
-        .group_by(LiteraryText.author)
-        .order_by(LiteraryText.author)
+        .group_by(LiteraryTextLangVersion.author)
+        .order_by(LiteraryTextLangVersion.author)
         .all()
     )
 
@@ -85,15 +83,10 @@ async def get_stats(db: Session = Depends(get_db)):
     """
     base_filter = LiteraryTextLangVersion.language.in_(ALLOWED_LANGUAGES)
 
-    total_texts = (
-        db.query(LiteraryTextLangVersion).filter(base_filter).count()
-    )
+    total_texts = db.query(LiteraryTextLangVersion).filter(base_filter).count()
 
     total_segments = (
-        db.query(TextSegment)
-        .join(LiteraryTextLangVersion)
-        .filter(base_filter)
-        .count()
+        db.query(TextSegment).join(LiteraryTextLangVersion).filter(base_filter).count()
     )
 
     versions_by_language = (
@@ -107,8 +100,7 @@ async def get_stats(db: Session = Depends(get_db)):
     )
 
     total_authors = (
-        db.query(func.count(func.distinct(LiteraryText.author)))
-        .join(LiteraryTextLangVersion)
+        db.query(func.count(func.distinct(LiteraryTextLangVersion.author)))
         .filter(base_filter)
         .scalar()
     )
@@ -127,9 +119,7 @@ async def get_stats(db: Session = Depends(get_db)):
 async def list_texts(
     search: Optional[str] = Query(None, description="Search by author or title"),
     author: Optional[str] = Query(None, description="Filter by author name"),
-    language: Optional[str] = Query(
-        None, description="Filter by language (grc, lat)"
-    ),
+    language: Optional[str] = Query(None, description="Filter by language (grc, lat)"),
     skip: int = Query(0, ge=0, description="Number of records to skip"),
     limit: int = Query(
         50, ge=1, le=100, description="Maximum number of records to return"
@@ -140,46 +130,53 @@ async def list_texts(
     List Greek and Latin texts available for reading.
 
     Each entry is a specific language edition of a literary work.
+    When searching, queries across all languages but returns only original versions.
     """
-    query = (
-        db.query(LiteraryTextLangVersion)
-        .join(LiteraryText)
-        .options(joinedload(LiteraryTextLangVersion.literary_text))
-        .filter(LiteraryTextLangVersion.language.in_(ALLOWED_LANGUAGES))
-    )
-
     if search:
         search_pattern = f"%{search}%"
-        query = query.filter(
-            or_(
-                LiteraryText.author.ilike(search_pattern),
-                LiteraryText.title.ilike(search_pattern),
+        matching_text_ids = (
+            select(LiteraryTextLangVersion.literary_text_id)
+            .filter(
+                or_(
+                    LiteraryTextLangVersion.author.ilike(search_pattern),
+                    LiteraryTextLangVersion.title.ilike(search_pattern),
+                )
             )
+            .distinct()
+            .scalar_subquery()
+        )
+        query = db.query(LiteraryTextLangVersion).filter(
+            LiteraryTextLangVersion.language.in_(ALLOWED_LANGUAGES),
+            LiteraryTextLangVersion.literary_text_id.in_(matching_text_ids),
+        )
+    else:
+        query = db.query(LiteraryTextLangVersion).filter(
+            LiteraryTextLangVersion.language.in_(ALLOWED_LANGUAGES)
         )
 
     if author:
         author_pattern = f"%{author}%"
-        query = query.filter(LiteraryText.author.ilike(author_pattern))
+        query = query.filter(LiteraryTextLangVersion.author.ilike(author_pattern))
 
     if language:
         try:
             lang_enum = Language(language.lower())
             if lang_enum in ALLOWED_LANGUAGES:
-                query = query.filter(
-                    LiteraryTextLangVersion.language == lang_enum
-                )
+                query = query.filter(LiteraryTextLangVersion.language == lang_enum)
         except ValueError:
             pass
 
-    query = query.order_by(LiteraryText.author, LiteraryText.title)
+    query = query.order_by(
+        LiteraryTextLangVersion.author, LiteraryTextLangVersion.title
+    )
     versions = query.offset(skip).limit(limit).all()
 
     return [
         TextResponse(
             id=v.id,
             local_id=v.local_id,
-            author=v.literary_text.author,
-            title=v.literary_text.title,
+            author=v.author,
+            title=v.title,
             language=v.language.value,
         )
         for v in versions
@@ -200,7 +197,6 @@ async def get_text(
     """
     version = (
         db.query(LiteraryTextLangVersion)
-        .options(joinedload(LiteraryTextLangVersion.literary_text))
         .filter(LiteraryTextLangVersion.id == text_id)
         .first()
     )
@@ -217,19 +213,16 @@ async def get_text(
     total_segments = segments_query.count()
     segments = segments_query.offset(skip).limit(limit).all()
 
-    work = version.literary_text
-
     return TextDetailResponse(
         text=TextResponse(
             id=version.id,
             local_id=version.local_id,
-            author=work.author,
-            title=work.title,
+            author=version.author,
+            title=version.title,
             language=version.language.value,
         ),
         segments=[
-            TextSegmentResponse.model_validate(seg, extra="ignore")
-            for seg in segments
+            TextSegmentResponse.model_validate(seg, extra="ignore") for seg in segments
         ],
         total_segments=total_segments,
     )

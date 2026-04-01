@@ -3,7 +3,6 @@
 from enum import Enum
 
 from sqlalchemy import (
-    Boolean,
     Column,
     ForeignKey,
     Index,
@@ -31,13 +30,10 @@ class LiteraryText(Base):
     """
 
     __tablename__ = "literary_texts"
-    __table_args__ = (Index("idx_literary_text_author_title", "author", "title"),)
 
     id = Column(Integer, primary_key=True)
 
     local_id = Column(String, unique=True, nullable=False, index=True)
-    author = Column(String, nullable=False, index=True)
-    title = Column(String, nullable=False, index=True)
 
     lang_versions = relationship(
         "LiteraryTextLangVersion",
@@ -46,7 +42,7 @@ class LiteraryText(Base):
     )
 
     def __repr__(self):
-        return f"<LiteraryText(local_id='{self.local_id}', author='{self.author}', title='{self.title}')>"
+        return f"<LiteraryText(local_id='{self.local_id}')>"
 
 
 class LiteraryTextLangVersion(Base):
@@ -57,6 +53,7 @@ class LiteraryTextLangVersion(Base):
     """
 
     __tablename__ = "literary_text_lang_versions"
+    __table_args__ = (Index("idx_lang_version_author_title", "author", "title"),)
 
     id = Column(Integer, primary_key=True)
 
@@ -69,6 +66,8 @@ class LiteraryTextLangVersion(Base):
         nullable=False,
         index=True,
     )
+    author = Column(String, nullable=False, index=True)
+    title = Column(String, nullable=False, index=True)
     translator = Column(String, index=True)
 
     literary_text = relationship("LiteraryText", back_populates="lang_versions")
@@ -80,7 +79,7 @@ class LiteraryTextLangVersion(Base):
     )
 
     def __repr__(self):
-        return f"<LiteraryTextLangVersion(local_id='{self.local_id}', language='{self.language.value}')>"
+        return f"<LiteraryTextLangVersion(local_id='{self.local_id}', language='{self.language.value}', author='{self.author}', title='{self.title}')>"
 
 
 class TextSegment(Base):
