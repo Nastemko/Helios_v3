@@ -225,6 +225,9 @@ class DatabasePopulator:
         """
         Main population method with CTS-aware processing.
 
+        Already-processed versions are skipped via should_process_version, so
+        this method is safe to run on every startup — it resumes where it left off.
+
         Args:
             db: Database session
 
@@ -235,10 +238,8 @@ class DatabasePopulator:
 
         self.prefetch_existing_version_ids(db)
 
-        if self.is_database_populated(db) and not self.config.dry_run:
-            logger.info("Database already contains texts. Skipping population.")
-            self.stats.skipped = len(self.existing_version_ids)
-            return self.stats
+        if self.config.dry_run:
+            logger.info("Dry run mode — skipping actual population.")
 
         data_dir = self.config.data_dir or Path(settings.assets.PERSEUS_DATA_DIR)
         if not data_dir.exists():
@@ -380,7 +381,7 @@ async def populate_on_startup(config: Optional[PopulateConfig] = None) -> Dict:
         Dictionary with statistics
     """
     if config is None:
-        config = PopulateConfig()
+        config = PopulateConfig(fail_fast=False)
 
     logger.info("Checking if database needs population...")
 
