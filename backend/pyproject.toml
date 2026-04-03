@@ -30,6 +30,7 @@ dependencies = [
     "ml-collections>=1.0.0",
     "pillow>=10.3.0",
     "tqdm>=4.67.1",
+    "openai>=1.0.0",
 ]
 
 [tool.setuptools]
