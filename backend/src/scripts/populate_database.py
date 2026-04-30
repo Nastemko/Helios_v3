@@ -394,7 +394,9 @@ async def populate_on_startup(config: Optional[PopulateConfig] = None) -> Dict:
         Dictionary with statistics
     """
     if config is None:
-        config = PopulateConfig(fail_fast=False)
+        data_dir = Path(settings.assets.PERSEUS_DATA_DIR)
+        failures_output = data_dir.parent / "lxml_failures.json"
+        config = PopulateConfig(fail_fast=False, failures_output=failures_output)
 
     logger.info("Checking if database needs population...")
 

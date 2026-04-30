@@ -22,6 +22,7 @@ from routers import (
 )
 from scripts.load_phi_inscriptions import initialize_phi_inscriptions
 from scripts.populate_database import populate_on_startup
+from scripts.populate_database_llm import llm_populate_on_startup
 from services.ithaca_service.ithaca_service import (
     initialize_all_models,
     initialize_ithaca_service,
@@ -81,12 +82,40 @@ async def startup_event():
     try:
         stats = await populate_on_startup()
         if stats["inserted_versions"] > 0:
-            logger.info(f"Populated database with {stats['inserted_versions']} text versions")
+            logger.info(
+                f"Populated database with {stats['inserted_versions']} text versions"
+            )
         elif stats["skipped"] > 0:
             logger.info(f"Database already contains {stats['skipped']} texts")
     except Exception as e:
         logger.error(f"Error during text population: {e}")
         # Continue startup even if population fails
+
+    # Run LLM-based population on failed files if OPENROUTER_API_KEY is set
+    failures_file = Path(settings.assets.PERSEUS_DATA_DIR).parent / "lxml_failures.json"
+    if failures_file.exists():
+        from scripts.populate_database_llm import openrouter_config
+
+        if openrouter_config.API_KEY and openrouter_config.API_KEY != "<your-key-here>":
+            logger.info("Running LLM-based population on failed files...")
+            try:
+                llm_stats = await llm_populate_on_startup(failures_file=failures_file)
+                if llm_stats["inserted_versions"] > 0:
+                    logger.info(
+                        f"LLM populated {llm_stats['inserted_versions']} versions "
+                        f"({llm_stats['llm_calls']} LLM calls)"
+                    )
+            except Exception as e:
+                logger.error(f"Error during LLM-based population: {e}")
+                # Continue startup even if LLM population fails
+        else:
+            logger.info(
+                "Skipping LLM population: OPENROUTER_API_KEY not set. "
+                "Failed files are in %s",
+                failures_file,
+            )
+    else:
+        logger.info("No lxml failures file found, skipping LLM population")
 
     # Initialize PHI inscriptions
     logger.info("Initializing PHI inscriptions...")
