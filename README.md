@@ -68,11 +68,11 @@ cd backend
 
 # Create virtual environment and install dependencies
 uv sync
-# Parse and populate texts
-uv run python scripts/populate_texts.py --limit 10  # Start with 10 texts for testing
+# Parse and populate texts (resumable; safe to re-run)
+PYTHONPATH=./src uv run python src/scripts/populate_database.py --limit 10  # Start with 10 texts for testing
 
 # Start backend server
-uv run fastapi dev main.py
+uv run fastapi dev src/main.py
 ```
 
 Backend will be available at `http://localhost:8000`
@@ -238,14 +238,16 @@ alembic downgrade -1
 cd backend
 
 # Dry run (parse without inserting)
-python scripts/populate_texts.py --dry-run --limit 5
+PYTHONPATH=./src uv run python src/scripts/populate_database.py --dry-run --limit 5
 
 # Insert 100 texts
-python scripts/populate_texts.py --limit 100
+PYTHONPATH=./src uv run python src/scripts/populate_database.py --limit 100
 
 # Insert all texts
-python scripts/populate_texts.py
+PYTHONPATH=./src uv run python src/scripts/populate_database.py
 ```
+
+An LLM-based alternative populator (using OpenRouter) is also available at `src/scripts/populate_database_llm.py`. See [`backend/DATA_POPULATION.md`](backend/DATA_POPULATION.md) for details.
 
 ## Deployment
 

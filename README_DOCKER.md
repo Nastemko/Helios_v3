@@ -28,6 +28,7 @@ nano .env
 - `POSTGRES_PASSWORD` - Set a secure password
 - `SECRET_KEY` - Generate with: `openssl rand -hex 32`
 - `CORS_ORIGINS` - Add your domain(s)
+- `OPENROUTER_API_KEY` - **Only required if you plan to run the LLM-based DB populator** (`backend/src/scripts/populate_database_llm.py`). The default startup populator does not need this. Get a free key at https://openrouter.ai/keys.
 
 ### 2. Pull Ollama Models (First Time Setup)
 
