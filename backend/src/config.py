@@ -84,23 +84,6 @@ class AuthSettings(BaseSettings):
     )
 
 
-class OpenRouterSettings(BaseSettings):
-    """OpenRouter LLM configuration for cloud-based inference via OpenAI SDK"""
-
-    API_KEY: str = ""
-    BASE_URL: str = "https://openrouter.ai/api/v1"
-    MODEL: str = "meta-llama/llama-3.1-8b-instruct:free"
-    TEMPERATURE: float = 0.1
-    MAX_TOKENS: int = 4096
-
-    model_config = SettingsConfigDict(
-        env_file=".env",
-        env_file_encoding="utf-8",
-        case_sensitive=True,
-        env_prefix="OPENROUTER_",
-    )
-
-
 class MiscSettings(BaseSettings):
     """Application settings composed from component settings"""
 
@@ -126,7 +109,6 @@ class Settings:
         self.misc = MiscSettings()
         self.auth = AuthSettings()
         self.llm = LLMSettings()
-        self.openrouter = OpenRouterSettings()
         self.database = DatabaseSettings()
         self.assets = AssetSettings()
 

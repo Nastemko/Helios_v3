@@ -12,9 +12,11 @@ Features:
 """
 
 import argparse
+import json
 import logging
 import sys
 import time
+from datetime import datetime, timezone
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Dict, List, Optional
@@ -54,6 +56,7 @@ class PopulateConfig:
     commit_batch: int = 100
     fail_fast: bool = True
     data_dir: Optional[Path] = None
+    failures_output: Optional[Path] = None
 
 
 @dataclass
@@ -67,6 +70,7 @@ class PopulateStats:
     total_segments: int = 0
     processing_time: float = 0.0
     files_processed: int = 0
+    failed_files: List[Path] = field(default_factory=list)
 
 
 class DatabasePopulator:
@@ -270,6 +274,7 @@ class DatabasePopulator:
             try:
                 text_data = parser.parse_file(xml_file)
                 if not text_data:
+                    self.stats.failed_files.append(xml_file)
                     continue
 
                 local_id = text_data["local_id"]
@@ -319,6 +324,7 @@ class DatabasePopulator:
             except Exception as e:
                 logger.error(f"Error processing {xml_file}: {e}")
                 self.stats.errors += 1
+                self.stats.failed_files.append(xml_file)
                 if self.config.fail_fast:
                     db.rollback()
                     raise
@@ -327,6 +333,21 @@ class DatabasePopulator:
             db.commit()
 
         self.stats.processing_time = time.time() - start_time
+
+        if self.stats.failed_files and self.config.failures_output:
+            out_path = self.config.failures_output
+            payload = {
+                "generated_at": datetime.now(timezone.utc).isoformat(),
+                "data_dir": str(data_dir),
+                "failed_files": [str(p.resolve()) for p in self.stats.failed_files],
+            }
+            out_path.parent.mkdir(parents=True, exist_ok=True)
+            out_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+            logger.info(
+                "Wrote %d failed file paths to %s",
+                len(self.stats.failed_files),
+                out_path,
+            )
 
         return self.stats
 
@@ -390,6 +411,7 @@ async def populate_on_startup(config: Optional[PopulateConfig] = None) -> Dict:
         "total_segments": stats.total_segments,
         "processing_time": stats.processing_time,
         "files_processed": stats.files_processed,
+        "failed_files": [str(p) for p in stats.failed_files],
     }
 
 
@@ -420,8 +442,22 @@ if __name__ == "__main__":
         type=Path,
         help="Override data directory",
     )
+    ap.add_argument(
+        "--failures-output",
+        type=Path,
+        default=None,
+        help=(
+            "Path to write a JSON list of files where lxml parsing failed "
+            "(consumed by populate_database_llm.py --from-failures-file). "
+            "Defaults to <data-dir>/../lxml_failures.json when omitted."
+        ),
+    )
 
     args = ap.parse_args()
+
+    failures_output = args.failures_output
+    if failures_output is None and args.data_dir is not None:
+        failures_output = args.data_dir.parent / "lxml_failures.json"
 
     config = PopulateConfig(
         limit=args.limit,
@@ -430,6 +466,7 @@ if __name__ == "__main__":
         commit_batch=args.batch_size,
         fail_fast=args.fail_fast,
         data_dir=args.data_dir,
+        failures_output=failures_output,
     )
 
     stats = run_population(config)

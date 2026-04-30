@@ -24,13 +24,35 @@ from pathlib import Path
 from typing import Dict, List, Optional
 
 from openai import OpenAI
+from pydantic_settings import BaseSettings, SettingsConfigDict
 from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import insert
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from config import settings
 from database import SessionLocal
 from models.text import Language, LiteraryText, LiteraryTextLangVersion, TextSegment
+
+
+class OpenRouterConfig(BaseSettings):
+    """OpenRouter LLM settings — bespoke to this script. Reads OPENROUTER_* env."""
+
+    API_KEY: str = ""
+    BASE_URL: str = "https://openrouter.ai/api/v1"
+    MODEL: str = "meta-llama/llama-3.1-8b-instruct:free"
+    TEMPERATURE: float = 0.1
+    MAX_TOKENS: int = 4096
+
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        env_file_encoding="utf-8",
+        case_sensitive=True,
+        env_prefix="OPENROUTER_",
+    )
+
+
+openrouter_config = OpenRouterConfig()
 
 logger = logging.getLogger(__name__)
 
@@ -63,6 +85,7 @@ class LLMPopulateConfig:
     fail_fast: bool = False
     data_dir: Optional[Path] = None
     model: Optional[str] = None
+    from_failures_file: Optional[Path] = None
 
 
 @dataclass
@@ -181,12 +204,12 @@ class LLMXMLParser:
         temperature: float | None = None,
         max_tokens: int | None = None,
     ) -> None:
-        self.model = model or settings.openrouter.MODEL
-        self.temperature = temperature if temperature is not None else settings.openrouter.TEMPERATURE
-        self.max_tokens = max_tokens or settings.openrouter.MAX_TOKENS
+        self.model = model or openrouter_config.MODEL
+        self.temperature = temperature if temperature is not None else openrouter_config.TEMPERATURE
+        self.max_tokens = max_tokens or openrouter_config.MAX_TOKENS
         self.client = OpenAI(
-            api_key=api_key or settings.openrouter.API_KEY,
-            base_url=base_url or settings.openrouter.BASE_URL,
+            api_key=api_key or openrouter_config.API_KEY,
+            base_url=base_url or openrouter_config.BASE_URL,
         )
         self._call_count = 0
 
@@ -400,7 +423,7 @@ class LLMDatabasePopulator:
         """Main entry point: parse XML files via LLM and populate the database."""
         start_time = time.time()
 
-        if not settings.openrouter.API_KEY or settings.openrouter.API_KEY == "<your-key-here>":
+        if not openrouter_config.API_KEY or openrouter_config.API_KEY == "<your-key-here>":
             raise ValueError(
                 "OPENROUTER_API_KEY is not set. "
                 "Add it to backend/.env and run again."
@@ -409,16 +432,22 @@ class LLMDatabasePopulator:
         self._init_llm_parser()
         self._prefetch_existing_version_ids(db)
 
-        data_dir = self.config.data_dir or Path(settings.assets.PERSEUS_DATA_DIR)
-        if not data_dir.exists():
-            raise FileNotFoundError(f"Data directory not found: {data_dir}")
-
-        # Discover XML files (reuse same discovery logic as the lxml script)
-        xml_files = [
-            p
-            for p in data_dir.rglob("*.xml")
-            if p.name not in ("__cts__.xml", "build.xml", "collection.xconf")
-        ]
+        if self.config.from_failures_file:
+            failures_path = self.config.from_failures_file
+            if not failures_path.exists():
+                raise FileNotFoundError(f"Failures file not found: {failures_path}")
+            payload = json.loads(failures_path.read_text(encoding="utf-8"))
+            xml_files = [Path(p) for p in payload.get("failed_files", [])]
+            logger.info("Loaded %d failed files from %s", len(xml_files), failures_path)
+        else:
+            data_dir = self.config.data_dir or Path(settings.assets.PERSEUS_DATA_DIR)
+            if not data_dir.exists():
+                raise FileNotFoundError(f"Data directory not found: {data_dir}")
+            xml_files = [
+                p
+                for p in data_dir.rglob("*.xml")
+                if p.name not in ("__cts__.xml", "build.xml", "collection.xconf")
+            ]
 
         if self.config.limit:
             xml_files = xml_files[: self.config.limit]
@@ -434,6 +463,17 @@ class LLMDatabasePopulator:
                     self.stats.files_processed += 1
                     continue
 
+                # Pre-LLM skip: if filename-derived local_id is already in DB,
+                # don't waste an LLM call. The post-LLM check below is kept as
+                # a safety net for files where the derived id differs.
+                filename_id = XMLChunker(
+                    xml_text=""
+                ).filename_local_id(xml_file)
+                if filename_id in self.existing_version_ids:
+                    self.stats.skipped += 1
+                    logger.debug("Pre-skip %s (already exists)", filename_id)
+                    continue
+
                 text_data = self.llm_parser.parse_file(xml_file)
                 if not text_data:
                     self.stats.errors += 1
@@ -447,7 +487,19 @@ class LLMDatabasePopulator:
                     logger.debug("Skipped %s (already exists or filtered)", local_id)
                     continue
 
-                self._insert_version(db, text_data)
+                try:
+                    self._insert_version(db, text_data)
+                except IntegrityError as ie:
+                    db.rollback()
+                    logger.warning(
+                        "IntegrityError inserting %s: %s — skipping",
+                        local_id,
+                        ie,
+                    )
+                    self.stats.errors += 1
+                    continue
+
+                self.existing_version_ids.add(local_id)
                 self.stats.files_processed += 1
                 self.stats.llm_calls = self.llm_parser._call_count
                 batch_count += 1
@@ -556,6 +608,16 @@ if __name__ == "__main__":
         type=Path,
         help="Override the Perseus data directory (default: PERSEUS_DATA_DIR setting)",
     )
+    ap.add_argument(
+        "--from-failures-file",
+        type=Path,
+        default=None,
+        help=(
+            "Process only the files listed in the given JSON file "
+            "(format: {\"failed_files\": [<path>, ...]}, as written by "
+            "populate_database.py). Skips the data-dir rglob."
+        ),
+    )
 
     args = ap.parse_args()
 
@@ -567,6 +629,7 @@ if __name__ == "__main__":
         fail_fast=args.fail_fast,
         data_dir=args.data_dir,
         model=args.model,
+        from_failures_file=args.from_failures_file,
     )
 
     stats = run_llm_population(config)
