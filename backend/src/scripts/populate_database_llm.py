@@ -115,9 +115,7 @@ class XMLChunker:
     """
 
     # Patterns are intentionally simple; TEI files are well-formed enough.
-    _HEADER_RE = re.compile(
-        r"<teiHeader\b.*?</teiHeader>", re.DOTALL | re.IGNORECASE
-    )
+    _HEADER_RE = re.compile(r"<teiHeader\b.*?</teiHeader>", re.DOTALL | re.IGNORECASE)
     _BODY_RE = re.compile(r"<body\b.*?</body>", re.DOTALL | re.IGNORECASE)
 
     def __init__(self, xml_text: str):
@@ -205,7 +203,9 @@ class LLMXMLParser:
         max_tokens: int | None = None,
     ) -> None:
         self.model = model or openrouter_config.MODEL
-        self.temperature = temperature if temperature is not None else openrouter_config.TEMPERATURE
+        self.temperature = (
+            temperature if temperature is not None else openrouter_config.TEMPERATURE
+        )
         self.max_tokens = max_tokens or openrouter_config.MAX_TOKENS
         self.client = OpenAI(
             api_key=api_key or openrouter_config.API_KEY,
@@ -257,9 +257,7 @@ class LLMXMLParser:
             "translator": data.get("translator") or None,
         }
 
-    def extract_segments(
-        self, body_chunks: List[str]
-    ) -> List[Dict]:
+    def extract_segments(self, body_chunks: List[str]) -> List[Dict]:
         """Call the LLM for each body chunk and aggregate segments."""
         all_segments: List[Dict] = []
         sequence = 0
@@ -272,7 +270,9 @@ class LLMXMLParser:
             try:
                 items = json.loads(cleaned)
                 if not isinstance(items, list):
-                    logger.warning("Segment response is not a list in chunk %d", chunk_idx)
+                    logger.warning(
+                        "Segment response is not a list in chunk %d", chunk_idx
+                    )
                     continue
             except json.JSONDecodeError:
                 logger.warning("Segment JSON parse failed for chunk %d", chunk_idx)
@@ -423,7 +423,10 @@ class LLMDatabasePopulator:
         """Main entry point: parse XML files via LLM and populate the database."""
         start_time = time.time()
 
-        if not openrouter_config.API_KEY or openrouter_config.API_KEY == "<your-key-here>":
+        if (
+            not openrouter_config.API_KEY
+            or openrouter_config.API_KEY == "<your-key-here>"
+        ):
             raise ValueError(
                 "OPENROUTER_API_KEY is not set. "
                 "Add it to backend/.env and run again."
@@ -453,7 +456,11 @@ class LLMDatabasePopulator:
             xml_files = xml_files[: self.config.limit]
             logger.info("Limited to first %d files", self.config.limit)
 
-        logger.info("Processing %d XML files via LLM (%s)…", len(xml_files), self.llm_parser.model)
+        logger.info(
+            "Processing %d XML files via LLM (%s)…",
+            len(xml_files),
+            self.llm_parser.model,
+        )
 
         batch_count = 0
         for xml_file in xml_files:
@@ -466,9 +473,7 @@ class LLMDatabasePopulator:
                 # Pre-LLM skip: if filename-derived local_id is already in DB,
                 # don't waste an LLM call. The post-LLM check below is kept as
                 # a safety net for files where the derived id differs.
-                filename_id = XMLChunker(
-                    xml_text=""
-                ).filename_local_id(xml_file)
+                filename_id = XMLChunker(xml_text="").filename_local_id(xml_file)
                 if filename_id in self.existing_version_ids:
                     self.stats.skipped += 1
                     logger.debug("Pre-skip %s (already exists)", filename_id)
@@ -555,6 +560,44 @@ def run_llm_population(config: LLMPopulateConfig) -> LLMPopulateStats:
         db.close()
 
 
+async def llm_populate_on_startup(
+    failures_file: Path | None = None, config: LLMPopulateConfig | None = None
+) -> Dict:
+    """
+    Async wrapper for running LLM-based population on FastAPI startup.
+
+    Args:
+        failures_file: Path to the failures JSON file written by populate_database.py
+        config: Optional configuration
+
+    Returns:
+        Dictionary with statistics
+    """
+    if config is None:
+        config = LLMPopulateConfig(
+            fail_fast=False,
+            from_failures_file=failures_file,
+        )
+
+    logger.info("Starting LLM-based population on startup...")
+
+    import asyncio
+
+    loop = asyncio.get_event_loop()
+    stats = await loop.run_in_executor(None, run_llm_population, config)
+
+    return {
+        "inserted_works": stats.inserted_works,
+        "inserted_versions": stats.inserted_versions,
+        "skipped": stats.skipped,
+        "errors": stats.errors,
+        "total_segments": stats.total_segments,
+        "llm_calls": stats.llm_calls,
+        "processing_time": stats.processing_time,
+        "files_processed": stats.files_processed,
+    }
+
+
 # ---------------------------------------------------------------------------
 # CLI
 # ---------------------------------------------------------------------------
@@ -614,7 +657,7 @@ if __name__ == "__main__":
         default=None,
         help=(
             "Process only the files listed in the given JSON file "
-            "(format: {\"failed_files\": [<path>, ...]}, as written by "
+            '(format: {"failed_files": [<path>, ...]}, as written by '
             "populate_database.py). Skips the data-dir rglob."
         ),
     )
