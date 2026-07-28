@@ -35,6 +35,13 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+# Validate production configuration
+try:
+    settings.validate_production()
+except ValueError as e:
+    logger.error(f"Configuration error: {e}")
+    raise
+
 # Create FastAPI app
 app = FastAPI(
     title=settings.misc.APP_NAME,
@@ -50,7 +57,7 @@ app.add_middleware(
     secret_key=settings.auth.SECRET_KEY,
     max_age=3600,  # Session expires after 1 hour
     same_site="lax",
-    https_only=False,  # Set to True in production with HTTPS
+    https_only=not settings.misc.DEBUG,  # Secure in production, HTTP-safe in dev
 )
 
 # Add CORS middleware

@@ -32,6 +32,9 @@ backend/models/
 # Allow keeping the models directory structure
 !backend/models/.gitkeep
 
+# Perseus MariaDB dumps (~839MB of upstream tarballs - fetch with perseus/download.sh)
+perseus/dumps/
+
 # CLTK data (downloaded models)
 **/.cltk_data/
 **/cltk_data/

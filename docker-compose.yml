@@ -7,8 +7,6 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql/data
       - ./backend/src/scripts/init_db.sql:/docker-entrypoint-initdb.d/init_db.sql:ro
-    ports:
-      - "5432:5432"
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U heliosuser -d helios"]
       interval: 10s
@@ -79,7 +77,46 @@ services:
     #           count: 1
     #           capabilities: [gpu]
 
+  # Perseus Digital Library (MariaDB with MySQL dumps)
+  # On first boot of an empty perseus_data volume, the entrypoint runs
+  # perseus/init/00-load-dumps.sh, which imports ~839MB of dumps. That takes a
+  # while and the server does not accept external connections until it is done.
+  perseus-db:
+    image: mariadb:11
+    container_name: helios-perseus-db
+    environment:
+      MYSQL_ROOT_PASSWORD: ${PERSEUS_MYSQL_ROOT_PASSWORD}
+      MYSQL_DATABASE: ${PERSEUS_MYSQL_DATABASE}
+    volumes:
+      # :Z relabels for SELinux so rootless podman can read the bind mounts.
+      - ./perseus/dumps:/dumps:ro,Z
+      - ./perseus/init:/docker-entrypoint-initdb.d:ro,Z
+      - perseus_data:/var/lib/mysql
+    ports:
+      - "3307:3306"
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      interval: 30s
+      timeout: 10s
+      retries: 10
+      # Long grace period: the initial dump import blocks readiness.
+      start_period: 60m
+    restart: unless-stopped
+
+  # Adminer (web UI for inspecting the Perseus database)
+  adminer:
+    image: adminer:latest
+    container_name: helios-adminer
+    environment:
+      ADMINER_DEFAULT_SERVER: perseus-db
+    ports:
+      - "8080:8080"
+    depends_on:
+      - perseus-db
+    restart: unless-stopped
+
 volumes:
   postgres_data:
   ollama_data:
   backend_logs:
+  perseus_data:

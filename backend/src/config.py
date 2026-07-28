@@ -71,10 +71,10 @@ class AssetSettings(BaseSettings):
 class AuthSettings(BaseSettings):
     """Authentication and authorization configuration settings"""
 
-    # Security
-    SECRET_KEY: str = "dev-secret-key-change-in-production"
+    # Security - MUST be overridden in .env for production
+    SECRET_KEY: str = ""
     ALGORITHM: str = "HS256"
-    ACCESS_TOKEN_EXPIRE_MINUTES: int = 60 * 24 * 7  # 1 week
+    ACCESS_TOKEN_EXPIRE_MINUTES: int = 60 * 24  # 24 hours
 
     # Google OAuth
     GOOGLE_CLIENT_ID: str = ""
@@ -92,7 +92,7 @@ class MiscSettings(BaseSettings):
 
     # Application
     APP_NAME: str = "Helios API"
-    DEBUG: bool = True  # Set to False in production
+    DEBUG: bool = False  # Set to True only for local development
 
     # CORS - include multiple ports for development flexibility
     CORS_ORIGINS: list[str] = [
@@ -114,6 +114,14 @@ class Settings:
         self.llm = LLMSettings()
         self.database = DatabaseSettings()
         self.assets = AssetSettings()
+
+    def validate_production(self) -> None:
+        """Call this at startup to validate production-ready configuration."""
+        if not self.misc.DEBUG and not self.auth.SECRET_KEY:
+            raise ValueError(
+                "SECRET_KEY must be set in .env when DEBUG=False. "
+                "Generate one with: openssl rand -hex 32"
+            )
 
 
 settings = Settings()

@@ -2,8 +2,8 @@ import { createContext, useContext, useEffect, useState, ReactNode } from 'react
 import { authApi } from '../services/api';
 import type { User } from '../types';
 
-// DEV MODE: Set to false for production with Google OAuth
-const DEV_MODE = true;
+// DEV MODE: true only during Vite dev server, false in production builds
+const DEV_MODE = import.meta.env.DEV;
 
 interface AuthContextType {
   user: User | null;
@@ -30,9 +30,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         return;
       }
 
-      // Check for auth token in URL (after OAuth redirect)
-      const params = new URLSearchParams(window.location.search);
-      const token = params.get('token');
+      // Check for auth token in URL fragment (after OAuth redirect)
+      // Using fragment (#token=...) instead of query param to prevent leakage via Referer headers
+      const hash = window.location.hash;
+      const tokenMatch = hash.match(/#token=(.+)/);
+      const token = tokenMatch ? tokenMatch[1] : null;
       
       if (token) {
         console.log('[Auth] Token received from OAuth redirect, length:', token.length);

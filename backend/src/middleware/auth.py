@@ -42,7 +42,8 @@ async def get_current_user(
 
     logger = logging.getLogger(__name__)
 
-    # DEV MODE: Bypass authentication if DEBUG is true and no credentials are provided
+    # DEV MODE: Bypass authentication only when DEBUG is true
+    # This allows local development without Google OAuth configured
     if settings.misc.DEBUG:
         logger.info("DEV MODE: No credentials provided, using dev user")
         dev_user = db.query(User).filter(User.email == "dev@helios.local").first()
@@ -56,18 +57,13 @@ async def get_current_user(
             logger.info("DEV MODE: Created dev user")
         return dev_user
 
+    # Production mode: require valid credentials
     if not credentials:
         raise credentials_exception
 
     token = credentials.credentials
-    logger.info(
-        f"Received token (length {len(token)}): {token[:50]}..."
-        if len(token) > 50
-        else f"Received token: {token}"
-    )
 
     payload = verify_token(token)
-    logger.debug(f"Token payload: {payload}")
 
     if payload is None:
         logger.warning("Token verification failed - payload is None")

@@ -79,12 +79,10 @@ class TestConfig(unittest.TestCase):
 
             # Assert that the default values are used
             self.assertEqual(settings.misc.APP_NAME, "Helios API")
-            self.assertTrue(settings.misc.DEBUG)
-            self.assertEqual(
-                settings.auth.SECRET_KEY, "dev-secret-key-change-in-production"
-            )
+            self.assertFalse(settings.misc.DEBUG)
+            self.assertEqual(settings.auth.SECRET_KEY, "")
             self.assertEqual(settings.auth.ALGORITHM, "HS256")
-            self.assertEqual(settings.auth.ACCESS_TOKEN_EXPIRE_MINUTES, 60 * 24 * 7)
+            self.assertEqual(settings.auth.ACCESS_TOKEN_EXPIRE_MINUTES, 60 * 24)
             self.assertEqual(settings.auth.GOOGLE_CLIENT_ID, "")
             self.assertEqual(settings.auth.GOOGLE_CLIENT_SECRET, "")
 

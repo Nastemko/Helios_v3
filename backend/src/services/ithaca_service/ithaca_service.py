@@ -332,9 +332,9 @@ class IthacaService:
                         date_min=result.date_min[i],
                         date_max=result.date_max[i],
                         score=result.score[i],
-                        partner_link=result.partner_link[i]
-                        if result.partner_link
-                        else None,
+                        partner_link=(
+                            result.partner_link[i] if result.partner_link else None
+                        ),
                     )
                 )
 

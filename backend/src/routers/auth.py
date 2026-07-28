@@ -112,21 +112,18 @@ async def auth_google_callback(request: Request, db: Session = Depends(get_db)):
         import logging
 
         logger = logging.getLogger(__name__)
-        logger.info(
-            f"Generated token for user {user.id} ({user.email}), length {len(access_token)}"
-        )
-        logger.info(f"Token preview: {access_token[:80]}...")
+        logger.info(f"Generated token for user {user.id} ({user.email})")
 
-        # Redirect to frontend with token
-        # Frontend should extract token from URL and store it
+        # Redirect to frontend with token in fragment (not query param)
+        # Fragments are never sent to servers, preventing token leakage via referrer/logs
         frontend_url = (
             settings.misc.CORS_ORIGINS[0]
             if settings.misc.CORS_ORIGINS
             else "http://localhost:3000"
         )
-        redirect_url = f"{frontend_url}/?token={access_token}"
+        redirect_url = f"{frontend_url}/#token={access_token}"
 
-        logger.info(f"Redirecting to: {redirect_url[:80]}...")
+        logger.info(f"Redirecting user {user.id} to frontend after OAuth")
         return RedirectResponse(url=redirect_url)
 
     except Exception as e:
@@ -169,8 +166,8 @@ async def dev_login(db: Session = Depends(get_db)):
     Creates or retrieves a test user and returns a JWT token.
     Only available in development mode (DEBUG=True or no GOOGLE_CLIENT_ID).
     """
-    # Only allow in development mode
-    if settings.auth.GOOGLE_CLIENT_ID and not settings.misc.DEBUG:
+    # Only allow in development mode (DEBUG=True)
+    if not settings.misc.DEBUG:
         raise HTTPException(
             status_code=403, detail="Dev login is only available in development mode"
         )

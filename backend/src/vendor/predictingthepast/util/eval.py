@@ -167,12 +167,16 @@ def beam_search_batch(
             params,
             text_char=text_chars,
             text_char_onehot=None,
-            vision_img=None
-            if vision_img is None
-            else jnp.repeat(vision_img, batch_size, axis=0),
-            vision_available=None
-            if vision_available is None
-            else jnp.repeat(vision_available, batch_size, axis=0),
+            vision_img=(
+                None
+                if vision_img is None
+                else jnp.repeat(vision_img, batch_size, axis=0)
+            ),
+            vision_available=(
+                None
+                if vision_available is None
+                else jnp.repeat(vision_available, batch_size, axis=0)
+            ),
         )
 
         # Compute log probabilities

@@ -259,7 +259,7 @@ def _generate_text_emb(params, forward, alphabet, input_text, emb_mode="avg"):
     """Computes model embeddings for retrieval."""
 
     # Text preparation and inference
-    (_, _, _, text_char, text_len, _, _) = _prepare_text(input_text, alphabet)
+    _, _, _, text_char, text_len, _, _ = _prepare_text(input_text, alphabet)
 
     # Generate embeddings
     rng = jax.random.PRNGKey(SEED)
@@ -328,7 +328,7 @@ def attribute(
 ) -> AttributionResults:
     """Computes predicted date and geographical region."""
 
-    (text, _, _, text_char, text_len, padding, _) = _prepare_text(text, alphabet)
+    text, _, _, text_char, text_len, padding, _ = _prepare_text(text, alphabet)
 
     if vision_img is not None:
         vision_img = process_img(vision_img, output_size=vision_output_size)
@@ -402,7 +402,7 @@ def restore(
         raise ValueError("At least one character must be missing.")
 
     count_unk = text.count(ALPHABET_MISSING_UNK_RESTORE)
-    (text, _, text_padded, _, text_len, _, restore_mask_idx) = _prepare_text(
+    text, _, text_padded, _, text_len, _, restore_mask_idx = _prepare_text(
         text, alphabet
     )
 

@@ -55,13 +55,9 @@ def verify_token(token: str) -> Optional[dict]:
     logger = logging.getLogger(__name__)
 
     try:
-        logger.debug(
-            f"Verifying token with SECRET_KEY: {settings.auth.SECRET_KEY[:10]}... and algorithm: {settings.auth.ALGORITHM}"
-        )
         payload = jwt.decode(
             token, settings.auth.SECRET_KEY, algorithms=[settings.auth.ALGORITHM]
         )
-        logger.info(f"Token verified successfully. Payload: {payload}")
         return payload
     except JWTError as e:
         logger.error(f"JWT verification failed: {type(e).__name__}: {str(e)}")
