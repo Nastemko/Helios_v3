@@ -108,6 +108,38 @@ def validate_inscription_data(inscription: dict) -> dict:
     }
 
 
+# PHI fields promoted to their own columns; per the Inscription model these are
+# deliberately NOT duplicated into metadata_raw. `text` is excluded too — it is
+# split into InscriptionSegment rows.
+_EXTRACTED_PHI_FIELDS = frozenset(
+    {
+        "id",
+        "text",
+        "region_main",
+        "region_sub",
+        "date_min",
+        "date_max",
+        "date_str",
+        "date_circa",
+    }
+)
+
+
+def extract_residual_metadata(inscription: dict) -> Optional[dict]:
+    """Return the PHI fields that have no dedicated column, or None if empty.
+
+    PHI records are flat — there is no nested "metadata" key — so reading
+    `inscription.get("metadata")` always yielded None and silently dropped
+    `partner_link`, `ids_alt`, and any other unmapped field.
+    """
+    residual = {
+        key: value
+        for key, value in inscription.items()
+        if key not in _EXTRACTED_PHI_FIELDS
+    }
+    return residual or None
+
+
 @dataclass
 class PHIConfig:
     """Configuration for PHI inscription loading."""
@@ -267,7 +299,7 @@ class PHIInscriptionLoader:
                     "date_circa": inscription.get(
                         "date_circa", False
                     ),  # Dedicated column
-                    "metadata_raw": inscription.get("metadata"),
+                    "metadata_raw": extract_residual_metadata(inscription),
                 }
             )
 

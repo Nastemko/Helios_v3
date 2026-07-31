@@ -129,6 +129,10 @@ temp/
 *.backup
 *~
 
+# Generated security audit output — names the location of live credentials,
+# so it must not be committed. Kept locally, untracked.
+security_best_practices_report.md
+
 # Don't ignore these important files
 !.gitkeep
 !.env.example

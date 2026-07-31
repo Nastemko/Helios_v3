@@ -4,7 +4,7 @@ from typing import Annotated, List, Literal, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Path, Query
 from pydantic import BaseModel, field_validator
-from sqlalchemy import Integer, case, cast, func, select
+from sqlalchemy import case, func, select
 from sqlalchemy.orm import Session
 
 from database import get_db
@@ -174,46 +174,29 @@ async def list_regions(
     Use level='main' for top-level regions (e.g., 'Attica (IG I-III)'),
     or level='sub' for sub-regions (e.g., 'Athens: Agora').
     """
-    # Optimized query using extracted columns instead of JSONB
-    if level == "main":
-        # Use direct column queries for main regions and extract region_id from JSON metadata
-        query = (
-            select(
-                Inscription.region_main.label("region"),
-                func.min(
-                    cast(Inscription.metadata_raw["region_main_id"].astext, Integer)
-                ).label("region_id"),
-                func.count().label("count"),
-            )
-            .filter(
-                Inscription.region_main.isnot(None),
-            )
-            .group_by(Inscription.region_main)
-            .order_by(func.count().desc())
+    # PHI records carry no region_main_id/region_sub_id — the region name is the
+    # only identifier in the source data, so region_id is always None. The
+    # previous JSONB cast queried keys that never existed and returned NULL.
+    region_column = (
+        Inscription.region_main if level == "main" else Inscription.region_sub
+    )
+
+    query = (
+        select(
+            region_column.label("region"),
+            func.count().label("count"),
         )
-    else:
-        # Use direct column queries for sub regions and extract region_id from JSON metadata
-        query = (
-            select(
-                Inscription.region_sub.label("region"),
-                func.min(
-                    cast(Inscription.metadata_raw["region_sub_id"].astext, Integer)
-                ).label("region_id"),
-                func.count().label("count"),
-            )
-            .filter(
-                Inscription.region_sub.isnot(None),
-            )
-            .group_by(Inscription.region_sub)
-            .order_by(func.count().desc())
-        )
+        .filter(region_column.isnot(None))
+        .group_by(region_column)
+        .order_by(func.count().desc())
+    )
 
     results = db.execute(query).all()
 
     return [
         RegionCount(
             region=row.region,
-            region_id=str(row.region_id) if row.region_id is not None else None,
+            region_id=None,
             count=row.count,
         )
         for row in results
@@ -290,11 +273,11 @@ async def get_inscription(
         text=full_text,
         region_main=inscription.region_main,
         region_sub=inscription.region_sub,
-        date_str=meta.get("date_str"),
+        date_str=inscription.date_str,
         date_min=inscription.date_min,
         date_max=inscription.date_max,
-        date_circa=meta.get("date_circa"),
-        metadata_raw=meta.get("metadata_raw"),
+        date_circa=inscription.date_circa,
+        metadata_raw=meta or None,
     )
 
 

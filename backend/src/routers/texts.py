@@ -132,16 +132,39 @@ async def list_texts(
     Each entry is a specific language edition of a literary work.
     When searching, queries across all languages but returns only original versions.
     """
+    # Reject an unusable language before querying: silently ignoring it returns
+    # the full unfiltered list, which reads as "filter applied, no effect".
+    lang_enum: Optional[Language] = None
+    if language:
+        try:
+            lang_enum = Language(language.lower())
+        except ValueError:
+            lang_enum = None
+        if lang_enum is None or lang_enum not in ALLOWED_LANGUAGES:
+            allowed = ", ".join(sorted(lang.value for lang in ALLOWED_LANGUAGES))
+            raise HTTPException(
+                status_code=422,
+                detail=f"Unsupported language '{language}'. Expected one of: {allowed}",
+            )
+
     if search:
         search_pattern = f"%{search}%"
+        match_filters = [
+            or_(
+                LiteraryTextLangVersion.author.ilike(search_pattern),
+                LiteraryTextLangVersion.title.ilike(search_pattern),
+            )
+        ]
+        # The author filter belongs inside the subquery: search matches across
+        # all languages, but the outer query returns only ALLOWED_LANGUAGES
+        # rows, whose author may differ from the translation that matched.
+        # Filtering the returned row instead drops legitimate hits.
+        if author:
+            match_filters.append(LiteraryTextLangVersion.author.ilike(f"%{author}%"))
+
         matching_text_ids = (
             select(LiteraryTextLangVersion.literary_text_id)
-            .filter(
-                or_(
-                    LiteraryTextLangVersion.author.ilike(search_pattern),
-                    LiteraryTextLangVersion.title.ilike(search_pattern),
-                )
-            )
+            .filter(*match_filters)
             .distinct()
             .scalar_subquery()
         )
@@ -153,18 +176,11 @@ async def list_texts(
         query = db.query(LiteraryTextLangVersion).filter(
             LiteraryTextLangVersion.language.in_(ALLOWED_LANGUAGES)
         )
+        if author:
+            query = query.filter(LiteraryTextLangVersion.author.ilike(f"%{author}%"))
 
-    if author:
-        author_pattern = f"%{author}%"
-        query = query.filter(LiteraryTextLangVersion.author.ilike(author_pattern))
-
-    if language:
-        try:
-            lang_enum = Language(language.lower())
-            if lang_enum in ALLOWED_LANGUAGES:
-                query = query.filter(LiteraryTextLangVersion.language == lang_enum)
-        except ValueError:
-            pass
+    if lang_enum is not None:
+        query = query.filter(LiteraryTextLangVersion.language == lang_enum)
 
     query = query.order_by(
         LiteraryTextLangVersion.author, LiteraryTextLangVersion.title
