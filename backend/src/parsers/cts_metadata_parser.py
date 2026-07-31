@@ -75,7 +75,12 @@ class CTSMetadataParser:
             try:
                 self._parse_textgroup(cts_file)
             except Exception as e:
-                logger.warning(f"Error parsing textgroup {cts_file}: {e}")
+                logger.warning(
+                    "Error parsing textgroup %s: %s: %s",
+                    cts_file,
+                    type(e).__name__,
+                    e,
+                )
 
     def _parse_textgroup(self, cts_file: Path) -> str:
         """
@@ -90,9 +95,18 @@ class CTSMetadataParser:
         tree = ET.parse(str(cts_file))
         root = tree.getroot()
 
-        # The textgroup element is the root element
-        projid = root.get("projid", "")
-        textgroup_id = projid.split(":")[-1] if ":" in projid else projid
+        # The textgroup element is the root element. Prefer @urn: 42 of the 100
+        # textgroup files in canonical-greekLit omit @projid but all carry @urn.
+        # Keying off projid alone collapsed those onto an empty key, which made
+        # every work in them fall back to author="Unknown".
+        raw_id = root.get("urn") or root.get("projid") or ""
+        textgroup_id = raw_id.rsplit(":", 1)[-1] if raw_id else ""
+        if not textgroup_id:
+            logger.warning(
+                "Textgroup %s has neither @urn nor @projid; author unavailable",
+                cts_file,
+            )
+            return ""
 
         groupname = root.find(f"{CTS_NS}groupname")
         author = (
@@ -110,7 +124,9 @@ class CTSMetadataParser:
             try:
                 self._parse_work(cts_file)
             except Exception as e:
-                logger.warning(f"Error parsing work {cts_file}: {e}")
+                logger.warning(
+                    "Error parsing work %s: %s: %s", cts_file, type(e).__name__, e
+                )
 
     def _parse_work(self, cts_file: Path) -> Optional[WorkInfo]:
         """

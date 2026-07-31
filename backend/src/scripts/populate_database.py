@@ -45,6 +45,11 @@ LANGUAGE_MAP = {
     "en": Language.EN,
 }
 
+# Codes present in the corpus that the Language enum cannot represent. These are
+# skipped and reported rather than silently coerced to Greek (8 files: German,
+# French and Italian Thucydides translations plus one Arabic Aristotle).
+UNSUPPORTED_LANGUAGES = frozenset({"ger", "deu", "fre", "fra", "ita", "ara"})
+
 
 @dataclass
 class PopulateConfig:
@@ -57,6 +62,7 @@ class PopulateConfig:
     fail_fast: bool = True
     data_dir: Optional[Path] = None
     failures_output: Optional[Path] = None
+    rebuild: bool = False
 
 
 @dataclass
@@ -66,6 +72,7 @@ class PopulateStats:
     inserted_works: int = 0
     inserted_versions: int = 0
     skipped: int = 0
+    skipped_unsupported_language: int = 0
     errors: int = 0
     total_segments: int = 0
     processing_time: float = 0.0
@@ -154,10 +161,13 @@ class DatabasePopulator:
                 .returning(LiteraryText.id, LiteraryText.local_id)
             )
             result = db.execute(stmt)
-            for row in result.fetchall():
+            inserted = result.fetchall()
+            for row in inserted:
                 id_map[row.local_id] = row.id
             db.commit()
-            self.stats.inserted_works = len(new_parents)
+            # Count rows actually returned, not rows attempted: on_conflict_do_nothing
+            # means some of new_parents may not have been inserted.
+            self.stats.inserted_works = len(inserted)
 
         logger.info(f"Total parent records: {len(id_map)}")
         return id_map
@@ -244,6 +254,10 @@ class DatabasePopulator:
         """
         start_time = time.time()
 
+        if self.config.rebuild and not self.config.dry_run:
+            logger.warning("--rebuild requested: clearing existing texts and segments")
+            self.clear_database(db)
+
         self.prefetch_existing_version_ids(db)
 
         if self.config.dry_run:
@@ -271,6 +285,7 @@ class DatabasePopulator:
 
         batch_count = 0
         for xml_file in xml_files:
+            work_local_id = ""
             try:
                 text_data = parser.parse_file(xml_file)
                 if not text_data:
@@ -293,23 +308,42 @@ class DatabasePopulator:
                 if self.cts_parser:
                     version_info = self.cts_parser.get_version_info(local_id)
 
-                work_local_id = ".".join(local_id.split(".")[:2])
-                parent_id = parent_ids.get(work_local_id)
-
-                if not parent_id:
-                    logger.debug(f"Creating parent record for {work_local_id}")
-                    new_parent = LiteraryText(
-                        local_id=work_local_id,
+                language = (
+                    version_info.language
+                    if version_info
+                    else text_data.get("language", "grc")
+                )
+                if language in UNSUPPORTED_LANGUAGES or language not in LANGUAGE_MAP:
+                    logger.warning(
+                        "Skipping %s: language '%s' has no Language enum member",
+                        local_id,
+                        language,
                     )
-                    db.add(new_parent)
-                    db.flush()
-                    db.refresh(new_parent, ["id"])
-                    parent_id: int = new_parent.id  # type: ignore[assignment]
-                    parent_ids[work_local_id] = parent_id
-                    self.stats.inserted_works += 1
+                    self.stats.skipped_unsupported_language += 1
+                    continue
 
-                assert parent_id is not None
-                self.insert_version(db, text_data, version_info, parent_id)
+                work_local_id = ".".join(local_id.split(".")[:2])
+
+                # A SAVEPOINT per file: a failure rolls back only this version,
+                # leaving the session usable so the rest of the batch survives.
+                with db.begin_nested():
+                    parent_id = parent_ids.get(work_local_id)
+
+                    if not parent_id:
+                        logger.debug(f"Creating parent record for {work_local_id}")
+                        new_parent = LiteraryText(
+                            local_id=work_local_id,
+                        )
+                        db.add(new_parent)
+                        db.flush()
+                        db.refresh(new_parent, ["id"])
+                        parent_id: int = new_parent.id  # type: ignore[assignment]
+                        parent_ids[work_local_id] = parent_id
+                        self.stats.inserted_works += 1
+
+                    assert parent_id is not None
+                    self.insert_version(db, text_data, version_info, parent_id)
+
                 self.stats.files_processed += 1
                 batch_count += 1
 
@@ -322,9 +356,14 @@ class DatabasePopulator:
                     batch_count = 0
 
             except Exception as e:
-                logger.error(f"Error processing {xml_file}: {e}")
+                logger.error(
+                    "Error processing %s: %s: %s", xml_file, type(e).__name__, e
+                )
                 self.stats.errors += 1
                 self.stats.failed_files.append(xml_file)
+                # The savepoint rolled back, so any parent inserted inside it is
+                # gone; drop the cached id to avoid handing out a stale FK.
+                parent_ids.pop(work_local_id, None)
                 if self.config.fail_fast:
                     db.rollback()
                     raise
@@ -373,6 +412,9 @@ def run_population(config: PopulateConfig) -> PopulateStats:
         logger.info(f"  Works inserted: {stats.inserted_works}")
         logger.info(f"  Versions inserted: {stats.inserted_versions}")
         logger.info(f"  Skipped: {stats.skipped}")
+        logger.info(
+            f"  Skipped (unsupported language): {stats.skipped_unsupported_language}"
+        )
         logger.info(f"  Errors: {stats.errors}")
         logger.info(f"  Total segments: {stats.total_segments}")
         logger.info(f"  Processing time: {stats.processing_time:.2f} seconds")
@@ -409,6 +451,7 @@ async def populate_on_startup(config: Optional[PopulateConfig] = None) -> Dict:
         "inserted_works": stats.inserted_works,
         "inserted_versions": stats.inserted_versions,
         "skipped": stats.skipped,
+        "skipped_unsupported_language": stats.skipped_unsupported_language,
         "errors": stats.errors,
         "total_segments": stats.total_segments,
         "processing_time": stats.processing_time,
@@ -445,6 +488,15 @@ if __name__ == "__main__":
         help="Override data directory",
     )
     ap.add_argument(
+        "--rebuild",
+        action="store_true",
+        help=(
+            "Delete all existing texts, versions and segments before loading. "
+            "Use this once after fixing the parsers to clear duplicated segments "
+            "written by earlier runs. Never triggered on startup."
+        ),
+    )
+    ap.add_argument(
         "--failures-output",
         type=Path,
         default=None,
@@ -469,6 +521,7 @@ if __name__ == "__main__":
         fail_fast=args.fail_fast,
         data_dir=args.data_dir,
         failures_output=failures_output,
+        rebuild=args.rebuild,
     )
 
     stats = run_population(config)
