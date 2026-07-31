@@ -44,7 +44,7 @@ export interface WordAnalysis {
 export interface Annotation {
   id: number;
   user_id: number;
-  text_id: number;
+  lang_version_id: number;
   segment_id: number;
   word: string;
   note: string;

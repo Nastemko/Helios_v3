@@ -27,7 +27,7 @@ export default function ToolsPanel({ selectedWord, textId, onCloseWord, onNoteCl
   // Fetch all annotations for this text
   const { data: annotations, isLoading: annotationsLoading } = useQuery({
     queryKey: ['text-annotations', textId],
-    queryFn: () => annotationApi.list({ text_id: textId }),
+    queryFn: () => annotationApi.list({ lang_version_id: textId }),
     enabled: !!textId,
   });
 

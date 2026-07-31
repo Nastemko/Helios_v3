@@ -75,14 +75,17 @@ export const analysisApi = {
 // Annotation API
 export const annotationApi = {
   create: (data: {
-    text_id: number;
+    lang_version_id: number;
     segment_id: number;
     word: string;
     note: string;
   }) => api.post<Annotation>("/api/annotations/", data),
 
-  list: (params?: { text_id?: number; segment_id?: number; word?: string }) =>
-    api.get<Annotation[]>("/api/annotations/", { params }),
+  list: (params?: {
+    lang_version_id?: number;
+    segment_id?: number;
+    word?: string;
+  }) => api.get<Annotation[]>("/api/annotations/", { params }),
 
   get: (id: number) => api.get<Annotation>(`/api/annotations/${id}/`),
 
@@ -91,8 +94,8 @@ export const annotationApi = {
 
   delete: (id: number) => api.delete(`/api/annotations/${id}/`),
 
-  getTextSummary: (text_id: number) =>
-    api.get(`/api/annotations/text/${text_id}/summary/`),
+  getVersionSummary: (lang_version_id: number) =>
+    api.get(`/api/annotations/version/${lang_version_id}/summary`),
 };
 
 
