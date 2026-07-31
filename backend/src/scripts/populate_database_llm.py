@@ -492,10 +492,24 @@ class LLMDatabasePopulator:
                     logger.debug("Skipped %s (already exists or filtered)", local_id)
                     continue
 
+                # _insert_version bumps these before the flush that may fail,
+                # so capture them to restore on rollback and keep the reported
+                # totals equal to what actually persisted.
+                versions_before = self.stats.inserted_versions
+                segments_before = self.stats.total_segments
+
                 try:
-                    self._insert_version(db, text_data)
+                    # A SAVEPOINT per file: a failure rolls back only this
+                    # version, leaving the rest of the uncommitted batch intact.
+                    # A bare db.rollback() here would discard every file since
+                    # the last commit while their local_ids stayed in
+                    # existing_version_ids — a resumed run would then skip them
+                    # forever. Mirrors populate_database.py.
+                    with db.begin_nested():
+                        self._insert_version(db, text_data)
                 except IntegrityError as ie:
-                    db.rollback()
+                    self.stats.inserted_versions = versions_before
+                    self.stats.total_segments = segments_before
                     logger.warning(
                         "IntegrityError inserting %s: %s — skipping",
                         local_id,
@@ -525,6 +539,15 @@ class LLMDatabasePopulator:
                 if self.config.fail_fast:
                     db.rollback()
                     raise
+                # A non-IntegrityError may have left the session in a failed
+                # state; without this, every later commit raises and the run
+                # silently persists nothing from here on. The savepoint above
+                # already protects the batch from IntegrityError, so this only
+                # fires for genuinely unexpected errors.
+                if not db.is_active:
+                    logger.warning("Session inactive after error — rolling back")
+                    db.rollback()
+                    batch_count = 0
 
         if batch_count > 0:
             db.commit()

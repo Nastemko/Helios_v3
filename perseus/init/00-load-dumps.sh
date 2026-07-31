@@ -74,7 +74,16 @@ echo "Skipped:  $skipped"
 echo "Failed:   $failed"
 echo "======================="
 
+# NOTE: never exit non-zero here. MariaDB's entrypoint runs this file under
+# `set -eo pipefail` *after* creating the datadir, so a non-zero exit aborts
+# initialization and leaves a half-imported volume. Because the datadir now
+# exists, the next boot skips /docker-entrypoint-initdb.d entirely and the
+# missing dumps are never retried — the DB is silently stuck until someone
+# wipes the volume by hand. Partial dumps are an expected input: download.sh
+# tolerates INCOMPLETE downloads and exits 0.
 if [ "$failed" -gt 0 ] || [ "$skipped" -gt 0 ]; then
-    echo "ERROR: $failed table(s) failed, $skipped skipped" >&2
-    exit 1
+    echo "WARNING: $failed table(s) failed, $skipped skipped." >&2
+    echo "The database is INCOMPLETE but usable. To retry the missing dumps," >&2
+    echo "re-download them and recreate the volume:" >&2
+    echo "  docker compose down && docker volume rm helios_v3_perseus_data" >&2
 fi
