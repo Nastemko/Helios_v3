@@ -108,7 +108,7 @@ export default function InscriptionWorkbench() {
     inscriptionApi.get(inscription.id).then((res) => {
       setInputText(res.data.text);
       setShowBrowser(false);
-    }).catch((_err) => {
+    }).catch(() => {
       setError('Failed to load inscription');
     });
   }, []);

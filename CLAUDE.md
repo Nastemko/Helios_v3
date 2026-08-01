@@ -30,6 +30,11 @@ PYTHONPATH=./src uv run python src/scripts/populate_database.py --dry-run --limi
 PYTHONPATH=./src uv run python src/scripts/populate_database.py --limit 100
 ```
 
+**Tests are the exception** — `[tool.pytest.ini_options] pythonpath = ["src"]` in
+`pyproject.toml` puts `src/` on `sys.path`, so plain `pytest` resolves those same
+absolute imports without the env var. Without that setting tests fail at collection
+with `ModuleNotFoundError: No module named 'config'`; don't remove it.
+
 ### Frontend (`frontend/`)
 
 ```bash
@@ -37,11 +42,14 @@ npm install
 npm run dev        # Vite on :3000, proxies /api → localhost:8000
 npm run build      # tsc && vite build
 npx tsc --noEmit   # typecheck only
+npm run lint       # eslint 10, flat config
 ```
 
-No test runner is configured. `npm run lint` is declared but **broken** — eslint
-isn't in `devDependencies` and there's no config file, so it exits with
-`eslint: not found`. Use the typecheck instead, or add eslint properly.
+No test runner is configured. `npm run lint` runs eslint 10 (flat config in
+`eslint.config.js`, typescript-eslint + react-hooks + react-refresh). It currently
+reports 8 pre-existing findings in application code — mostly `no-explicit-any` and
+two `react-hooks/set-state-in-effect` — so it is **not** clean yet; treat new
+findings as regressions rather than expecting a zero exit.
 
 ### Full stack
 

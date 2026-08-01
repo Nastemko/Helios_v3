@@ -37,6 +37,8 @@ uvicorn main:app --host 0.0.0.0 --port 8000
 uv run black .
 
 # Run all tests
+# `src/` is put on sys.path by [tool.pytest.ini_options] pythonpath in
+# pyproject.toml, so no PYTHONPATH is needed here (scripts still need it).
 pytest
 
 # Run single test file

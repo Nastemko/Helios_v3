@@ -35,6 +35,11 @@ dependencies = [
 [tool.setuptools]
 package-dir = {"" = "src"}
 
+[tool.pytest.ini_options]
+# `src/` is the Python root, so tests need it on sys.path to resolve the
+# absolute imports the codebase uses (`from config import settings`).
+pythonpath = ["src"]
+
 [dependency-groups]
 dev = [
     "black>=26.5.1",
