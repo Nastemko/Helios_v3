@@ -36,8 +36,7 @@ class TextResponse(BaseModel):
     date_circa: Optional[bool] = None
     metadata_raw: Optional[str] = None
 
-    class Config:
-        from_attributes = True
+    model_config = {"from_attributes": True}
 
 
 class TextListItem(BaseModel):
@@ -53,8 +52,7 @@ class TextListItem(BaseModel):
     date_min: Optional[int] = None
     date_max: Optional[int] = None
 
-    class Config:
-        from_attributes = True
+    model_config = {"from_attributes": True}
 
 
 class RegionCount(BaseModel):

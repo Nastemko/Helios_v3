@@ -32,8 +32,7 @@ class UserResponse(BaseModel):
     email: str
     oauth_provider: str
 
-    class Config:
-        from_attributes = True
+    model_config = {"from_attributes": True}
 
 
 class TokenResponse(BaseModel):

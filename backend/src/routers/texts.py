@@ -29,8 +29,7 @@ class TextResponse(BaseModel):
     language: str
     is_fragment: bool = False
 
-    class Config:
-        from_attributes = True
+    model_config = {"from_attributes": True}
 
 
 class TextSegmentResponse(BaseModel):
@@ -43,8 +42,7 @@ class TextSegmentResponse(BaseModel):
     content: str
     sequence: int
 
-    class Config:
-        from_attributes = True
+    model_config = {"from_attributes": True}
 
 
 class TextDetailResponse(BaseModel):

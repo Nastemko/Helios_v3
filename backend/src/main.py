@@ -1,6 +1,7 @@
 """Main FastAPI application"""
 
 import logging
+from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI
@@ -22,11 +23,12 @@ from routers import (
 )
 from scripts.load_phi_inscriptions import initialize_phi_inscriptions
 from scripts.populate_database import populate_on_startup
-from scripts.populate_database_llm import llm_populate_on_startup
+from scripts.populate_database_llm import llm_populate_on_startup, openrouter_config
 from services.ithaca_service.ithaca_service import (
     initialize_all_models,
     initialize_ithaca_service,
 )
+from services.morphology import get_morphology_service
 
 # Configure logging
 logging.basicConfig(
@@ -42,41 +44,11 @@ except ValueError as e:
     logger.error(f"Configuration error: {e}")
     raise
 
-# Create FastAPI app
-app = FastAPI(
-    title=settings.misc.APP_NAME,
-    debug=settings.misc.DEBUG,
-    docs_url="/docs" if settings.misc.DEBUG else None,
-    redoc_url="/redoc" if settings.misc.DEBUG else None,
-)
 
-# Add Session middleware (required for OAuth)
-# Note: This must be added before other middleware that might use sessions
-app.add_middleware(
-    SessionMiddleware,
-    secret_key=settings.auth.SECRET_KEY,
-    max_age=3600,  # Session expires after 1 hour
-    same_site="lax",
-    https_only=not settings.misc.DEBUG,  # Secure in production, HTTP-safe in dev
-)
-
-# Add CORS middleware
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=settings.misc.CORS_ORIGINS,
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
-
-# Add performance monitoring middleware
-app.middleware("http")(performance_middleware)
-
-
-# Application lifecycle events
-@app.on_event("startup")
-async def startup_event():
-    """Initialize services on startup"""
+# Application lifecycle
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Initialize services on startup and clean up on shutdown"""
     logger.info(f"Starting {settings.misc.APP_NAME}")
 
     # Create database tables
@@ -101,8 +73,6 @@ async def startup_event():
     # Run LLM-based population on failed files if OPENROUTER_API_KEY is set
     failures_file = Path(settings.assets.PERSEUS_DATA_DIR).parent / "lxml_failures.json"
     if failures_file.exists():
-        from scripts.populate_database_llm import openrouter_config
-
         if openrouter_config.API_KEY and openrouter_config.API_KEY != "<your-key-here>":
             logger.info("Running LLM-based population on failed files...")
             try:
@@ -135,8 +105,6 @@ async def startup_event():
 
     # Initialize Morphology service
     logger.info("Initializing CLTK morphology service...")
-    from services.morphology import get_morphology_service
-
     morphology_service = get_morphology_service()
     logger.info(f"Morphology service initialized: {morphology_service.initialized}")
 
@@ -162,11 +130,41 @@ async def startup_event():
 
     logger.info(f"{settings.misc.APP_NAME} started successfully")
 
+    yield
 
-@app.on_event("shutdown")
-async def shutdown_event():
-    """Cleanup on shutdown"""
     logger.info(f"Shutting down {settings.misc.APP_NAME}")
+
+
+# Create FastAPI app
+app = FastAPI(
+    title=settings.misc.APP_NAME,
+    debug=settings.misc.DEBUG,
+    docs_url="/docs" if settings.misc.DEBUG else None,
+    redoc_url="/redoc" if settings.misc.DEBUG else None,
+    lifespan=lifespan,
+)
+
+# Add Session middleware (required for OAuth)
+# Note: This must be added before other middleware that might use sessions
+app.add_middleware(
+    SessionMiddleware,
+    secret_key=settings.auth.SECRET_KEY,
+    max_age=3600,  # Session expires after 1 hour
+    same_site="lax",
+    https_only=not settings.misc.DEBUG,  # Secure in production, HTTP-safe in dev
+)
+
+# Add CORS middleware
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=settings.misc.CORS_ORIGINS,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# Add performance monitoring middleware
+app.middleware("http")(performance_middleware)
 
 
 # Health check endpoint
