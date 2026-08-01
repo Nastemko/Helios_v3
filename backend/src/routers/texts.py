@@ -237,9 +237,7 @@ async def get_text(
             title=version.title,
             language=version.language.value,
         ),
-        segments=[
-            TextSegmentResponse.model_validate(seg, extra="ignore") for seg in segments
-        ],
+        segments=[TextSegmentResponse.model_validate(seg) for seg in segments],
         total_segments=total_segments,
     )
 
@@ -274,4 +272,4 @@ async def get_segment(
     if not segment:
         raise HTTPException(status_code=404, detail=f"Segment not found: {reference}")
 
-    return TextSegmentResponse.model_validate(segment, extra="ignore")
+    return TextSegmentResponse.model_validate(segment)
