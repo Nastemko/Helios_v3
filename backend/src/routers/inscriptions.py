@@ -8,7 +8,9 @@ from sqlalchemy import case, func, select
 from sqlalchemy.orm import Session
 
 from database import get_db
+from middleware.auth import get_current_user
 from models.inscription import Inscription, InscriptionSegment
+from models.user import User
 from services.ithaca_service.ithaca_service import (
     get_ithaca_service,
     initialize_all_models,
@@ -380,7 +382,10 @@ class ContextualizeResponse(BaseModel):
 
 
 @router.post("/restore", response_model=RestoreResponse)
-async def restore_inscription(request: RestoreRequest):
+async def restore_inscription(
+    request: RestoreRequest,
+    current_user: User = Depends(get_current_user),
+):
     """
     Restore missing characters in an inscription.
 
@@ -435,7 +440,10 @@ async def restore_inscription(request: RestoreRequest):
 
 
 @router.post("/attribute", response_model=AttributeResponse)
-async def attribute_inscription(request: AttributeRequest):
+async def attribute_inscription(
+    request: AttributeRequest,
+    current_user: User = Depends(get_current_user),
+):
     """
     Predict the date and geographic origin of an inscription.
 
@@ -484,7 +492,10 @@ async def attribute_inscription(request: AttributeRequest):
 
 
 @router.post("/contextualize", response_model=ContextualizeResponse)
-async def contextualize_inscription(request: ContextualizeRequest):
+async def contextualize_inscription(
+    request: ContextualizeRequest,
+    current_user: User = Depends(get_current_user),
+):
     """
     Find similar inscriptions in the corpus.
 
@@ -548,6 +559,7 @@ async def initialize_models(
     language: Optional[Language] = Query(
         None, description="Specific language to initialize, or omit for both"
     ),
+    current_user: User = Depends(get_current_user),
 ):
     """
     Initialize inscription analysis models.

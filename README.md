@@ -227,10 +227,18 @@ PERSEUS_DATA_DIR=/app/assets/canonical-greekLit/data
 VITE_API_URL=http://backend:8000
 ```
 
-Setting `DEBUG=True` for local development disables the `SECRET_KEY` requirement,
-mounts `/docs`, and **bypasses authentication entirely** — `get_current_user`
-returns a `dev@helios.local` user without a token. Never run with `DEBUG=True`
-in production or when testing authorization behavior.
+There are exactly two authentication modes, and `DEBUG` selects between them.
+
+`DEBUG=True` **disables authentication entirely**: `get_current_user` returns a
+single shared `dev@helios.local` user, ignoring any token that was sent, so all
+annotations are shared and open. It also mounts `/docs` and drops the
+`SECRET_KEY` requirement. Never run with `DEBUG=True` in production or when
+testing authorization behavior.
+
+`DEBUG=False` makes Google OAuth the only way in. There is no dev-login or
+password path. `SECRET_KEY`, `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` are
+all required — the app refuses to start without them rather than booting with
+no usable login.
 
 ## Development
 

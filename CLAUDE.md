@@ -104,7 +104,13 @@ Populators are resumable and idempotent: they prefetch existing `local_id`s and 
 
 ### Auth
 
-Google OAuth → JWT bearer token, `get_current_user` in `middleware/auth.py`. **When `DEBUG=True` this dependency bypasses auth entirely** and returns a `dev@helios.local` user, creating it if needed. Never test authz behavior with `DEBUG=True`; `SECRET_KEY` is also only enforced when `DEBUG=False` (`settings.validate_production()`).
+Exactly two modes, selected by `DEBUG`. Google OAuth → JWT bearer token, `get_current_user` in `middleware/auth.py`; there is no dev-login, password, or other credential path.
+
+**`DEBUG=True` disables authentication entirely** — `get_current_user` returns the shared `dev@helios.local` user (`get_or_create_dev_user`) and *deliberately ignores any token that was sent*, so every caller is the same user and annotations are shared and open. `/api/auth/status` reports that same user, and the frontend uses it to decide whether a login is needed. Never test authz behavior with `DEBUG=True`.
+
+**`DEBUG=False` requires Google.** `validate_production()` demands `SECRET_KEY`, `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` together, and raises at startup naming whichever are missing. The JWT algorithm is pinned to `JWT_ALGORITHM` in `utils/security.py`, not read from config.
+
+Annotations are scoped by `Annotation.user_id` inside the SQL `WHERE` on every read and write, so a non-owned row 404s rather than 403s. The costly endpoints (`POST /api/translate-assist`, inscription `restore`/`attribute`/`contextualize`/`model/initialize`) require auth; text and inscription browsing remain public.
 
 ### Frontend
 

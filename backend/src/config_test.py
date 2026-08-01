@@ -16,7 +16,6 @@ class TestConfig(unittest.TestCase):
             "APP_NAME": "Test Helios API",
             "DEBUG": "True",
             "SECRET_KEY": "test-secret-key-from-env",
-            "ALGORITHM": "HS512",
             "ACCESS_TOKEN_EXPIRE_MINUTES": "30",
             "GOOGLE_CLIENT_ID": "test-google-id-from-env",
             "GOOGLE_CLIENT_SECRET": "test-google-secret-from-env",
@@ -48,7 +47,6 @@ class TestConfig(unittest.TestCase):
         self.assertEqual(settings.misc.APP_NAME, "Test Helios API")
         self.assertTrue(settings.misc.DEBUG)
         self.assertEqual(settings.auth.SECRET_KEY, "test-secret-key-from-env")
-        self.assertEqual(settings.auth.ALGORITHM, "HS512")
         self.assertEqual(settings.auth.ACCESS_TOKEN_EXPIRE_MINUTES, 30)
         self.assertEqual(settings.auth.GOOGLE_CLIENT_ID, "test-google-id-from-env")
         self.assertEqual(
@@ -81,7 +79,6 @@ class TestConfig(unittest.TestCase):
             self.assertEqual(settings.misc.APP_NAME, "Helios API")
             self.assertFalse(settings.misc.DEBUG)
             self.assertEqual(settings.auth.SECRET_KEY, "")
-            self.assertEqual(settings.auth.ALGORITHM, "HS256")
             self.assertEqual(settings.auth.ACCESS_TOKEN_EXPIRE_MINUTES, 60 * 24)
             self.assertEqual(settings.auth.GOOGLE_CLIENT_ID, "")
             self.assertEqual(settings.auth.GOOGLE_CLIENT_SECRET, "")
@@ -108,3 +105,79 @@ class TestConfig(unittest.TestCase):
             self.assertEqual(settings.database.DB, "helios")
             self.assertEqual(settings.database.USER, "heliosuser")
             self.assertEqual(settings.database.PASSWORD, "")
+
+
+class TestValidateProduction(unittest.TestCase):
+    """Tests for the production-readiness check run at startup.
+
+    When DEBUG is off, Google OAuth is the only way to authenticate, so a boot
+    without the signing key or Google credentials would leave nobody able to
+    log in. That must fail loudly instead of silently.
+    """
+
+    def _settings(self, **overrides: str) -> Settings:
+        """Build Settings from a clean environment plus explicit overrides.
+
+        clear=True keeps the repository's own .env from leaking real values in.
+        """
+        env = {
+            "DEBUG": "False",
+            "SECRET_KEY": "",
+            "GOOGLE_CLIENT_ID": "",
+            "GOOGLE_CLIENT_SECRET": "",
+        }
+        env.update(overrides)
+        with patch.dict(os.environ, env, clear=True):
+            return Settings()
+
+    def test_debug_mode_skips_all_checks(self):
+        """DEBUG=True: auth is disabled, so no credentials are required."""
+        settings = self._settings(DEBUG="True")
+        settings.validate_production()  # must not raise
+
+    def test_production_with_all_credentials_passes(self):
+        """DEBUG=False with the full set of secrets is valid."""
+        settings = self._settings(
+            SECRET_KEY="a-real-secret",
+            GOOGLE_CLIENT_ID="a-client-id",
+            GOOGLE_CLIENT_SECRET="a-client-secret",
+        )
+        settings.validate_production()  # must not raise
+
+    def test_production_without_secret_key_raises(self):
+        settings = self._settings(
+            GOOGLE_CLIENT_ID="a-client-id",
+            GOOGLE_CLIENT_SECRET="a-client-secret",
+        )
+        with self.assertRaises(ValueError) as ctx:
+            settings.validate_production()
+        self.assertIn("SECRET_KEY", str(ctx.exception))
+
+    def test_production_without_google_client_id_raises(self):
+        settings = self._settings(
+            SECRET_KEY="a-real-secret",
+            GOOGLE_CLIENT_SECRET="a-client-secret",
+        )
+        with self.assertRaises(ValueError) as ctx:
+            settings.validate_production()
+        self.assertIn("GOOGLE_CLIENT_ID", str(ctx.exception))
+
+    def test_production_without_google_client_secret_raises(self):
+        settings = self._settings(
+            SECRET_KEY="a-real-secret",
+            GOOGLE_CLIENT_ID="a-client-id",
+        )
+        with self.assertRaises(ValueError) as ctx:
+            settings.validate_production()
+        self.assertIn("GOOGLE_CLIENT_SECRET", str(ctx.exception))
+
+    def test_error_names_every_missing_key_at_once(self):
+        """All three are reported together rather than one boot at a time."""
+        settings = self._settings()
+        with self.assertRaises(ValueError) as ctx:
+            settings.validate_production()
+
+        message = str(ctx.exception)
+        self.assertIn("SECRET_KEY", message)
+        self.assertIn("GOOGLE_CLIENT_ID", message)
+        self.assertIn("GOOGLE_CLIENT_SECRET", message)

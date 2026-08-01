@@ -73,7 +73,8 @@ class AuthSettings(BaseSettings):
 
     # Security - MUST be overridden in .env for production
     SECRET_KEY: str = ""
-    ALGORITHM: str = "HS256"
+    # The JWT algorithm is deliberately not configurable: see JWT_ALGORITHM in
+    # utils/security.py.
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60 * 24  # 24 hours
 
     # Google OAuth
@@ -116,11 +117,31 @@ class Settings:
         self.assets = AssetSettings()
 
     def validate_production(self) -> None:
-        """Call this at startup to validate production-ready configuration."""
-        if not self.misc.DEBUG and not self.auth.SECRET_KEY:
+        """
+        Call this at startup to validate production-ready configuration.
+
+        When DEBUG is off, Google OAuth is the only way to authenticate, so the
+        signing key and both Google credentials are all mandatory. Without them
+        the app would boot but no one could ever log in.
+        """
+        if self.misc.DEBUG:
+            return
+
+        missing = [
+            name
+            for name, value in (
+                ("SECRET_KEY", self.auth.SECRET_KEY),
+                ("GOOGLE_CLIENT_ID", self.auth.GOOGLE_CLIENT_ID),
+                ("GOOGLE_CLIENT_SECRET", self.auth.GOOGLE_CLIENT_SECRET),
+            )
+            if not value
+        ]
+
+        if missing:
             raise ValueError(
-                "SECRET_KEY must be set in .env when DEBUG=False. "
-                "Generate one with: openssl rand -hex 32"
+                f"{', '.join(missing)} must be set in .env when DEBUG=False. "
+                "Google OAuth is the only authentication method in production. "
+                "Generate a SECRET_KEY with: openssl rand -hex 32"
             )
 
 

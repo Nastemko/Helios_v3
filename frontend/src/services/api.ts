@@ -38,6 +38,25 @@ api.interceptors.request.use((config) => {
   return config;
 });
 
+// A 401 means the token expired or was revoked. Without this, an expired
+// session is only ever noticed on a cold page load, so the app keeps
+// rendering as authenticated while every request fails.
+// Auth endpoints are exempt: AuthContext handles their failures itself, and
+// redirecting on them would break the login flow.
+api.interceptors.response.use(
+  (response) => response,
+  (error) => {
+    const isAuthEndpoint = error.config?.url?.startsWith("/api/auth/");
+    if (error.response?.status === 401 && !isAuthEndpoint) {
+      localStorage.removeItem("auth_token");
+      if (window.location.pathname !== "/login") {
+        window.location.href = "/login";
+      }
+    }
+    return Promise.reject(error);
+  },
+);
+
   // Text API
 export const textApi = {
   list: (params?: {
@@ -107,17 +126,16 @@ export const authApi = {
     window.location.href = `${API_BASE_URL}/api/auth/login/google`;
   },
 
-  // Dev login for local testing without OAuth
-  devLogin: () =>
-    api.post<{ access_token: string; token_type: string; user: User }>(
-      "/api/auth/dev-login",
-    ),
-
   me: () => api.get<User>("/api/auth/me"),
 
-  logout: () => {
-    localStorage.removeItem("auth_token");
-    return api.post("/api/auth/logout");
+  // The POST goes out before the token is cleared so the request is still
+  // authenticated and the server can identify the caller.
+  logout: async () => {
+    try {
+      return await api.post("/api/auth/logout");
+    } finally {
+      localStorage.removeItem("auth_token");
+    }
   },
 
   status: () =>

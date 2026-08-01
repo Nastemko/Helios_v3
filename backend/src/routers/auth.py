@@ -1,18 +1,30 @@
 """Authentication API endpoints"""
 
+import logging
+
 from authlib.integrations.starlette_client import OAuth
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import RedirectResponse
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from config import settings
 from database import get_db
-from middleware.auth import get_current_user
+from middleware.auth import (
+    get_current_user,
+    get_or_create_dev_user,
+    resolve_user_from_token,
+)
 from models.user import User
 from utils.security import create_access_token
 
+logger = logging.getLogger(__name__)
+
 router = APIRouter(prefix="/api/auth", tags=["auth"])
+
+# Soft bearer check for /status: never auto-errors on a missing token.
+optional_security = HTTPBearer(auto_error=False)
 
 # Initialize OAuth
 oauth = OAuth()
@@ -33,14 +45,6 @@ class UserResponse(BaseModel):
     oauth_provider: str
 
     model_config = {"from_attributes": True}
-
-
-class TokenResponse(BaseModel):
-    """Token response model"""
-
-    access_token: str
-    token_type: str = "bearer"
-    user: UserResponse
 
 
 @router.get("/login/google")
@@ -108,9 +112,6 @@ async def auth_google_callback(request: Request, db: Session = Depends(get_db)):
         # Generate JWT token
         access_token = create_access_token(data={"sub": str(user.id)})
 
-        import logging
-
-        logger = logging.getLogger(__name__)
         logger.info(f"Generated token for user {user.id} ({user.email})")
 
         # Redirect to frontend with token in fragment (not query param)
@@ -125,9 +126,12 @@ async def auth_google_callback(request: Request, db: Session = Depends(get_db)):
         logger.info(f"Redirecting user {user.id} to frontend after OAuth")
         return RedirectResponse(url=redirect_url)
 
-    except Exception as e:
-        # Log error and redirect to frontend with error
-        print(f"OAuth error: {e}")
+    except HTTPException:
+        # Deliberate rejections (e.g. missing user info) keep their status code
+        # rather than being flattened into a generic redirect.
+        raise
+    except Exception:
+        logger.exception("Google OAuth callback failed")
         frontend_url = (
             settings.misc.CORS_ORIGINS[0]
             if settings.misc.CORS_ORIGINS
@@ -157,82 +161,26 @@ async def logout():
     return {"message": "Logged out successfully"}
 
 
-@router.post("/dev-login", response_model=TokenResponse)
-async def dev_login(db: Session = Depends(get_db)):
-    """
-    Development-only login endpoint for testing without OAuth.
-
-    Creates or retrieves a test user and returns a JWT token.
-    Only available in development mode (DEBUG=True or no GOOGLE_CLIENT_ID).
-    """
-    # Only allow in development mode (DEBUG=True)
-    if not settings.misc.DEBUG:
-        raise HTTPException(
-            status_code=403, detail="Dev login is only available in development mode"
-        )
-
-    # Find or create dev user
-    dev_email = "dev@helios.local"
-    dev_oauth_id = "dev-user-123"
-
-    user = (
-        db.query(User)
-        .filter(User.oauth_provider == "dev", User.oauth_id == dev_oauth_id)
-        .first()
-    )
-
-    if not user:
-        user = User(email=dev_email, oauth_provider="dev", oauth_id=dev_oauth_id)
-        db.add(user)
-        db.commit()
-        db.refresh(user)
-
-    # Generate JWT token
-    access_token = create_access_token(data={"sub": str(user.id)})
-
-    return TokenResponse(
-        access_token=access_token,
-        token_type="bearer",
-        user=UserResponse.model_validate(user),
-    )
-
-
 @router.get("/status")
-async def auth_status(request: Request, db: Session = Depends(get_db)):
+async def auth_status(
+    credentials: HTTPAuthorizationCredentials | None = Depends(optional_security),
+    db: Session = Depends(get_db),
+):
     """
     Check authentication status
 
-    Returns user info if authenticated, otherwise returns null.
+    Never raises. Mirrors the semantics of get_current_user: when DEBUG is on
+    authentication is disabled and the shared dev user is always reported, so
+    the frontend can treat this as the single source of truth for which mode
+    the backend is running in.
     """
-    try:
-        # Try to get current user without raising error
-        from typing import Optional
+    if settings.misc.DEBUG:
+        user = get_or_create_dev_user(db)
+        return {"authenticated": True, "user": UserResponse.model_validate(user)}
 
-        from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+    if credentials:
+        user = resolve_user_from_token(credentials.credentials, db)
+        if user:
+            return {"authenticated": True, "user": UserResponse.model_validate(user)}
 
-        security = HTTPBearer(auto_error=False)
-        credentials: Optional[HTTPAuthorizationCredentials] = await security(request)
-
-        if credentials:
-            from utils.security import verify_token
-
-            payload = verify_token(credentials.credentials)
-
-            if payload:
-                user_id_str = payload.get("sub")
-                if user_id_str:
-                    try:
-                        user_id = int(user_id_str)
-                    except (ValueError, TypeError):
-                        return {"authenticated": False, "user": None}
-                    user = db.query(User).filter(User.id == user_id).first()
-                    if user:
-                        return {
-                            "authenticated": True,
-                            "user": UserResponse.model_validate(user),
-                        }
-
-        return {"authenticated": False, "user": None}
-
-    except Exception:
-        return {"authenticated": False, "user": None}
+    return {"authenticated": False, "user": None}

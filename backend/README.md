@@ -148,8 +148,8 @@ the step is skipped with a log message.
 - `GET /api/auth/callback/google` - OAuth callback
 - `GET /api/auth/me` - Get current user
 - `POST /api/auth/logout` - Logout
-- `POST /api/auth/dev-login` - Issue a token for the dev user; returns 403 unless `DEBUG=True`
-- `GET /api/auth/status` - Current user if authenticated, otherwise null
+- `GET /api/auth/status` - Current user if authenticated, otherwise null. Under
+  `DEBUG=True` always reports the shared dev user, since auth is disabled then.
 
 ### Texts
 - `GET /api/texts/` - List/search texts
