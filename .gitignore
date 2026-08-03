@@ -137,3 +137,11 @@ security_best_practices_report.md
 !.gitkeep
 !.env.example
 !README.md
+
+# superpowers
+docs/superpowers/
+
+# playwright
+.playwright/
+.playwright-cli/
+
