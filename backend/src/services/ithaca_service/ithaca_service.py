@@ -123,6 +123,15 @@ class IthacaService:
         """
         Initialize a specific language model.
         """
+        # Loading a checkpoint costs a pickle read plus the dataset and
+        # retrieval embeddings. Skip it when this language is already live.
+        cached = self._models.get(language)
+        if cached is not None and cached.is_available:
+            logger.info(
+                f"{language.upper()} model already initialized; skipping reload"
+            )
+            return True
+
         # Default paths
         models_dir = Path(settings.assets.INSCRIPTIONS_DIR) / "models"
 
