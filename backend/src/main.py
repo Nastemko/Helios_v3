@@ -24,10 +24,7 @@ from routers import (
 from scripts.load_phi_inscriptions import initialize_phi_inscriptions
 from scripts.populate_database import populate_on_startup
 from scripts.populate_database_llm import llm_populate_on_startup, openrouter_config
-from services.ithaca_service.ithaca_service import (
-    initialize_all_models,
-    initialize_ithaca_service,
-)
+from services.ithaca_service.ithaca_service import initialize_all_models
 from services.morphology import get_morphology_service
 
 # Configure logging
@@ -107,10 +104,6 @@ async def lifespan(app: FastAPI):
     logger.info("Initializing CLTK morphology service...")
     morphology_service = get_morphology_service()
     logger.info(f"Morphology service initialized: {morphology_service.initialized}")
-
-    # Initialize Ithaca service
-    logger.info("Initializing Ithaca service")
-    initialize_ithaca_service()
 
     # Initialize Ithaca inscription models (Greek and Latin)
     logger.info("Initializing Ithaca inscription models...")
