@@ -1,6 +1,6 @@
 """API endpoints for browsing and querying PHI inscriptions"""
 
-from typing import Annotated, List, Literal, Optional
+from typing import Annotated, Any, Dict, List, Literal, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Path, Query
 from pydantic import BaseModel, field_validator
@@ -36,7 +36,8 @@ class TextResponse(BaseModel):
     date_min: Optional[int] = None
     date_max: Optional[int] = None
     date_circa: Optional[bool] = None
-    metadata_raw: Optional[str] = None
+    # JSONB column: the residual PHI fields that have no dedicated column.
+    metadata_raw: Optional[Dict[str, Any]] = None
 
     model_config = {"from_attributes": True}
 

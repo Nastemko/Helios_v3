@@ -95,7 +95,7 @@ export interface Inscription {
   date_min: number | null;
   date_max: number | null;
   date_circa: boolean | null;
-  metadata_raw: string | null;
+  metadata_raw: Record<string, unknown> | null;
 }
 
 export interface InscriptionListItem {
