@@ -34,8 +34,11 @@ services:
       test: ["CMD", "curl", "-f", "http://127.0.0.1:8000/health"]
       interval: 30s
       timeout: 10s
-      retries: 3
-      start_period: 40s
+      retries: 5
+      # Startup re-scans 1612 XML files, 178k inscriptions, and loads three
+      # JAX checkpoints before /health is routed. uvicorn binds :8000 well
+      # before that finishes, so probes connect and fail until it does.
+      start_period: 10m
     restart: unless-stopped
 
   # Frontend (React/Vite with nginx)
