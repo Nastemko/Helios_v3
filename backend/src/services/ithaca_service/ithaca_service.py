@@ -36,13 +36,23 @@ logger = logging.getLogger(__name__)
 # Type alias for supported languages
 Language = Literal["greek", "latin"]
 
-# Restoration cost scales with beam width, and it was previously taken straight
-# from the request body with no bound -- a client could ask for arbitrarily much
-# compute. Measured on 4 cores with the `single_gap` fixture:
-#   beam width 100 -> 61.8s, 20 -> 30.6s, 5 -> 20.2s
-# 20 keeps a useful spread of candidates at roughly half the latency. Callers may
-# request less, but not more.
-DEFAULT_BEAM_WIDTH = 20
+# Restoration cost scales roughly linearly with beam width, and the value was
+# previously taken straight from the request body with no bound -- a client could
+# ask for arbitrarily much compute. Measured on 4 cores over three fixtures
+# (src/scripts/bench_ithaca.py), total wall time:
+#   beam 100 -> 337.1s   50 -> 195.5s   35 -> 172.8s   20 -> 130.4s
+#
+# 35 is the default: ~2x faster than 100, and it scored >= beam 100 on the top
+# prediction for every fixture. Note that a wider beam is NOT automatically
+# better here -- beam search is non-monotonic in width, because candidates are
+# pruned by length-normalised score (logprob / (1+len)^a_penalty, see
+# util/eval.py) while the score returned to callers is raw exp(logprob). Beam
+# 100 came last or tied-last on all three fixtures.
+#
+# Caveat: those fixtures are synthetic and scored by the model's own likelihood,
+# which measures self-consistency, not correctness. Re-tune against inscriptions
+# with known restorations before treating this as an accuracy-optimal value.
+DEFAULT_BEAM_WIDTH = 35
 MAX_BEAM_WIDTH = 100
 
 
