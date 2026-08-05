@@ -63,11 +63,24 @@ MAX_BEAM_WIDTH = 100
 # nine '?' take 9 passes at one fixed length (and six '?' take only 6, since
 # separate slots fill in parallel).
 #
-# Cost is therefore roughly linear in this value: ~2 iterations per allowed
-# expansion step. It is a *semantic* cap, not just a compute knob -- it declares
-# the longest gap the model may propose, so lowering it makes longer lacunae
-# unrestorable. That is why the default stays at the upstream 15 and is exposed
-# to callers, rather than being quietly reduced.
+# Cost is NOT simply linear in this value. Swept on the '#' fixture at beam 35
+# (wall time / restored fill):
+#   mrl=3  -> 30.1s / "τωι"    (3 chars, capped)
+#   mrl=5  -> 23.0s / "ειπεν"  (5 chars, capped)
+#   mrl=8  -> 38.8s / "επειδη" (6 chars, not capped)
+#   mrl=15 -> 87.7s / "επειδη" (6 chars, not capped)
+#
+# Two effects: headroom past the answer the model actually wants is still
+# searched and still costs (15 is ~2.3x the cost of 8 for an identical answer),
+# but a cap *below* that answer is not simply cheaper either -- it forces the
+# beam into worse-fitting short candidates that survive longer, which is why
+# mrl=3 costs more than mrl=5. The cheapest point is a cap just above the true
+# gap length.
+#
+# It is a *semantic* cap, not just a compute knob -- it declares the longest gap
+# the model may propose, so lowering it makes longer lacunae unrestorable. The
+# default therefore stays at the upstream 15 (safe for any gap) and is exposed
+# to callers, who are the ones who can see how big the lacuna actually is.
 DEFAULT_MAX_RESTORATION_LEN = 15
 # Upstream UNK_RESTORATION_MAX_LEN; inference.restore raises above this.
 MAX_RESTORATION_LEN = 20

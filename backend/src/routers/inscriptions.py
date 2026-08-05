@@ -419,7 +419,9 @@ def restore_inscription(
     A '#' is much more expensive than '?': it searches over how long the gap is
     as well as what fills it, so one '#' takes ~30 forward passes where nine '?'
     take 9. If you know roughly how large the lacuna is, pass
-    max_restoration_len -- cost is roughly linear in it.
+    max_restoration_len set just above it -- headroom far past the true gap is
+    still searched and still costs, but a cap below it forces a worse (and not
+    necessarily faster) restoration.
 
     Args:
         text: The inscription text with missing characters

@@ -179,9 +179,10 @@ Use ----- for known-length gaps (5 missing chars)`;
           </div>
           <p className="mt-1.5 text-xs text-stone-500">
             The most characters a <code className="bg-stone-100 px-1 rounded">#</code> may
-            expand to. Restoration time grows roughly in proportion to this, so if you can
-            estimate the size of the lacuna, a lower value is much faster — but gaps longer
-            than this cannot be found.
+            expand to. Set it a little above your estimate of the lacuna: headroom well
+            past the true gap is still searched and costs time (15 took ~2× as long as 8
+            for the same answer), while a value below it forces a shorter, worse
+            restoration. Gaps longer than this cannot be found.
           </p>
         </div>
       )}
