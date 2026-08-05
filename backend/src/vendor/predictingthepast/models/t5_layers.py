@@ -48,12 +48,13 @@ default_embed_init = nn.initializers.variance_scaling(
 )
 
 
-# HELIOS-PERF NOTE: do NOT wrap this in functools.lru_cache. It is called from
-# inside the jitted forward pass, so a cache stores DynamicJaxprTracers from the
-# first trace and leaks them into later calls (jax.errors.UnexpectedTracerError,
-# observed 2026-08-05). Memoization is also pointless under jit: the arguments
-# are compile-time constants, so XLA constant-folds the whole table out of the
-# executable. It was only ever expensive on the un-jitted eager path.
+# HELIOS-PERF NOTE: this rebuilds a ~3MB table at Precision.HIGHEST on every
+# attention call, which looks like an obvious functools.lru_cache target. Do not
+# cache it. If the forward pass is ever wrapped in jax.jit this runs inside the
+# trace, so the cache stores DynamicJaxprTracers from the first trace and leaks
+# them into later calls -- jax.errors.UnexpectedTracerError, observed
+# 2026-08-05, every restore failed. Under jit it is pointless anyway: the
+# arguments are compile-time constants, so XLA folds the table away.
 def generate_fixed_pos_embedding(
     features, length, min_timescale=1.0, max_timescale=10000.0
 ):

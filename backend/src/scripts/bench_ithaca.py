@@ -18,7 +18,11 @@ import logging
 import time
 from typing import Any
 
-from services.ithaca_service.ithaca_service import IthacaService, get_ithaca_service
+from services.ithaca_service.ithaca_service import (
+    DEFAULT_BEAM_WIDTH,
+    IthacaService,
+    get_ithaca_service,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -66,7 +70,9 @@ def run_fixture(
 def main() -> None:
     parser = argparse.ArgumentParser(description="Benchmark Ithaca restoration.")
     parser.add_argument("--out", required=True, help="Path for the JSON report.")
-    parser.add_argument("--beam-width", type=int, default=100)
+    # Defaults to the service's own value so a plain run measures what users
+    # actually get, rather than silently benchmarking a different setting.
+    parser.add_argument("--beam-width", type=int, default=DEFAULT_BEAM_WIDTH)
     parser.add_argument(
         "--only",
         default=None,

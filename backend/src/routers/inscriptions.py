@@ -14,6 +14,7 @@ from models.inscription import Inscription, InscriptionSegment
 from models.user import User
 from services.ithaca_service.ithaca_service import (
     DEFAULT_BEAM_WIDTH,
+    MAX_BEAM_WIDTH,
     get_ithaca_service,
     initialize_all_models,
 )
@@ -297,7 +298,7 @@ class RestoreRequest(BaseModel):
     text: str
     language: Language = "greek"
     temperature: float = 1.0
-    beam_width: int = 100
+    beam_width: int = DEFAULT_BEAM_WIDTH
     max_restoration_len: int = 15
 
     @field_validator("text", mode="after")
@@ -420,14 +421,15 @@ def restore_inscription(
             message=f"{request.language.title()} model not loaded. Check /api/inscriptions/model/status",
         )
 
-    # The jitted forward pass is compiled for one batch size; honouring an
-    # arbitrary client-supplied beam width would silently trigger a fresh XLA
-    # compile per distinct value. This also closes an unbounded-compute hole.
-    if request.beam_width != DEFAULT_BEAM_WIDTH:
+    # Restoration cost scales with beam width, which was previously taken
+    # straight from the request body with no upper bound -- a client could ask
+    # for arbitrarily much CPU. Clamp it; asking for less is still allowed.
+    beam_width = min(request.beam_width, MAX_BEAM_WIDTH)
+    if beam_width != request.beam_width:
         logger.info(
-            "Overriding requested beam_width=%d to %d (jit bucket)",
+            "Clamping requested beam_width=%d to %d",
             request.beam_width,
-            DEFAULT_BEAM_WIDTH,
+            beam_width,
         )
 
     if not service._inference_lock.acquire(blocking=False):
@@ -439,7 +441,7 @@ def restore_inscription(
         result = service.restore(
             text=request.text,
             language=request.language,
-            beam_width=DEFAULT_BEAM_WIDTH,
+            beam_width=beam_width,
             temperature=request.temperature,
             max_restoration_len=request.max_restoration_len,
         )

@@ -63,30 +63,10 @@ class TestInitializeModelIdempotency(unittest.TestCase):
         mock_model_cls.assert_called_once_with("latin")
 
 
-class TestForwardIsJitted(unittest.TestCase):
-    """The forward pass must be compiled, not raw eager model.apply."""
-
-    def test_make_forward_returns_jitted_callable(self):
-        model = IthacaModel("greek")
-
-        class _FakeFlaxModule:
-            """Minimal stand-in; jax.jit only needs something callable."""
-
-            def apply(self, params, text_char=None, **kwargs):
-                return None, None, text_char, None, text_char
-
-        jitted = model._make_forward(_FakeFlaxModule())
-
-        self.assertTrue(
-            hasattr(jitted, "_cache_size"),
-            "forward is not a jax.jit-wrapped callable",
-        )
-
-
 class TestInitializeDoesNotSwallowExceptions(unittest.TestCase):
-    """`return` used to live in a `finally`, hiding every error."""
+    """`return` used to live inside a `finally`, hiding every error."""
 
-    def test_initialize_returns_false_and_logs_on_failure(self):
+    def test_initialize_returns_false_on_failure(self):
         model = IthacaModel("greek")
 
         with patch("builtins.open", side_effect=OSError("boom")):
