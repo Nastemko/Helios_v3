@@ -109,6 +109,55 @@ def test_top_chars_pruning_preserves_the_leading_candidates(name):
     assert upstream == pruned
 
 
+def test_time_budget_stops_the_search_and_keeps_what_it_found():
+    """The backstop for the 947s request: expiry degrades, it does not fail."""
+    text = CASES["unknown_length_gap"]
+    text_sos = ALPHABET.sos + text
+    mask_idx = [i for i, c in enumerate(text_sos) if c in ("?", "#")]
+    padded = text_sos.replace("?", ALPHABET.missing).replace("#", ALPHABET.missing_unk)
+
+    kwargs: dict = {
+        "beam_width": 20,
+        "sequential_decoding": False,
+        "max_len": len(text_sos) + 20,
+        "top_chars": 8,
+    }
+    unbounded = beam_search_batch(
+        _make_forward(), None, ALPHABET, padded, mask_idx, max_iterations=25, **kwargs
+    )
+    # A budget of 0 expires on the first check, before any generation runs.
+    exhausted = beam_search_batch(
+        _make_forward(), None, ALPHABET, padded, mask_idx, time_budget=0.0, **kwargs
+    )
+
+    assert unbounded, "the unbounded search should find candidates"
+    assert exhausted == [], "an immediately-expired budget cannot complete a candidate"
+
+
+def test_generous_time_budget_does_not_change_results():
+    """A budget that never binds must leave the answer exactly as it was."""
+    text = CASES["unknown_length_gap"]
+    text_sos = ALPHABET.sos + text
+    mask_idx = [i for i, c in enumerate(text_sos) if c in ("?", "#")]
+    padded = text_sos.replace("?", ALPHABET.missing).replace("#", ALPHABET.missing_unk)
+
+    kwargs: dict = {
+        "beam_width": 20,
+        "sequential_decoding": False,
+        "max_len": len(text_sos) + 20,
+        "max_iterations": 25,
+        "top_chars": 8,
+    }
+    without = beam_search_batch(
+        _make_forward(), None, ALPHABET, padded, mask_idx, **kwargs
+    )
+    generous = beam_search_batch(
+        _make_forward(), None, ALPHABET, padded, mask_idx, time_budget=600.0, **kwargs
+    )
+
+    assert [e.text_pred for e in without] == [e.text_pred for e in generous]
+
+
 def test_max_iterations_bounds_the_search():
     """The runaway guard: '#' expansion must stop at the supplied bound."""
     text = CASES["unknown_length_gap"]

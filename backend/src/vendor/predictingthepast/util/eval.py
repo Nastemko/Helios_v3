@@ -13,6 +13,7 @@
 # limitations under the License.
 """Eval utils."""
 
+import time
 from typing import List, NamedTuple, Sequence, Union
 
 import jax
@@ -130,6 +131,7 @@ def beam_search_batch(
     sequential_decoding=True,
     track_history=False,
     top_chars=None,
+    time_budget=None,
 ) -> List[BeamEntry]:
     """Non-sequential beam search.
 
@@ -142,6 +144,11 @@ def beam_search_batch(
         wide for Greek, but candidates outside the top handful essentially
         never survive pruning, so building their strings is wasted work. None
         keeps the exhaustive upstream behaviour.
+      time_budget: soft wall-clock limit in seconds. Checked between
+        generations, so the actual runtime overshoots by at most one forward
+        pass. On expiry the best candidates found so far are returned rather
+        than raising -- a slightly shorter answer beats a request that never
+        completes.
     """
 
     mask_idx = set(mask_idx)
@@ -170,8 +177,15 @@ def beam_search_batch(
     if display_progress:
         pbar = tqdm.tqdm(total=len(mask_idx))
 
+    deadline = None if time_budget is None else time.monotonic() + time_budget
+
     iteration = 0
     while beam and (max_iterations is None or iteration < max_iterations):
+        # Checked before the forward pass, which is the expensive part of a
+        # generation. Entries still holding a hole are abandoned; anything
+        # already complete is in beam_top and is still returned below.
+        if deadline is not None and time.monotonic() > deadline:
+            break
         iteration += 1
         beam_tmp = []
         beam_batch = []

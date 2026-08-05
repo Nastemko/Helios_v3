@@ -393,6 +393,7 @@ def restore(
     unk_restoration_max_len=UNK_RESTORATION_MAX_LEN,
     a_penalty=A_PENALTY,
     top_chars=None,
+    time_budget=None,
 ) -> RestorationResults:
     """Performs search to compute text restoration. Slower, runs synchronously."""
 
@@ -457,7 +458,18 @@ def restore(
         a_penalty=a_penalty,
         top_chars=top_chars,
         max_iterations=max_iterations,
+        time_budget=time_budget,
     )
+
+    # A time_budget expiring before any candidate completed leaves nothing to
+    # show. Say so, rather than returning an empty prediction list that the UI
+    # would render as a successful restoration of nothing.
+    if time_budget is not None and not beam_result:
+        raise ValueError(
+            "Restoration exceeded its %.0fs time budget before finding a "
+            "candidate. Try a narrower beam_width, or a smaller "
+            "max_restoration_len if the text contains '#'." % time_budget
+        )
 
     # For visualization purposes, we strip out the SOS and padding, and adjust
     # restored_indices accordingly

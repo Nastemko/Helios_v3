@@ -97,6 +97,17 @@ MAX_RESTORATION_LEN = 20
 # behaviour if a restoration ever looks truncated.
 DEFAULT_TOP_CHARS = 8
 
+# Backstop for the failure this whole module was tuned to prevent: one request
+# held a worker for 947s, and since _inference_lock serialises inference, that
+# request also blocked every other user's restore behind it.
+#
+# Checked between generations, so the real ceiling is this plus one forward
+# pass. Completed candidates found before expiry are still returned, so hitting
+# the budget degrades the answer rather than failing the request. It is
+# deliberately well above the expected cost of a legitimate restoration -- it
+# exists to bound the pathological case, not to trim normal ones.
+DEFAULT_TIME_BUDGET_SECONDS = 180.0
+
 
 def _failure_message(error: Exception, language: Language) -> str:
     """Turn an inference exception into something a reader can act on.
@@ -283,6 +294,7 @@ class IthacaService:
         temperature: float = 1.0,
         max_restoration_len: int = DEFAULT_MAX_RESTORATION_LEN,
         top_chars: Optional[int] = DEFAULT_TOP_CHARS,
+        time_budget: Optional[float] = DEFAULT_TIME_BUDGET_SECONDS,
     ) -> RestorationResult:
         """
         Restore missing characters in an inscription.
@@ -306,6 +318,7 @@ class IthacaService:
                 temperature=temperature,
                 unk_restoration_max_len=max_restoration_len,
                 top_chars=top_chars,
+                time_budget=time_budget,
             )
 
             predictions = [
