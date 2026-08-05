@@ -29,6 +29,11 @@ class RestorationResult:
     missing_indices: list[int]
     predictions: list[RestorationCandidate]
     prediction_saliency: list[dict[str, Any]] = field(default_factory=list)
+    # False when inference declined the input (too short, no gap markers,
+    # unsupported character). Without these the router reported every failure
+    # as a success whose prediction happened to equal the input.
+    available: bool = True
+    message: str | None = None
 
 
 @dataclass
@@ -40,6 +45,8 @@ class AttributionResult:
     year_scores: list[float]  # 160 values for years -800 to +800 (10-year intervals)
     date_saliency: list[float]
     location_saliency: list[float]
+    available: bool = True
+    message: str | None = None
 
     @property
     def predicted_date_range(self) -> dict[str, Any]:
@@ -85,3 +92,5 @@ class ContextualizationResult:
     """Result from finding similar inscriptions"""
 
     similar: list[SimilarInscription]
+    available: bool = True
+    message: str | None = None

@@ -3,7 +3,7 @@
 from typing import Annotated, Any, Dict, List, Literal, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Path, Query
-from pydantic import BaseModel, field_validator
+from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import case, func, select
 from sqlalchemy.orm import Session
 
@@ -287,19 +287,39 @@ async def get_inscription(
 # ============================================================================
 
 
-class RestoreRequest(BaseModel):
-    """Request for text restoration"""
+class _InscriptionTextRequest(BaseModel):
+    """Shared gap-notation validation for the model endpoints.
+
+    The model takes '?' for one missing character and '#' for a gap of unknown
+    length (vendor/predictingthepast/eval/inference.py:199-200). '-' is the
+    model's *internal* spelling of '?', not user notation: it is in the
+    vocabulary, so it tokenizes without error but never enters
+    ``restore_mask_idx`` and is therefore never filled. Rejecting it here turns
+    a silent no-op into a message that teaches the notation.
+    """
 
     text: str
-    language: Language = "greek"
-    temperature: float = 1.0
-    beam_width: int = 100
-    max_restoration_len: int = 15
 
     @field_validator("text", mode="after")
     @classmethod
-    def text_cleanup(cls, value: str):
-        return value.replace("-", "?")
+    def reject_internal_markers(cls, value: str) -> str:
+        if "-" in value:
+            raise ValueError(
+                "Use '?' for each missing character (e.g. '?????' for five) "
+                "and '#' for a gap of unknown length. '-' is not supported."
+            )
+        return value
+
+
+class RestoreRequest(_InscriptionTextRequest):
+    """Request for text restoration"""
+
+    language: Language = "greek"
+    temperature: float = 1.0
+    beam_width: int = 100
+    # Upper bound matches UNK_RESTORATION_MAX_LEN in the vendored inference
+    # module, which raises above it.
+    max_restoration_len: int = Field(default=15, ge=1, le=20)
 
 
 class RestorationCandidate(BaseModel):
@@ -323,10 +343,9 @@ class RestoreResponse(BaseModel):
     message: Optional[str] = None
 
 
-class AttributeRequest(BaseModel):
+class AttributeRequest(_InscriptionTextRequest):
     """Request for attribution (date + location)"""
 
-    text: str
     language: Language = "greek"
 
 
@@ -352,10 +371,9 @@ class AttributeResponse(BaseModel):
     message: Optional[str] = None
 
 
-class ContextualizeRequest(BaseModel):
+class ContextualizeRequest(_InscriptionTextRequest):
     """Request for finding similar inscriptions"""
 
-    text: str
     language: Language = "greek"
     top_k: int = 20
 
@@ -390,7 +408,8 @@ async def restore_inscription(
     """
     Restore missing characters in an inscription.
 
-    Use '?' for single missing characters and '#' for unknown-length gaps.
+    Use one '?' per missing character ('?????' is exactly five) and '#' for a
+    gap whose length is unknown. '-' is rejected: see _InscriptionTextRequest.
 
     Args:
         text: The inscription text with missing characters
@@ -436,7 +455,8 @@ async def restore_inscription(
             for p in result.predictions
         ],
         prediction_saliency=result.prediction_saliency,
-        available=True,
+        available=result.available,
+        message=result.message,
     )
 
 
@@ -488,7 +508,8 @@ async def attribute_inscription(
         predicted_date_range=result.predicted_date_range,
         date_saliency=result.date_saliency,
         location_saliency=result.location_saliency,
-        available=True,
+        available=result.available,
+        message=result.message,
     )
 
 
@@ -536,7 +557,8 @@ async def contextualize_inscription(
             for s in result.similar
         ],
         language=request.language,
-        available=True,
+        available=result.available,
+        message=result.message,
     )
 
 

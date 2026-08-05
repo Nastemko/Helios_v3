@@ -36,6 +36,22 @@ logger = logging.getLogger(__name__)
 Language = Literal["greek", "latin"]
 
 
+def _failure_message(error: Exception, language: Language) -> str:
+    """Turn an inference exception into something a reader can act on.
+
+    The vendored tokenizer looks characters up in ``alphabet.char2idx`` with no
+    fallback, so anything outside the model's alphabet raises KeyError rather
+    than a descriptive ValueError. Latin in particular has no 'j' or 'w', and
+    neither alphabet has ',' or ';'.
+    """
+    if isinstance(error, KeyError):
+        return (
+            f"Unsupported character for the {language} model: {error}. "
+            "Only the model's alphabet, spaces, '.', '?' and '#' are accepted."
+        )
+    return str(error)
+
+
 class IthacaModel:
     """
     Single model instance for one language (Greek or Latin).
@@ -240,10 +256,15 @@ class IthacaService:
                 prediction_saliency=saliency,
             )
 
-        except ValueError as e:
-            logger.warning(f"Restoration failed: {e}")
+        except (ValueError, KeyError) as e:
+            logger.warning(f"Restoration failed for {language}: {e}")
             return RestorationResult(
-                input_text=text, top_prediction=text, missing_indices=[], predictions=[]
+                input_text=text,
+                top_prediction=text,
+                missing_indices=[],
+                predictions=[],
+                available=False,
+                message=_failure_message(e, language),
             )
 
     def attribute(self, text: str, language: Language = "greek") -> AttributionResult:
@@ -295,14 +316,16 @@ class IthacaService:
                 location_saliency=result.location_saliency,
             )
 
-        except ValueError as e:
-            logger.warning(f"Attribution failed: {e}")
+        except (ValueError, KeyError) as e:
+            logger.warning(f"Attribution failed for {language}: {e}")
             return AttributionResult(
                 input_text=text,
                 locations=[],
                 year_scores=[0.0] * 160,
                 date_saliency=[],
                 location_saliency=[],
+                available=False,
+                message=_failure_message(e, language),
             )
 
     def contextualize(
@@ -349,9 +372,13 @@ class IthacaService:
 
             return ContextualizationResult(similar=similar)
 
-        except ValueError as e:
-            logger.warning(f"Contextualization failed: {e}")
-            return ContextualizationResult(similar=[])
+        except (ValueError, KeyError) as e:
+            logger.warning(f"Contextualization failed for {language}: {e}")
+            return ContextualizationResult(
+                similar=[],
+                available=False,
+                message=_failure_message(e, language),
+            )
 
 
 @lru_cache(maxsize=1)

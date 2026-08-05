@@ -63,5 +63,91 @@ class TestInitializeModelIdempotency(unittest.TestCase):
         mock_model_cls.assert_called_once_with("latin")
 
 
+class TestInferenceFailuresAreReported(unittest.TestCase):
+    """A declined input must not be reported as a successful analysis.
+
+    The handlers used to return a result whose top_prediction equalled the
+    input and whose available flag the router then hardcoded to True, so
+    "text too short" and "no gaps" were indistinguishable from success.
+    """
+
+    def setUp(self):
+        self.service = IthacaService()
+        # A MagicMock rather than _StubModel: the service reads forward/params/
+        # alphabet off the model before it ever calls into inference.
+        loaded = MagicMock()
+        loaded.is_available = True
+        loaded.region_map = {"names": []}
+        self.service._models["greek"] = loaded
+
+    def test_restore_reports_the_reason_it_declined(self):
+        with patch(
+            "src.services.ithaca_service.ithaca_service.inference.restore",
+            side_effect=ValueError("Input text too short."),
+        ):
+            result = self.service.restore("εδοξεν ?", language="greek")
+
+        self.assertFalse(result.available)
+        self.assertEqual(result.message, "Input text too short.")
+
+    def test_attribute_reports_the_reason_it_declined(self):
+        with patch(
+            "src.services.ithaca_service.ithaca_service.inference.attribute",
+            side_effect=ValueError("Input text too short."),
+        ):
+            result = self.service.attribute("εδοξεν", language="greek")
+
+        self.assertFalse(result.available)
+        self.assertEqual(result.message, "Input text too short.")
+
+    def test_contextualize_reports_the_reason_it_declined(self):
+        with patch(
+            "src.services.ithaca_service.ithaca_service.inference.contextualize",
+            side_effect=ValueError("Input text too short."),
+        ):
+            result = self.service.contextualize("εδοξεν", language="greek")
+
+        self.assertFalse(result.available)
+        self.assertEqual(result.message, "Input text too short.")
+
+    def test_out_of_alphabet_character_does_not_escape_as_a_500(self):
+        """The vendored tokenizer raises KeyError, which used to be uncaught.
+
+        Latin has no 'j'; neither alphabet has ',' or ';'.
+        """
+        with patch(
+            "src.services.ithaca_service.ithaca_service.inference.restore",
+            side_effect=KeyError("j"),
+        ):
+            result = self.service.restore("imp caesar j?", language="greek")
+
+        self.assertFalse(result.available)
+        self.assertIsNotNone(result.message)
+        self.assertIn("Unsupported character", result.message or "")
+
+    def test_successful_restoration_stays_available(self):
+        """The failure plumbing must not flip the flag on a good result."""
+        prediction = MagicMock()
+        prediction.text = "εδοξεν"
+        prediction.restored = [1]
+        prediction.score = 0.9
+
+        inference_result = MagicMock()
+        inference_result.input_text = "εδοξ?ν"
+        inference_result.top_prediction = "εδοξεν"
+        inference_result.missing = [4]
+        inference_result.predictions = [prediction]
+        inference_result.prediction_saliency = []
+
+        with patch(
+            "src.services.ithaca_service.ithaca_service.inference.restore",
+            return_value=inference_result,
+        ):
+            result = self.service.restore("εδοξ?ν", language="greek")
+
+        self.assertTrue(result.available)
+        self.assertIsNone(result.message)
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -9,7 +9,19 @@ column with residual PHI fields.
 import pytest
 from pydantic import ValidationError
 
-from routers.inscriptions import TextResponse
+from routers.inscriptions import (
+    AttributeRequest,
+    ContextualizeRequest,
+    RestoreRequest,
+    TextResponse,
+)
+
+# Long enough to clear the model's 25-character minimum.
+GREEK_WITH_GAPS = "εδοξεν τηι βουληι και τωι δημωι ????? αθηναιων"
+
+# The three model endpoints must agree on notation; parametrizing over them is
+# what catches a validator that was only ever wired to one of them.
+TEXT_REQUEST_MODELS = [RestoreRequest, AttributeRequest, ContextualizeRequest]
 
 
 def _residual_metadata() -> dict:
@@ -68,3 +80,51 @@ def test_text_response_rejects_non_object_metadata():
             text="μῆνιν ἄειδε θεά",
             metadata_raw="not-an-object",
         )
+
+
+@pytest.mark.parametrize("model", TEXT_REQUEST_MODELS)
+def test_hyphen_is_rejected_on_every_model_endpoint(model):
+    """'-' must be refused everywhere, not just on /restore.
+
+    The rewrite used to live on RestoreRequest alone, so a '-' sent to
+    /attribute or /contextualize reached the tokenizer as the model's internal
+    `missing` token: never added to restore_mask_idx, so never filled, and
+    reported as a success.
+    """
+    with pytest.raises(ValidationError) as exc_info:
+        model(text=GREEK_WITH_GAPS.replace("?", "-"))
+
+    message = str(exc_info.value)
+    assert "'?'" in message and "'#'" in message
+
+
+@pytest.mark.parametrize("model", TEXT_REQUEST_MODELS)
+def test_gap_notation_passes_through_unmodified(model):
+    """'?' and '#' are the model's own notation and must not be rewritten."""
+    text = "εδοξεν τηι βουληι και τωι δημωι ????? # αθηναιων"
+
+    assert model(text=text).text == text
+
+
+@pytest.mark.parametrize("model", TEXT_REQUEST_MODELS)
+def test_text_without_gaps_is_accepted(model):
+    """Attribution and contextualization run on complete texts too."""
+    text = "ευψυχι αλεξανδρε ουδεις αθανατος"
+
+    assert model(text=text).text == text
+
+
+@pytest.mark.parametrize("bad_length", [0, 21])
+def test_max_restoration_len_is_bounded(bad_length):
+    """Out-of-range values raise inside the vendored code, which the service
+    swallows into an empty result — so reject them at the boundary instead."""
+    with pytest.raises(ValidationError):
+        RestoreRequest(text=GREEK_WITH_GAPS, max_restoration_len=bad_length)
+
+
+@pytest.mark.parametrize("good_length", [1, 15, 20])
+def test_max_restoration_len_accepts_the_supported_range(good_length):
+    """UNK_RESTORATION_MAX_LEN is 20, so 1..20 must all be valid."""
+    request = RestoreRequest(text=GREEK_WITH_GAPS, max_restoration_len=good_length)
+
+    assert request.max_restoration_len == good_length
