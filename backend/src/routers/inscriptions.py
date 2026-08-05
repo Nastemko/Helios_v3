@@ -4,7 +4,7 @@ import logging
 from typing import Annotated, Any, Dict, List, Literal, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Path, Query
-from pydantic import BaseModel, field_validator
+from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import case, func, select
 from sqlalchemy.orm import Session
 
@@ -14,7 +14,9 @@ from models.inscription import Inscription, InscriptionSegment
 from models.user import User
 from services.ithaca_service.ithaca_service import (
     DEFAULT_BEAM_WIDTH,
+    DEFAULT_MAX_RESTORATION_LEN,
     MAX_BEAM_WIDTH,
+    MAX_RESTORATION_LEN,
     get_ithaca_service,
     initialize_all_models,
 )
@@ -298,8 +300,25 @@ class RestoreRequest(BaseModel):
     text: str
     language: Language = "greek"
     temperature: float = 1.0
-    beam_width: int = DEFAULT_BEAM_WIDTH
-    max_restoration_len: int = 15
+    beam_width: int = Field(
+        DEFAULT_BEAM_WIDTH,
+        ge=1,
+        le=MAX_BEAM_WIDTH,
+        description=(
+            "Number of candidates kept during beam search. Higher is slower; "
+            "cost is roughly linear in this value."
+        ),
+    )
+    max_restoration_len: int = Field(
+        DEFAULT_MAX_RESTORATION_LEN,
+        ge=1,
+        le=MAX_RESTORATION_LEN,
+        description=(
+            "Longest gap, in characters, that a '#' may be restored to. Only "
+            "affects inputs containing '#'. Lower is much faster -- set it to "
+            "your estimate of the lacuna size."
+        ),
+    )
 
     @field_validator("text", mode="after")
     @classmethod
@@ -397,12 +416,18 @@ def restore_inscription(
 
     Use '?' for single missing characters and '#' for unknown-length gaps.
 
+    A '#' is much more expensive than '?': it searches over how long the gap is
+    as well as what fills it, so one '#' takes ~30 forward passes where nine '?'
+    take 9. If you know roughly how large the lacuna is, pass
+    max_restoration_len -- cost is roughly linear in it.
+
     Args:
         text: The inscription text with missing characters
         language: 'greek' or 'latin' (default: greek)
         temperature: Sampling temperature (default: 1.0)
-        beam_width: Number of candidates to consider (default: 100)
-        max_restoration_len: Max length for unknown-length gaps (default: 15)
+        beam_width: Candidates kept during search (default: 35, max 100)
+        max_restoration_len: Longest gap a '#' may expand to
+            (default: 15, max 20). Ignored when the text has no '#'.
 
     Example Greek: "εδοξεν τηι βουληι και τωι δημωι # αθηναιων"
     Example Latin: "imp caesar divi # f augustus"
@@ -421,17 +446,9 @@ def restore_inscription(
             message=f"{request.language.title()} model not loaded. Check /api/inscriptions/model/status",
         )
 
-    # Restoration cost scales with beam width, which was previously taken
-    # straight from the request body with no upper bound -- a client could ask
-    # for arbitrarily much CPU. Clamp it; asking for less is still allowed.
-    beam_width = min(request.beam_width, MAX_BEAM_WIDTH)
-    if beam_width != request.beam_width:
-        logger.info(
-            "Clamping requested beam_width=%d to %d",
-            request.beam_width,
-            beam_width,
-        )
-
+    # beam_width and max_restoration_len are bounded by Field(ge=..., le=...) on
+    # RestoreRequest, so an out-of-range value is a 422 rather than an unbounded
+    # amount of CPU. Both were previously taken straight from the request body.
     if not service._inference_lock.acquire(blocking=False):
         raise HTTPException(
             status_code=429,
@@ -441,7 +458,7 @@ def restore_inscription(
         result = service.restore(
             text=request.text,
             language=request.language,
-            beam_width=beam_width,
+            beam_width=request.beam_width,
             temperature=request.temperature,
             max_restoration_len=request.max_restoration_len,
         )

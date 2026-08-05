@@ -177,12 +177,18 @@ export const inscriptionApi = {
   restore: (
     text: string,
     language: "greek" | "latin" = "greek",
-    temperature: number = 1.0
+    temperature: number = 1.0,
+    // Longest gap a '#' may expand to. Omit to use the server default (15).
+    // Only affects texts containing '#'; cost is roughly linear in it.
+    maxRestorationLen?: number
   ) =>
     api.post<RestorationResult>("/api/inscriptions/restore", {
       text,
       language,
       temperature,
+      ...(maxRestorationLen !== undefined && {
+        max_restoration_len: maxRestorationLen,
+      }),
     }),
 
   attribute: (text: string, language: "greek" | "latin" = "greek") =>

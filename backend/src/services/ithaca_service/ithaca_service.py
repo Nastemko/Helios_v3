@@ -55,6 +55,23 @@ Language = Literal["greek", "latin"]
 DEFAULT_BEAM_WIDTH = 35
 MAX_BEAM_WIDTH = 100
 
+# A '#' (unknown-length gap) is far more expensive than a '?' (single missing
+# character), because it searches over how long the gap is *as well as* what
+# fills it: each expansion step re-adds a '#' at the next position, so the branch
+# repeats up to max_restoration_len times. Traced on the same fixtures at beam
+# 35 -- one '#' takes 30 forward passes over 15 distinct sequence lengths, while
+# nine '?' take 9 passes at one fixed length (and six '?' take only 6, since
+# separate slots fill in parallel).
+#
+# Cost is therefore roughly linear in this value: ~2 iterations per allowed
+# expansion step. It is a *semantic* cap, not just a compute knob -- it declares
+# the longest gap the model may propose, so lowering it makes longer lacunae
+# unrestorable. That is why the default stays at the upstream 15 and is exposed
+# to callers, rather than being quietly reduced.
+DEFAULT_MAX_RESTORATION_LEN = 15
+# Upstream UNK_RESTORATION_MAX_LEN; inference.restore raises above this.
+MAX_RESTORATION_LEN = 20
+
 
 class IthacaModel:
     """
@@ -223,7 +240,7 @@ class IthacaService:
         language: Language = "greek",
         beam_width: int = DEFAULT_BEAM_WIDTH,
         temperature: float = 1.0,
-        max_restoration_len: int = 15,
+        max_restoration_len: int = DEFAULT_MAX_RESTORATION_LEN,
     ) -> RestorationResult:
         """
         Restore missing characters in an inscription.

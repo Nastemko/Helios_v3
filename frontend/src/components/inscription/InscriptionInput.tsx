@@ -7,6 +7,8 @@ interface InscriptionInputProps {
   onChange: (value: string) => void;
   temperature: number;
   onTemperatureChange: (temp: number) => void;
+  maxRestorationLen: number;
+  onMaxRestorationLenChange: (len: number) => void;
   onContextualize: () => void;
   onAttribute: () => void;
   onRestore: () => void;
@@ -60,6 +62,8 @@ export default function InscriptionInput({
   onChange,
   temperature,
   onTemperatureChange,
+  maxRestorationLen,
+  onMaxRestorationLenChange,
   onContextualize,
   onAttribute,
   onRestore,
@@ -69,10 +73,13 @@ export default function InscriptionInput({
   language,
 }: InscriptionInputProps) {
   const [showExamples, setShowExamples] = useState(false);
-  
+
   const charCount = value.length;
   const isValidLength = charCount >= 1 && charCount <= 760;
   const hasGaps = value.includes('-') || value.includes('?') || value.includes('#');
+  // '#' searches over gap length as well as content, so it is far slower than
+  // '?'. The control below only matters for these inputs, so only show it then.
+  const hasUnknownLengthGap = value.includes('#');
   
   const examples = language === 'greek' ? GREEK_EXAMPLES : LATIN_EXAMPLES;
   
@@ -148,6 +155,36 @@ Use ----- for known-length gaps (5 missing chars)`;
         />
         <span className="text-sm font-mono text-stone-600 w-8">{temperature.toFixed(1)}</span>
       </div>
+
+      {/* Max Gap Length — only relevant when the text contains a '#' */}
+      {hasUnknownLengthGap && (
+        <div className="mt-4">
+          <div className="flex items-center gap-4">
+            <label className="text-sm font-medium text-stone-700 whitespace-nowrap">
+              Longest <code className="bg-stone-100 px-1 rounded">#</code> gap:
+            </label>
+            <input
+              type="range"
+              min="1"
+              max="20"
+              step="1"
+              value={maxRestorationLen}
+              onChange={(e) => onMaxRestorationLenChange(parseInt(e.target.value, 10))}
+              className="flex-1 h-2 bg-stone-200 rounded-lg appearance-none cursor-pointer accent-helios-teal"
+              disabled={isProcessing}
+            />
+            <span className="text-sm font-mono text-stone-600 w-16">
+              {maxRestorationLen} char{maxRestorationLen === 1 ? '' : 's'}
+            </span>
+          </div>
+          <p className="mt-1.5 text-xs text-stone-500">
+            The most characters a <code className="bg-stone-100 px-1 rounded">#</code> may
+            expand to. Restoration time grows roughly in proportion to this, so if you can
+            estimate the size of the lacuna, a lower value is much faster — but gaps longer
+            than this cannot be found.
+          </p>
+        </div>
+      )}
 
       {/* Action Buttons */}
       <div className="mt-6 flex flex-wrap items-center gap-3">
