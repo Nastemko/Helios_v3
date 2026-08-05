@@ -22,6 +22,12 @@ import tqdm
 
 import vendor.predictingthepast.util.text as util_text
 
+# HELIOS-PERF: fixed sequence-length bucket for the jitted forward pass. Mirrors
+# eval/inference.py TEXT_LEN and services/ithaca_service BUCKET_SEQLEN; defined
+# locally rather than imported to keep this vendored module dependency-free.
+BUCKET_SEQLEN = 768
+# END HELIOS-PERF
+
 
 def date_loss_l1(pred, target_min, target_max):
     """L1 loss function for dates."""
@@ -162,6 +168,36 @@ def beam_search_batch(
             beam_batch.append(entry._replace(mask_idx=current_mask_idx))
         text_chars = np.vstack(text_chars)
 
+        # HELIOS-PERF: pad the batch and sequence dims to fixed buckets so the
+        # jitted forward pass hits its compilation cache instead of triggering a
+        # fresh XLA compile on every iteration (batch is len(beam), which starts
+        # at 1 and shrinks at the tail; seqlen grows as '#' gaps expand).
+        # Padding is safe: alphabet.pad_idx == 0 and the model derives its
+        # attention mask from `text_char > 0` (models/model.py:163), so padded
+        # positions and rows cannot influence logits at real positions.
+        #
+        # NB: bucket on BUCKET_SEQLEN, *not* max_len. max_len is derived from the
+        # input text length (inference.py:425-430), so it differs per request --
+        # bucketing on it would compile a separate executable per input length
+        # and defeat the cache entirely. BUCKET_SEQLEN is the model's fixed
+        # sequence length (TEXT_LEN), which _prepare_text already pads to.
+        real_batch, real_seqlen = text_chars.shape
+        bucket_seqlen = max(BUCKET_SEQLEN, real_seqlen)
+        bucket_batch = beam_width
+        if real_seqlen < bucket_seqlen:
+            text_chars = np.pad(
+                text_chars,
+                ((0, 0), (0, bucket_seqlen - real_seqlen)),
+                constant_values=0,
+            )
+        if real_batch < bucket_batch:
+            text_chars = np.pad(
+                text_chars,
+                ((0, bucket_batch - real_batch), (0, 0)),
+                constant_values=0,
+            )
+        # END HELIOS-PERF
+
         batch_size = text_chars.shape[0]
         _, _, mask_logits, _, unk_logits = forward(
             params,
@@ -180,8 +216,11 @@ def beam_search_batch(
         )
 
         # Compute log probabilities
-        mask_logits = np.array(mask_logits / temperature)
-        unk_logits = np.array(unk_logits)
+        # HELIOS-PERF: drop the bucket padding before any downstream use, so the
+        # rest of the loop sees exactly the shapes it saw pre-bucketing.
+        mask_logits = np.array(mask_logits[:real_batch, :real_seqlen] / temperature)
+        unk_logits = np.array(unk_logits[:real_batch, :real_seqlen])
+        # END HELIOS-PERF
 
         # Iterate over batch elements
         for batch_i, current_beam_entry in enumerate(beam_batch):

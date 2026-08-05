@@ -40,6 +40,15 @@ services:
       # before that finishes, so probes connect and fail until it does.
       start_period: 10m
     restart: unless-stopped
+    # Ithaca beam search is CPU- and memory-hungry (a wide beam materializes
+    # multi-GB attention tensors). Cap it so it cannot starve postgres/ollama or
+    # OOM the host. Keep cpus in sync with the *_NUM_THREADS values baked into
+    # backend/Dockerfile.
+    deploy:
+      resources:
+        limits:
+          cpus: "4"
+          memory: 10g
 
   # Frontend (React/Vite with nginx)
   frontend:

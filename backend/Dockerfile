@@ -47,6 +47,21 @@ RUN curl -fSL -o /app/assets/inscriptions/models/ithaca_153143996_2.pkl \
     https://storage.googleapis.com/ithaca-resources/models/led_emb_xid117149994.pkl && \
     chown -R helios:helios /app/assets/inscriptions
 
+# Thread-pool sizing for CPU inference. JAX/XLA and OpenBLAS each default to
+# sizing a pool to the host core count and then oversubscribe each other, which
+# on a 4-core box costs more than it gains. Keep these in sync with the CPU
+# limit set on the backend service in docker-compose.yml.
+# Declared after the model download layer so changing them does not invalidate
+# that ~2GB cached layer.
+ENV OMP_NUM_THREADS=4 \
+    OPENBLAS_NUM_THREADS=4 \
+    MKL_NUM_THREADS=4 \
+    XLA_FLAGS="--xla_cpu_multi_thread_eigen=true"
+
+# Persistent XLA compilation cache, so a container restart does not re-pay
+# compilation of the Ithaca forward pass.
+RUN mkdir -p /app/.cache/jax && chown -R helios:helios /app/.cache
+
 # Set the working directory for subsequent commands
 WORKDIR /app
 

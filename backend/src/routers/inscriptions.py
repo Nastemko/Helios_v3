@@ -1,5 +1,6 @@
 """API endpoints for browsing and querying PHI inscriptions"""
 
+import logging
 from typing import Annotated, Any, Dict, List, Literal, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Path, Query
@@ -12,9 +13,12 @@ from middleware.auth import get_current_user
 from models.inscription import Inscription, InscriptionSegment
 from models.user import User
 from services.ithaca_service.ithaca_service import (
+    DEFAULT_BEAM_WIDTH,
     get_ithaca_service,
     initialize_all_models,
 )
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/inscriptions", tags=["inscriptions"])
 
@@ -383,7 +387,7 @@ class ContextualizeResponse(BaseModel):
 
 
 @router.post("/restore", response_model=RestoreResponse)
-async def restore_inscription(
+def restore_inscription(
     request: RestoreRequest,
     current_user: User = Depends(get_current_user),
 ):
@@ -416,13 +420,31 @@ async def restore_inscription(
             message=f"{request.language.title()} model not loaded. Check /api/inscriptions/model/status",
         )
 
-    result = service.restore(
-        text=request.text,
-        language=request.language,
-        beam_width=request.beam_width,
-        temperature=request.temperature,
-        max_restoration_len=request.max_restoration_len,
-    )
+    # The jitted forward pass is compiled for one batch size; honouring an
+    # arbitrary client-supplied beam width would silently trigger a fresh XLA
+    # compile per distinct value. This also closes an unbounded-compute hole.
+    if request.beam_width != DEFAULT_BEAM_WIDTH:
+        logger.info(
+            "Overriding requested beam_width=%d to %d (jit bucket)",
+            request.beam_width,
+            DEFAULT_BEAM_WIDTH,
+        )
+
+    if not service._inference_lock.acquire(blocking=False):
+        raise HTTPException(
+            status_code=429,
+            detail="Another inference is already running; retry shortly.",
+        )
+    try:
+        result = service.restore(
+            text=request.text,
+            language=request.language,
+            beam_width=DEFAULT_BEAM_WIDTH,
+            temperature=request.temperature,
+            max_restoration_len=request.max_restoration_len,
+        )
+    finally:
+        service._inference_lock.release()
 
     return RestoreResponse(
         input_text=result.input_text,
@@ -441,7 +463,7 @@ async def restore_inscription(
 
 
 @router.post("/attribute", response_model=AttributeResponse)
-async def attribute_inscription(
+def attribute_inscription(
     request: AttributeRequest,
     current_user: User = Depends(get_current_user),
 ):
@@ -473,7 +495,15 @@ async def attribute_inscription(
             message=f"{request.language.title()} model not loaded. Check /api/inscriptions/model/status",
         )
 
-    result = service.attribute(request.text, language=request.language)
+    if not service._inference_lock.acquire(blocking=False):
+        raise HTTPException(
+            status_code=429,
+            detail="Another inference is already running; retry shortly.",
+        )
+    try:
+        result = service.attribute(request.text, language=request.language)
+    finally:
+        service._inference_lock.release()
 
     return AttributeResponse(
         input_text=result.input_text,
@@ -493,7 +523,7 @@ async def attribute_inscription(
 
 
 @router.post("/contextualize", response_model=ContextualizeResponse)
-async def contextualize_inscription(
+def contextualize_inscription(
     request: ContextualizeRequest,
     current_user: User = Depends(get_current_user),
 ):
@@ -517,9 +547,17 @@ async def contextualize_inscription(
             message=f"{request.language.title()} model not loaded. Check /api/inscriptions/model/status",
         )
 
-    result = service.contextualize(
-        request.text, language=request.language, top_k=request.top_k
-    )
+    if not service._inference_lock.acquire(blocking=False):
+        raise HTTPException(
+            status_code=429,
+            detail="Another inference is already running; retry shortly.",
+        )
+    try:
+        result = service.contextualize(
+            request.text, language=request.language, top_k=request.top_k
+        )
+    finally:
+        service._inference_lock.release()
 
     return ContextualizeResponse(
         similar=[

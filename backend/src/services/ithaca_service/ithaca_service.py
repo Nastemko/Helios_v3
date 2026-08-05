@@ -11,11 +11,13 @@ Supports both Greek (Ithaca) and Latin (Aeneas) models simultaneously.
 
 import logging
 import pickle
+import threading
 from functools import lru_cache
 from pathlib import Path
 from typing import Any, Dict, Literal, Optional
 
 import jax
+import numpy as np
 
 from config import settings
 from services.ithaca_service.models import (
@@ -34,6 +36,20 @@ logger = logging.getLogger(__name__)
 
 # Type alias for supported languages
 Language = Literal["greek", "latin"]
+
+# Bucket sizes the jitted forward pass is compiled for. beam_search_batch pads
+# every call to these dims (see vendor/predictingthepast/util/eval.py), so they
+# must stay in sync with the warmup in IthacaModel._warmup. A request asking for
+# a different beam width would silently trigger a fresh XLA compile, so the
+# router clamps beam_width to DEFAULT_BEAM_WIDTH.
+BUCKET_SEQLEN = 768
+DEFAULT_BEAM_WIDTH = 100
+
+# Persist XLA executables across restarts so a container bounce does not re-pay
+# compilation of the forward pass. Set at import: these only flip config flags.
+jax.config.update("jax_compilation_cache_dir", "/app/.cache/jax")
+jax.config.update("jax_persistent_cache_min_compile_time_secs", 1.0)
+jax.config.update("jax_persistent_cache_min_entry_size_bytes", -1)
 
 
 class IthacaModel:
@@ -72,7 +88,7 @@ class IthacaModel:
             # Extract model components
             self.params = jax.device_put(checkpoint["params"])
             model = Model(**checkpoint["model_config"])
-            self.forward = model.apply
+            self.forward = self._make_forward(model)
             self.region_map = checkpoint["region_map"]
             self.vocab_char_size = checkpoint["model_config"]["vocab_char_size"]
 
@@ -92,10 +108,40 @@ class IthacaModel:
 
             self.initialized = True
             logger.info(f"{self.language.upper()} model initialized successfully!")
+
+            # Compile ahead of the first request. Failure is non-fatal: the
+            # model still works, the first request just pays compilation.
+            try:
+                self._warmup(DEFAULT_BEAM_WIDTH, BUCKET_SEQLEN)
+            except Exception as warmup_error:
+                logger.warning(
+                    "%s warmup failed (first request will be slow): %s",
+                    self.language,
+                    warmup_error,
+                )
         except Exception as e:
             logger.error(f"Failed to initialize {self.language} model: {e}")
-        finally:
-            return self.initialized
+
+        # NB: this return is deliberately outside the except block and *not* in
+        # a finally. A `return` inside `finally` swallows every exception raised
+        # in the try, including MemoryError and KeyboardInterrupt.
+        return self.initialized
+
+    def _make_forward(self, model: Model) -> Any:
+        """Wrap model.apply in jax.jit so XLA compiles and caches the graph.
+
+        Without this the whole 6-layer transformer is dispatched op-by-op in
+        eager mode on every beam step, and the multi-GB attention intermediates
+        are materialized instead of being fused away.
+        """
+        return jax.jit(model.apply)
+
+    def _warmup(self, bucket_batch: int, bucket_seqlen: int) -> None:
+        """Trigger XLA compilation now so the first request doesn't pay it."""
+        dummy = np.zeros((bucket_batch, bucket_seqlen), dtype=np.int32)
+        dummy[:, :10] = 1  # non-pad tokens so the padding mask isn't degenerate
+        self.forward(self.params, text_char=dummy, text_char_onehot=None)
+        logger.info("%s model warmup complete", self.language.upper())
 
     @property
     def is_available(self) -> bool:
@@ -112,6 +158,10 @@ class IthacaService:
 
     def __init__(self):
         self._models: Dict[Language, IthacaModel] = {}
+        # One inference at a time: a single restore already saturates the CPUs
+        # this runs on, so concurrency here only causes cache thrashing. The
+        # routers acquire this non-blocking and return 429 rather than queueing.
+        self._inference_lock = threading.Semaphore(1)
 
     def initialize_model(
         self,
