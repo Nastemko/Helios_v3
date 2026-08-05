@@ -43,6 +43,24 @@ FIXTURES: list[dict[str, str]] = [
         "name": "multi_gap",
         "text": "αγαθηι τυχηι δεδοχθαι τηι βουληι ??? και τωι ??? δημωι",
     },
+    # Captured from a real user request against next.helios.cool that took
+    # 947.6s (HAR: wait=947553ms, receive=84ms -- all server compute).
+    #
+    # The three fixtures above are 41-53 characters. This one is 194, and that
+    # gap is why the regression was not caught: beam search runs one forward
+    # pass per generation over the *whole* sequence, so cost grows with text
+    # length as well as with beam width and gap length. Tuning measured only on
+    # short fixtures does not transfer to inputs this size. Keep a
+    # production-scale case here.
+    {
+        "name": "long_unknown_gap",
+        "text": (
+            "# ασιανοι ιωνες ανθυπατω κορνηλιω τακιτω ερυθραιοι ευγενεις "
+            "δικαιοι δικαστης λουκιος γαουιος λαβεων γραμματευς λουκιος "
+            "γαουιος λαβεων νεος δικασταγωγος χρυσιππος ακολουθος αγαθος "
+            "δημοσιος σεμνος"
+        ),
+    },
 ]
 
 

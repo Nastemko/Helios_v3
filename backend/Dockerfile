@@ -49,13 +49,17 @@ RUN curl -fSL -o /app/assets/inscriptions/models/ithaca_153143996_2.pkl \
 
 # Thread-pool sizing for CPU inference. JAX/XLA and OpenBLAS each default to
 # sizing a pool to the host core count and then oversubscribe each other, which
-# on a 4-core box costs more than it gains. Keep these in sync with the CPU
-# limit set on the backend service in docker-compose.yml.
+# costs more than it gains. Keep these in sync with the CPU limit set on the
+# backend service in docker-compose.yml.
 # Declared after the model download layer so changing them does not invalidate
 # that ~2GB cached layer.
-ENV OMP_NUM_THREADS=4 \
-    OPENBLAS_NUM_THREADS=4 \
-    MKL_NUM_THREADS=4 \
+#
+# The deploy host has 6 processors. One is left to postgres/ollama/nginx rather
+# than pinning all six here, since a saturated inference pool would otherwise
+# contend with the database serving the same request.
+ENV OMP_NUM_THREADS=5 \
+    OPENBLAS_NUM_THREADS=5 \
+    MKL_NUM_THREADS=5 \
     XLA_FLAGS="--xla_cpu_multi_thread_eigen=true"
 
 # Persistent XLA compilation cache, so a container restart does not re-pay

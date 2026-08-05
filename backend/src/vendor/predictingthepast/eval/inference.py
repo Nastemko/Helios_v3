@@ -392,6 +392,7 @@ def restore(
     temperature=RESTORATION_TEMPERATURE,
     unk_restoration_max_len=UNK_RESTORATION_MAX_LEN,
     a_penalty=A_PENALTY,
+    top_chars=None,
 ) -> RestorationResults:
     """Performs search to compute text restoration. Slower, runs synchronously."""
 
@@ -429,6 +430,20 @@ def restore(
     else:
         max_len = text_len[0]
 
+    # Bound the search. beam_search_batch loops `while beam:` and upstream
+    # leaves max_iterations=None, so a pathological input can run unbounded --
+    # this is how a single request occupied a worker for 947s in production.
+    #
+    # With sequential_decoding=False every '?' in an entry is filled in the same
+    # iteration, so a '?'-only input converges in one. Each '#' may instead
+    # expand by one character per iteration, up to unk_restoration_max_len, and
+    # closing the gap takes one more. The +2 is slack so the bound can only ever
+    # catch a runaway, never truncate a legitimate restoration.
+    if count_unk:
+        max_iterations = count_unk * (unk_restoration_max_len + 1) + 2
+    else:
+        max_iterations = len(restore_mask_idx) + 2
+
     beam_result = eval_util.beam_search_batch(
         forward,
         params,
@@ -440,6 +455,8 @@ def restore(
         temperature=temperature,
         sequential_decoding=False,
         a_penalty=a_penalty,
+        top_chars=top_chars,
+        max_iterations=max_iterations,
     )
 
     # For visualization purposes, we strip out the SOS and padding, and adjust

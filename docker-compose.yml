@@ -47,7 +47,7 @@ services:
     deploy:
       resources:
         limits:
-          cpus: "4"
+          cpus: "5"
           memory: 10g
 
   # Frontend (React/Vite with nginx)

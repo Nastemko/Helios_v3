@@ -85,6 +85,18 @@ DEFAULT_MAX_RESTORATION_LEN = 15
 # Upstream UNK_RESTORATION_MAX_LEN; inference.restore raises above this.
 MAX_RESTORATION_LEN = 20
 
+# How many characters the beam search expands at each hole. Upstream tries the
+# whole alphabet -- 29 branches for Greek (26 letters + final sigma/koppa/stigma
+# + numeral '0', plus space) -- and builds a full string, a join and a set copy
+# for every one, beam_width times per generation. Only a handful ever survive
+# the length-normalised pruning at the end of the iteration, so the rest is
+# wasted allocation.
+#
+# 8 keeps every character with any realistic chance of surviving while cutting
+# candidate construction ~3.6x. Set to None to restore exhaustive upstream
+# behaviour if a restoration ever looks truncated.
+DEFAULT_TOP_CHARS = 8
+
 
 def _failure_message(error: Exception, language: Language) -> str:
     """Turn an inference exception into something a reader can act on.
@@ -270,6 +282,7 @@ class IthacaService:
         beam_width: int = DEFAULT_BEAM_WIDTH,
         temperature: float = 1.0,
         max_restoration_len: int = DEFAULT_MAX_RESTORATION_LEN,
+        top_chars: Optional[int] = DEFAULT_TOP_CHARS,
     ) -> RestorationResult:
         """
         Restore missing characters in an inscription.
@@ -292,6 +305,7 @@ class IthacaService:
                 beam_width=beam_width,
                 temperature=temperature,
                 unk_restoration_max_len=max_restoration_len,
+                top_chars=top_chars,
             )
 
             predictions = [
