@@ -145,3 +145,4 @@ docs/superpowers/
 .playwright/
 .playwright-cli/
 
+bench/

@@ -1,5 +1,6 @@
 """API endpoints for browsing and querying PHI inscriptions"""
 
+import logging
 from typing import Annotated, Any, Dict, List, Literal, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Path, Query
@@ -12,9 +13,15 @@ from middleware.auth import get_current_user
 from models.inscription import Inscription, InscriptionSegment
 from models.user import User
 from services.ithaca_service.ithaca_service import (
+    DEFAULT_BEAM_WIDTH,
+    DEFAULT_MAX_RESTORATION_LEN,
+    MAX_BEAM_WIDTH,
+    MAX_RESTORATION_LEN,
     get_ithaca_service,
     initialize_all_models,
 )
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/inscriptions", tags=["inscriptions"])
 
@@ -316,10 +323,27 @@ class RestoreRequest(_InscriptionTextRequest):
 
     language: Language = "greek"
     temperature: float = 1.0
-    beam_width: int = 100
+    beam_width: int = Field(
+        DEFAULT_BEAM_WIDTH,
+        ge=1,
+        le=MAX_BEAM_WIDTH,
+        description=(
+            "Number of candidates kept during beam search. Higher is slower; "
+            "cost is roughly linear in this value."
+        ),
+    )
     # Upper bound matches UNK_RESTORATION_MAX_LEN in the vendored inference
     # module, which raises above it.
-    max_restoration_len: int = Field(default=15, ge=1, le=20)
+    max_restoration_len: int = Field(
+        DEFAULT_MAX_RESTORATION_LEN,
+        ge=1,
+        le=MAX_RESTORATION_LEN,
+        description=(
+            "Longest gap, in characters, that a '#' may be restored to. Only "
+            "affects inputs containing '#'. Lower is much faster -- set it to "
+            "your estimate of the lacuna size."
+        ),
+    )
 
 
 class RestorationCandidate(BaseModel):
@@ -401,7 +425,7 @@ class ContextualizeResponse(BaseModel):
 
 
 @router.post("/restore", response_model=RestoreResponse)
-async def restore_inscription(
+def restore_inscription(
     request: RestoreRequest,
     current_user: User = Depends(get_current_user),
 ):
@@ -411,12 +435,20 @@ async def restore_inscription(
     Use one '?' per missing character ('?????' is exactly five) and '#' for a
     gap whose length is unknown. '-' is rejected: see _InscriptionTextRequest.
 
+    A '#' is much more expensive than '?': it searches over how long the gap is
+    as well as what fills it, so one '#' takes ~30 forward passes where nine '?'
+    take 9. If you know roughly how large the lacuna is, pass
+    max_restoration_len set just above it -- headroom far past the true gap is
+    still searched and still costs, but a cap below it forces a worse (and not
+    necessarily faster) restoration.
+
     Args:
         text: The inscription text with missing characters
         language: 'greek' or 'latin' (default: greek)
         temperature: Sampling temperature (default: 1.0)
-        beam_width: Number of candidates to consider (default: 100)
-        max_restoration_len: Max length for unknown-length gaps (default: 15)
+        beam_width: Candidates kept during search (default: 35, max 100)
+        max_restoration_len: Longest gap a '#' may expand to
+            (default: 15, max 20). Ignored when the text has no '#'.
 
     Example Greek: "εδοξεν τηι βουληι και τωι δημωι # αθηναιων"
     Example Latin: "imp caesar divi # f augustus"
@@ -435,13 +467,24 @@ async def restore_inscription(
             message=f"{request.language.title()} model not loaded. Check /api/inscriptions/model/status",
         )
 
-    result = service.restore(
-        text=request.text,
-        language=request.language,
-        beam_width=request.beam_width,
-        temperature=request.temperature,
-        max_restoration_len=request.max_restoration_len,
-    )
+    # beam_width and max_restoration_len are bounded by Field(ge=..., le=...) on
+    # RestoreRequest, so an out-of-range value is a 422 rather than an unbounded
+    # amount of CPU. Both were previously taken straight from the request body.
+    if not service._inference_lock.acquire(blocking=False):
+        raise HTTPException(
+            status_code=429,
+            detail="Another inference is already running; retry shortly.",
+        )
+    try:
+        result = service.restore(
+            text=request.text,
+            language=request.language,
+            beam_width=request.beam_width,
+            temperature=request.temperature,
+            max_restoration_len=request.max_restoration_len,
+        )
+    finally:
+        service._inference_lock.release()
 
     return RestoreResponse(
         input_text=result.input_text,
@@ -461,7 +504,7 @@ async def restore_inscription(
 
 
 @router.post("/attribute", response_model=AttributeResponse)
-async def attribute_inscription(
+def attribute_inscription(
     request: AttributeRequest,
     current_user: User = Depends(get_current_user),
 ):
@@ -493,7 +536,15 @@ async def attribute_inscription(
             message=f"{request.language.title()} model not loaded. Check /api/inscriptions/model/status",
         )
 
-    result = service.attribute(request.text, language=request.language)
+    if not service._inference_lock.acquire(blocking=False):
+        raise HTTPException(
+            status_code=429,
+            detail="Another inference is already running; retry shortly.",
+        )
+    try:
+        result = service.attribute(request.text, language=request.language)
+    finally:
+        service._inference_lock.release()
 
     return AttributeResponse(
         input_text=result.input_text,
@@ -514,7 +565,7 @@ async def attribute_inscription(
 
 
 @router.post("/contextualize", response_model=ContextualizeResponse)
-async def contextualize_inscription(
+def contextualize_inscription(
     request: ContextualizeRequest,
     current_user: User = Depends(get_current_user),
 ):
@@ -538,9 +589,17 @@ async def contextualize_inscription(
             message=f"{request.language.title()} model not loaded. Check /api/inscriptions/model/status",
         )
 
-    result = service.contextualize(
-        request.text, language=request.language, top_k=request.top_k
-    )
+    if not service._inference_lock.acquire(blocking=False):
+        raise HTTPException(
+            status_code=429,
+            detail="Another inference is already running; retry shortly.",
+        )
+    try:
+        result = service.contextualize(
+            request.text, language=request.language, top_k=request.top_k
+        )
+    finally:
+        service._inference_lock.release()
 
     return ContextualizeResponse(
         similar=[

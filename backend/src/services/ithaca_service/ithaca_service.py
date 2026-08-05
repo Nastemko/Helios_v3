@@ -11,6 +11,7 @@ Supports both Greek (Ithaca) and Latin (Aeneas) models simultaneously.
 
 import logging
 import pickle
+import threading
 from functools import lru_cache
 from pathlib import Path
 from typing import Any, Dict, Literal, Optional
@@ -34,6 +35,55 @@ logger = logging.getLogger(__name__)
 
 # Type alias for supported languages
 Language = Literal["greek", "latin"]
+
+# Restoration cost scales roughly linearly with beam width, and the value was
+# previously taken straight from the request body with no bound -- a client could
+# ask for arbitrarily much compute. Measured on 4 cores over three fixtures
+# (src/scripts/bench_ithaca.py), total wall time:
+#   beam 100 -> 337.1s   50 -> 195.5s   35 -> 172.8s   20 -> 130.4s
+#
+# 35 is the default: ~2x faster than 100, and it scored >= beam 100 on the top
+# prediction for every fixture. Note that a wider beam is NOT automatically
+# better here -- beam search is non-monotonic in width, because candidates are
+# pruned by length-normalised score (logprob / (1+len)^a_penalty, see
+# util/eval.py) while the score returned to callers is raw exp(logprob). Beam
+# 100 came last or tied-last on all three fixtures.
+#
+# Caveat: those fixtures are synthetic and scored by the model's own likelihood,
+# which measures self-consistency, not correctness. Re-tune against inscriptions
+# with known restorations before treating this as an accuracy-optimal value.
+DEFAULT_BEAM_WIDTH = 35
+MAX_BEAM_WIDTH = 100
+
+# A '#' (unknown-length gap) is far more expensive than a '?' (single missing
+# character), because it searches over how long the gap is *as well as* what
+# fills it: each expansion step re-adds a '#' at the next position, so the branch
+# repeats up to max_restoration_len times. Traced on the same fixtures at beam
+# 35 -- one '#' takes 30 forward passes over 15 distinct sequence lengths, while
+# nine '?' take 9 passes at one fixed length (and six '?' take only 6, since
+# separate slots fill in parallel).
+#
+# Cost is NOT simply linear in this value. Swept on the '#' fixture at beam 35
+# (wall time / restored fill):
+#   mrl=3  -> 30.1s / "τωι"    (3 chars, capped)
+#   mrl=5  -> 23.0s / "ειπεν"  (5 chars, capped)
+#   mrl=8  -> 38.8s / "επειδη" (6 chars, not capped)
+#   mrl=15 -> 87.7s / "επειδη" (6 chars, not capped)
+#
+# Two effects: headroom past the answer the model actually wants is still
+# searched and still costs (15 is ~2.3x the cost of 8 for an identical answer),
+# but a cap *below* that answer is not simply cheaper either -- it forces the
+# beam into worse-fitting short candidates that survive longer, which is why
+# mrl=3 costs more than mrl=5. The cheapest point is a cap just above the true
+# gap length.
+#
+# It is a *semantic* cap, not just a compute knob -- it declares the longest gap
+# the model may propose, so lowering it makes longer lacunae unrestorable. The
+# default therefore stays at the upstream 15 (safe for any gap) and is exposed
+# to callers, who are the ones who can see how big the lacuna actually is.
+DEFAULT_MAX_RESTORATION_LEN = 15
+# Upstream UNK_RESTORATION_MAX_LEN; inference.restore raises above this.
+MAX_RESTORATION_LEN = 20
 
 
 def _failure_message(error: Exception, language: Language) -> str:
@@ -110,8 +160,12 @@ class IthacaModel:
             logger.info(f"{self.language.upper()} model initialized successfully!")
         except Exception as e:
             logger.error(f"Failed to initialize {self.language} model: {e}")
-        finally:
-            return self.initialized
+
+        # NB: this return is deliberately NOT inside a `finally`. A `return` in
+        # `finally` swallows every exception raised in the try -- including
+        # MemoryError and KeyboardInterrupt -- so a failed load degraded to
+        # `available: false` with no traceback and no way to interrupt it.
+        return self.initialized
 
     @property
     def is_available(self) -> bool:
@@ -128,6 +182,10 @@ class IthacaService:
 
     def __init__(self):
         self._models: Dict[Language, IthacaModel] = {}
+        # One inference at a time: a single restore already saturates the CPUs
+        # this runs on, so concurrent requests only cause cache thrashing. The
+        # routers acquire this non-blocking and return 429 rather than queueing.
+        self._inference_lock = threading.Semaphore(1)
 
     def initialize_model(
         self,
@@ -209,9 +267,9 @@ class IthacaService:
         self,
         text: str,
         language: Language = "greek",
-        beam_width: int = 100,
+        beam_width: int = DEFAULT_BEAM_WIDTH,
         temperature: float = 1.0,
-        max_restoration_len: int = 15,
+        max_restoration_len: int = DEFAULT_MAX_RESTORATION_LEN,
     ) -> RestorationResult:
         """
         Restore missing characters in an inscription.

@@ -1,7 +1,7 @@
 import unittest
 from unittest.mock import MagicMock, patch
 
-from .ithaca_service import IthacaService
+from .ithaca_service import IthacaModel, IthacaService
 
 
 class _StubModel:
@@ -147,6 +147,43 @@ class TestInferenceFailuresAreReported(unittest.TestCase):
 
         self.assertTrue(result.available)
         self.assertIsNone(result.message)
+
+
+class TestInitializeDoesNotSwallowExceptions(unittest.TestCase):
+    """`return` used to live inside a `finally`, hiding every error."""
+
+    def test_initialize_returns_false_on_failure(self):
+        model = IthacaModel("greek")
+
+        with patch("builtins.open", side_effect=OSError("boom")):
+            result = model.initialize(
+                checkpoint_path=MagicMock(),
+                dataset_path=MagicMock(),
+                retrieval_path=MagicMock(),
+            )
+
+        self.assertFalse(result)
+        self.assertFalse(model.initialized)
+
+
+class TestInferenceConcurrencyGuard(unittest.TestCase):
+    """A single restore saturates the CPUs; a second must be rejected."""
+
+    def test_second_concurrent_acquire_fails_fast(self):
+        service = IthacaService()
+
+        self.assertTrue(service._inference_lock.acquire(blocking=False))
+        try:
+            self.assertFalse(
+                service._inference_lock.acquire(blocking=False),
+                "a second concurrent inference should not acquire the lock",
+            )
+        finally:
+            service._inference_lock.release()
+
+        # Released again, so a later request can proceed.
+        self.assertTrue(service._inference_lock.acquire(blocking=False))
+        service._inference_lock.release()
 
 
 if __name__ == "__main__":

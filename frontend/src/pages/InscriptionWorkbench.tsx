@@ -17,6 +17,8 @@ export default function InscriptionWorkbench() {
   // Input state
   const [inputText, setInputText] = useState('');
   const [temperature, setTemperature] = useState(1.0);
+  // Mirrors DEFAULT_MAX_RESTORATION_LEN on the server. Only affects '#' gaps.
+  const [maxRestorationLen, setMaxRestorationLen] = useState(15);
   const [language, setLanguage] = useState<Language>('greek');
   
   // Results state
@@ -93,14 +95,19 @@ export default function InscriptionWorkbench() {
     setError(null);
     
     try {
-      const restoreRes = await inscriptionApi.restore(inputText, language, temperature);
+      const restoreRes = await inscriptionApi.restore(
+        inputText,
+        language,
+        temperature,
+        maxRestorationLen
+      );
       setRestorationResult(restoreRes.data);
     } catch (err: any) {
       setError(err.response?.data?.detail || err.message || 'An error occurred');
     } finally {
       setIsProcessing(false);
     }
-  }, [inputText, language, temperature]);
+  }, [inputText, language, temperature, maxRestorationLen]);
 
   // Load inscription into input
   const handleLoadInscription = useCallback((inscription: InscriptionListItem) => {
@@ -224,6 +231,8 @@ export default function InscriptionWorkbench() {
           onChange={setInputText}
           temperature={temperature}
           onTemperatureChange={setTemperature}
+          maxRestorationLen={maxRestorationLen}
+          onMaxRestorationLenChange={setMaxRestorationLen}
           onContextualize={handleContextualize}
           onAttribute={handleAttribute}
           onRestore={handleRestore}
