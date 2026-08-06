@@ -75,6 +75,49 @@ Visit http://localhost:8000/docs for interactive API documentation (Swagger UI).
 The docs are only mounted when `DEBUG=True`; in production `/docs` and `/redoc`
 are disabled.
 
+### Distributed Ithaca restore (optional)
+
+Restoration cost is dominated by ~10 sequential forward passes, each ~10s at
+beam 35. Those passes cannot be split across time (generation N+1 needs N's
+pruned beam), but the *batch* inside one generation can: every candidate row is
+independent through the model, so slicing it across machines is bit-exact.
+
+**More cores do not fix this.** Measured with core pinning at beam 35, the
+forward pass is ~49% serial and saturates near two cores:
+
+| cores | time  | speedup |
+|-------|-------|---------|
+| 1     | 19.93s| 1.00x   |
+| 2     | 13.17s| 1.51x   |
+| 4     | 12.94s| 1.54x   |
+
+Extrapolated, 6 → 18 vCPU buys ~11%. Sharding sidesteps the serial section
+because each node runs a full, independent pass — measured 2.8x on three nodes
+(batch 12 = 3.92s vs batch 35 = 10.96s).
+
+Start a worker on each extra machine:
+
+```bash
+PYTHONPATH=./src uv run uvicorn \
+    services.ithaca_service.shard_worker:app --host 0.0.0.0 --port 8001
+```
+
+Then point the coordinator at them (JSON list, like `CORS_ORIGINS`):
+
+```bash
+ITHACA_SHARD_URLS=["http://node1:8001","http://node2:8001"]
+ITHACA_SHARD_TIMEOUT=60.0          # per-generation deadline
+ITHACA_SHARD_MIN_ROWS_PER_NODE=4   # below this, run locally instead
+```
+
+Unset `ITHACA_SHARD_URLS` and everything runs exactly as before. A shard that
+times out or errors falls back to a local pass for that generation, so a dead
+node costs latency rather than the request. Workers must have
+`ITHACA_SHARD_URLS` empty — a shard that fans out again would deadlock.
+
+Under compose: `docker compose --profile cluster up -d` (co-located workers
+share the same cores, so use it for wiring checks, not for a real speedup).
+
 ## Project Structure
 
 `src/` is the Python root, so modules use absolute imports (`from config import

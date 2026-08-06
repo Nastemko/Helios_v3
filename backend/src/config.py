@@ -32,6 +32,46 @@ class LLMSettings(BaseSettings):
     )
 
 
+class IthacaShardSettings(BaseSettings):
+    """Distributed Ithaca inference settings.
+
+    Beam search runs one forward pass per generation over a batch of
+    ``beam_width`` candidate rows, and every row is independent through the
+    model. Splitting that batch across machines is bit-exact, so it buys
+    latency without changing predictions.
+
+    Adding cores to one box does not help: the forward pass is ~49% serial and
+    saturates at ~2 cores (measured 1->19.93s, 2->13.17s, 4->12.94s at beam 35).
+    Sharding sidesteps that serial section because each node runs a full,
+    independent forward pass.
+
+    Empty URLS (the default) disables sharding entirely and restores the
+    single-process path exactly.
+    """
+
+    # The *remote* workers only. The coordinator always takes a slice itself,
+    # so two URLs here means a three-node cluster.
+    URLS: list[str] = []
+
+    # Per-generation deadline. Must stay well under the service's overall
+    # time budget so a hung shard falls back locally instead of consuming the
+    # whole restoration budget.
+    TIMEOUT: float = 60.0
+
+    # Skip the fan-out unless every node gets at least this many rows. Per-row
+    # cost is flat (~290ms) down to batch 4 but collapses below it (483ms at
+    # batch 2, 529ms at batch 1), so tiny slices waste both compute and a
+    # round trip. The '#' expansion tail is what trips this.
+    MIN_ROWS_PER_NODE: int = 4
+
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        env_file_encoding="utf-8",
+        case_sensitive=True,
+        env_prefix="ITHACA_SHARD_",
+    )
+
+
 class DatabaseSettings(BaseSettings):
     """Database configuration settings"""
 
@@ -115,6 +155,7 @@ class Settings:
         self.llm = LLMSettings()
         self.database = DatabaseSettings()
         self.assets = AssetSettings()
+        self.ithaca_shard = IthacaShardSettings()
 
     def validate_production(self) -> None:
         """

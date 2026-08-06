@@ -50,6 +50,66 @@ services:
           cpus: "5"
           memory: 10g
 
+  # Ithaca shard worker -- forward-pass-only node for distributed restore.
+  #
+  # Beam search splits each generation's candidate batch across nodes; every row
+  # is independent through the model, so results are bit-exact. Measured 2.8x on
+  # three nodes (batch 12 = 3.92s vs batch 35 = 10.96s per forward).
+  #
+  # This is the lever that works because vertical scaling does not: the forward
+  # pass is ~49% serial and saturates near two cores, so tripling vCPUs buys
+  # ~11%. Each shard runs a full independent pass instead.
+  #
+  # Opt-in via profile -- `docker compose --profile cluster up -d`. Point the
+  # backend at the workers with ITHACA_SHARD_URLS in .env, e.g.
+  #   ITHACA_SHARD_URLS=["http://ithaca-shard-1:8001","http://ithaca-shard-2:8001"]
+  # Leave it unset and the backend runs exactly as before.
+  #
+  # For a real speedup these must be on *separate machines*; co-locating them
+  # here just splits the same cores and gains nothing.
+  ithaca-shard-1: &ithaca-shard
+    profiles: ["cluster"]
+    build:
+      context: ./backend/
+      dockerfile: Dockerfile
+    container_name: helios-ithaca-shard-1
+    env_file: .env
+    command:
+      - uv
+      - run
+      - uvicorn
+      - services.ithaca_service.shard_worker:app
+      - --host
+      - 0.0.0.0
+      - --port
+      - "8001"
+    environment:
+      PYTHONPATH: /app/src
+      # A shard must never fan out again -- it is a leaf, and a cycle here
+      # would deadlock the cluster.
+      ITHACA_SHARD_URLS: "[]"
+    ports:
+      - "8001:8001"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://127.0.0.1:8001/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      # Loads the same JAX checkpoints as the backend, minus the DB work.
+      start_period: 5m
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: "5"
+          memory: 8g
+
+  ithaca-shard-2:
+    <<: *ithaca-shard
+    container_name: helios-ithaca-shard-2
+    ports:
+      - "8002:8001"
+
   # Frontend (React/Vite with nginx)
   frontend:
     build:
