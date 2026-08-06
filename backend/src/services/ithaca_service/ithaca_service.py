@@ -19,6 +19,7 @@ from typing import Any, Dict, Literal, Optional
 import jax
 
 from config import settings
+from services.ithaca_service.distributed_forward import DistributedForward
 from services.ithaca_service.models import (
     AttributionResult,
     ContextualizationResult,
@@ -162,6 +163,26 @@ class IthacaModel:
             self.params = jax.device_put(checkpoint["params"])
             model = Model(**checkpoint["model_config"])
             self.forward = model.apply
+
+            # Fan each forward pass out across the cluster when one is
+            # configured. This is the single seam for distribution: the
+            # vendored beam search calls whatever `forward` it is handed, so
+            # nothing under vendor/ has to change. Falls back to the local pass
+            # per call if a shard is unreachable.
+            shard_urls = settings.ithaca_shard.URLS
+            if shard_urls:
+                self.forward = DistributedForward(
+                    local_forward=model.apply,
+                    shard_urls=shard_urls,
+                    language=self.language,
+                    timeout=settings.ithaca_shard.TIMEOUT,
+                    min_rows_per_node=settings.ithaca_shard.MIN_ROWS_PER_NODE,
+                )
+                logger.info(
+                    f"{self.language.upper()} forward sharded across "
+                    f"{len(shard_urls) + 1} nodes: {shard_urls}"
+                )
+
             self.region_map = checkpoint["region_map"]
             self.vocab_char_size = checkpoint["model_config"]["vocab_char_size"]
 
