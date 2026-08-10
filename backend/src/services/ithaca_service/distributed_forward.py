@@ -82,6 +82,32 @@ def plan_split(batch_size: int, node_count: int, min_rows_per_node: int) -> list
     return [base + (1 if i < remainder else 0) for i in range(node_count)]
 
 
+# Keyword arguments that only non-restore call sites use. Their presence means
+# this is an embedding, saliency or attribution call, whose shape the shard
+# protocol cannot reproduce -- shard_worker only speaks "token block in,
+# mask+unk logits out".
+#
+# Matched on key presence, not value: saliency_loss_mask (eval.py:534) passes an
+# explicit `text_char_onehot=None`, so a value test would misread it. Listed by
+# name rather than inferred because the cost of guessing wrong is asymmetric --
+# wrongly sharding corrupts a beam prune silently, wrongly declining just runs
+# locally.
+_NON_RESTORE_KWARGS = frozenset({"text_char_emb", "padding", "output_return_emb"})
+
+
+def _vision_in_use(vision_available: Any) -> bool:
+    """Whether ``vision_available`` marks any row as actually carrying an image.
+
+    Deliberately not a ``is not None`` test. ``beam_search_batch`` defaults the
+    parameter to ``False`` rather than ``None`` and repeats it across the batch,
+    so the restore path always supplies a non-None array of falses -- which
+    means nothing is available. Only a truthy entry indicates real vision input.
+    """
+    if vision_available is None:
+        return False
+    return bool(np.any(np.asarray(vision_available)))
+
+
 def _offsets(sizes: list[int]) -> list[tuple[int, int]]:
     """Turn row counts into (start, stop) slice bounds."""
     bounds = []
@@ -93,10 +119,14 @@ def _offsets(sizes: list[int]) -> list[tuple[int, int]]:
 
 
 class DistributedForward:
-    """Wraps a local ``forward`` so each call is split across the cluster.
+    """A transparent proxy for ``forward`` that shards the restore beam batch.
 
-    The signature matches what ``beam_search_batch`` invokes, so this drops in
-    at the ``IthacaModel.forward`` seam with no change to vendored code.
+    Drops in at the ``IthacaModel.forward`` seam with no change to vendored
+    code. Calls that match the restore batch shape are split across the
+    cluster; every other shape -- embeddings, saliency gradients, attribution
+    -- is forwarded to the local model untouched and its result returned
+    verbatim, because the worker protocol cannot serve them and their return
+    arity is not even fixed. See ``__call__`` and ``_is_shardable``.
     """
 
     def __init__(
@@ -119,7 +149,21 @@ class DistributedForward:
     def _call_local(
         self, params: Any, text_char: np.ndarray
     ) -> tuple[np.ndarray, np.ndarray]:
-        """Run a slice through the in-process model.
+        """Run one restore-shaped slice through the in-process model.
+
+        Unlike ``__call__`` this is not a general proxy and does not need to
+        be: both callers (the coordinator's own slice, and the whole-batch
+        error fallback) run only after ``_is_shardable`` has established the
+        exact call shape. It also has a different return contract --
+        ``(mask, unk)`` as numpy, matching ``_call_remote`` so the two can be
+        concatenated together.
+
+        Hardcoding the vision kwargs to None is therefore safe rather than
+        arbitrary: ``_is_shardable`` has already ruled out any vision data,
+        and an all-False ``vision_available`` with no ``vision_img`` is inert
+        in the model (models/model.py only consults it inside the
+        ``vision_img is not None`` branch). The sharded-vs-local equality
+        tests pin that this stays bit-identical.
 
         ``params`` is threaded through explicitly rather than stashed on the
         instance: Flax's ``apply`` requires it positionally, and an instance
@@ -147,34 +191,79 @@ class DistributedForward:
         response.raise_for_status()
         return decode_logits(response.content)
 
-    def __call__(
-        self,
-        params: Any,
-        text_char: np.ndarray | None = None,
-        text_char_onehot: Any = None,
-        vision_img: Any = None,
-        vision_available: Any = None,
-        **kwargs: Any,
-    ) -> tuple[Any, Any, np.ndarray, Any, np.ndarray]:
-        """Compute one generation's logits, sharded when it pays to be.
+    def _is_shardable(self, args: tuple, kwargs: dict) -> bool:
+        """Whether this call has the exact shape the shard protocol serves.
 
-        Returns the same 5-tuple shape as the vendored model's ``apply``; only
-        the mask and unk logits are populated, which is all restore reads.
+        Deliberately whitelist-shaped rather than "does it look restore-ish":
+        a false positive silently corrupts a beam prune, while a false
+        negative merely costs the cluster speedup on that call.
+
+        Four conditions, each for its own reason:
+
+        1. No positional argument beyond ``params``. All six vendored call
+           sites use keywords only, so a positional caller is a shape we have
+           never seen and must not reinterpret.
+        2. No non-restore kwarg present. ``output_return_emb`` changes the
+           return arity; ``text_char_emb``/``padding`` are the saliency
+           signature, which passes no ``text_char`` at all and is
+           differentiated under ``jax.grad``.
+        3. ``text_char`` present -- it is the only thing the worker protocol
+           can encode (see shard_worker.py).
+        4. No vision input actually in use.
+
+        Condition 2 is checked before condition 4 on purpose: it guarantees
+        ``_vision_in_use`` can never be handed a JAX tracer from a saliency
+        call, where ``np.asarray`` would fail.
         """
-        # Vision inputs are broadcast per batch element upstream, so a split
-        # would need them sliced too. restore() never sends them; bail out
-        # rather than silently mis-shard if that ever changes.
-        if text_char is None or vision_img is not None or vision_available is not None:
-            return self.local_forward(
-                params,
-                text_char=text_char,
-                text_char_onehot=text_char_onehot,
-                vision_img=vision_img,
-                vision_available=vision_available,
-            )
+        if args:
+            return False
+        if not _NON_RESTORE_KWARGS.isdisjoint(kwargs):
+            return False
+        if kwargs.get("text_char") is None:
+            return False
+        if kwargs.get("vision_img") is not None:
+            return False
+        return not _vision_in_use(kwargs.get("vision_available"))
 
+    def __call__(self, params: Any, *args: Any, **kwargs: Any) -> Any:
+        """Proxy the model's ``apply``, sharding only the restore beam batch.
+
+        This is a *transparent proxy* first and an optimisation second. Every
+        argument is forwarded untouched and, on every path except the one it
+        deliberately optimises, the callee's return value is handed back
+        as-is -- same object, same arity.
+
+        That is not fastidiousness. ``forward`` is called by six vendored
+        sites with three different signatures and two different return
+        arities (util/eval.py:212, 436, 449, 534; eval/inference.py:266, 343),
+        because ``output_return_emb`` makes the model return
+        ``(outputs, torso_output)`` instead of ``outputs``
+        (models/model.py:414-416). An earlier version modelled only the
+        restore call and bound the rest as named parameters, which broke two
+        live endpoints: contextualize received a 5-tuple where it unpacks 2,
+        and attribute had its ``text_char_emb``/``padding`` replaced by the
+        restore call's kwargs until ``jnp.sum(padding, 1)`` raised.
+
+        Taking ``*args, **kwargs`` is load-bearing: named parameters bind
+        arguments out of ``kwargs`` and re-pass them explicitly, turning
+        "caller passed nothing" into "caller passed None". Here an argument
+        the caller did not supply is simply absent.
+        """
+        if not self._is_shardable(args, kwargs):
+            return self.local_forward(params, *args, **kwargs)
+
+        text_char = kwargs["text_char"]
         sizes = plan_split(text_char.shape[0], self.node_count, self.min_rows_per_node)
         if len(sizes) == 1:
+            # Expected on the '#' expansion tail as the beam prunes below
+            # min_rows_per_node per node. Logged so that a batch-too-small
+            # local pass is distinguishable from a bypass or a dead cluster.
+            logger.debug(
+                "Batch of %d below %d rows x %d nodes; computing locally",
+                text_char.shape[0],
+                self.min_rows_per_node,
+                self.node_count,
+            )
             mask_logits, unk_logits = self._call_local(params, text_char)
             return None, None, mask_logits, None, unk_logits
 
@@ -209,6 +298,21 @@ class DistributedForward:
             mask_logits, unk_logits = self._call_local(params, text_char)
             return None, None, mask_logits, None, unk_logits
 
+        # Success is logged too, not just failure: without this a local pass and
+        # a sharded one are indistinguishable in the coordinator's logs, which is
+        # what let the vision-guard bypass go unnoticed. DEBUG because it fires
+        # once per generation.
+        logger.debug(
+            "Sharded batch of %d across %d nodes as %s",
+            text_char.shape[0],
+            self.node_count,
+            sizes,
+        )
+
+        # Synthesising a 5-tuple is licensed here, and only here, by
+        # `_is_shardable`: it guarantees `output_return_emb` was absent, so a
+        # 5-tuple is exactly what the model would have returned. Only the mask
+        # and unk logits are populated, which is all the restore path reads.
         mask_logits = np.concatenate([r[0] for r in results], axis=0)
         unk_logits = np.concatenate([r[1] for r in results], axis=0)
         return None, None, mask_logits, None, unk_logits
