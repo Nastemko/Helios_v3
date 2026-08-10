@@ -178,8 +178,12 @@ class IthacaModel:
                     timeout=settings.ithaca_shard.TIMEOUT,
                     min_rows_per_node=settings.ithaca_shard.MIN_ROWS_PER_NODE,
                 )
+                # "configured", not "sharded": this runs at startup and can only
+                # report that URLs were supplied. Whether any given generation
+                # actually fans out is decided per call (batch size, vision
+                # inputs, shard health) and is logged there, at DEBUG.
                 logger.info(
-                    f"{self.language.upper()} forward sharded across "
+                    f"{self.language.upper()} forward sharding configured across "
                     f"{len(shard_urls) + 1} nodes: {shard_urls}"
                 )
 
