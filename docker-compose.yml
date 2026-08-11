@@ -53,12 +53,16 @@ services:
   # Ithaca shard worker -- forward-pass-only node for distributed restore.
   #
   # Beam search splits each generation's candidate batch across nodes; every row
-  # is independent through the model, so results are bit-exact. Measured 2.8x on
-  # three nodes (batch 12 = 3.92s vs batch 35 = 10.96s per forward).
+  # is independent through the model, so results are bit-exact.
   #
-  # This is the lever that works because vertical scaling does not: the forward
-  # pass is ~49% serial and saturates near two cores, so tripling vCPUs buys
-  # ~11%. Each shard runs a full independent pass instead.
+  # Measured on the deployed nodes: the forward pass is only mildly superlinear
+  # in row count (1.70 -> 1.89 s/row from batch 1 to 35) and peaks at ~280% of
+  # 600% CPU, so each node has idle cores. ITHACA_SHARD_LOCAL_CHUNKS recovers
+  # those in-process -- 1.80x on the 6-core coordinator, against 16-29% for this
+  # whole cross-machine split. Tune chunking first; the two compose.
+  #
+  # Note the deployed CPU limit comes from the orchestrator, not this file: the
+  # live worker runs capped at 3 CPUs despite the `cpus: "5"` below.
   #
   # Opt-in via profile -- `docker compose --profile cluster up -d`. Point the
   # backend at the workers with ITHACA_SHARD_URLS in .env, e.g.

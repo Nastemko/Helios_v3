@@ -11,9 +11,11 @@ back in order. Verified bit-exact:
 That matters because the returned logits feed a length-normalised prune; any
 drift would silently change which candidates survive.
 
-Why this rather than more cores: the forward pass is ~49% serial and saturates
-around two cores, so tripling vCPUs buys ~11%. Each shard runs a *complete*
-forward pass on its own slice, so the serial section runs in parallel too.
+Why shard at all, given each node also chunks its slice internally (see
+chunked_forward.py): the two are complementary. Chunking fills one machine's
+idle cores -- measured 1.80x -- while sharding adds machines. Neither subsumes
+the other, and chunking is the larger lever of the two: a 2-node cluster
+measured 16-29% end to end.
 
 The wrapper degrades rather than fails -- any shard error or timeout falls back
 to computing the whole batch locally.
@@ -31,9 +33,10 @@ from services.ithaca_service.chunked_forward import chunked_forward
 
 logger = logging.getLogger(__name__)
 
-# Row counts below this per node are cheaper to run locally than to ship: per-row
-# cost is flat down to batch 4 and collapses below it, and a round trip is pure
-# overhead on top. Callers override via settings.ithaca_shard.MIN_ROWS_PER_NODE.
+# Row counts below this per node are cheaper to run locally than to ship: a
+# round trip is pure overhead that a small slice cannot repay. Callers override
+# via settings.ithaca_shard.MIN_ROWS_PER_NODE. Pending a re-measure -- see the
+# note on that setting in config.py.
 DEFAULT_MIN_ROWS_PER_NODE = 4
 
 
