@@ -4,7 +4,7 @@ from unittest.mock import patch
 
 # To run this test, it's expected that the `src` directory is in the Python path.
 # For example, by running `pytest` from the `backend` directory, or by setting PYTHONPATH.
-from .config import IthacaShardSettings, Settings
+from .config import IthacaServiceSettings, Settings
 
 
 class TestConfig(unittest.TestCase):
@@ -183,21 +183,26 @@ class TestValidateProduction(unittest.TestCase):
         self.assertIn("GOOGLE_CLIENT_SECRET", message)
 
 
-class TestIthacaShardChunking(unittest.TestCase):
-    """Per-machine chunking configuration."""
+class TestIthacaServiceSettings(unittest.TestCase):
+    """Connection settings for the out-of-process inference service."""
 
-    def test_local_chunks_defaults_to_autodetect(self):
-        """0 means 'work it out from this machine', not 'disabled'."""
-        self.assertEqual(IthacaShardSettings().LOCAL_CHUNKS, 0)
+    def test_timeout_exceeds_service_time_budget(self):
+        """A slow-but-working restore must be waited out, not abandoned.
 
-    def test_min_rows_per_chunk_default(self):
-        self.assertEqual(IthacaShardSettings().MIN_ROWS_PER_CHUNK, 4)
+        The inference service caps a restoration at 180s of its own accord. A
+        client timeout below that would cut off restorations the service was
+        about to return, turning a slow success into a spurious "unavailable".
+        """
+        self.assertGreater(IthacaServiceSettings().TIMEOUT, 180.0)
 
-    @patch.dict(os.environ, {"ITHACA_SHARD_LOCAL_CHUNKS": "5"})
-    def test_local_chunks_env_override(self):
-        """Nodes differ in shape, so an explicit value must always win."""
-        self.assertEqual(IthacaShardSettings().LOCAL_CHUNKS, 5)
+    def test_audience_defaults_to_empty(self):
+        """Empty means 'use URL', which is what Cloud Run expects."""
+        self.assertEqual(IthacaServiceSettings().AUDIENCE, "")
 
-    @patch.dict(os.environ, {"ITHACA_SHARD_MIN_ROWS_PER_CHUNK": "8"})
-    def test_min_rows_per_chunk_env_override(self):
-        self.assertEqual(IthacaShardSettings().MIN_ROWS_PER_CHUNK, 8)
+    @patch.dict(os.environ, {"ITHACA_SERVICE_URL": "https://ithaca-abc.run.app"})
+    def test_url_env_override(self):
+        self.assertEqual(IthacaServiceSettings().URL, "https://ithaca-abc.run.app")
+
+    @patch.dict(os.environ, {"ITHACA_SERVICE_TIMEOUT": "300"})
+    def test_timeout_env_override(self):
+        self.assertEqual(IthacaServiceSettings().TIMEOUT, 300.0)

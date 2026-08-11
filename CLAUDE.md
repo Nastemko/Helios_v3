@@ -35,6 +35,22 @@ PYTHONPATH=./src uv run python src/scripts/populate_database.py --limit 100
 absolute imports without the env var. Without that setting tests fail at collection
 with `ModuleNotFoundError: No module named 'config'`; don't remove it.
 
+### Ithaca inference service (`ithaca-service/`, Python 3.13 + uv)
+
+Its own project — separate lockfile, separate venv. `src/` is the Python root
+here too.
+
+```bash
+cd ithaca-service
+uv sync
+PYTHONPATH=./src uv run uvicorn app:app --host 0.0.0.0 --port 8001
+pytest                                            # 41 tests, no model files needed
+uv run black --extend-exclude '/vendor/' src/     # never reformat vendor/
+```
+
+Running it needs the six model files under `INSCRIPTIONS_DIR`; without them it
+starts and reports both languages unavailable rather than failing.
+
 ### Frontend (`frontend/`)
 
 ```bash
@@ -57,7 +73,7 @@ findings as regressions rather than expecting a zero exit.
 docker compose up -d     # `docker` is rootless podman on this machine
 ```
 
-Ports: frontend 8888, backend 8000, postgres (internal), ollama 11434, perseus-db 3307, adminer 8080.
+Ports: frontend 8888, backend 8000, ithaca 8001, postgres (internal), ollama 11434, perseus-db 3307, adminer 8080.
 
 ## Architecture
 
@@ -73,14 +89,13 @@ Three data sources feed one FastAPI backend:
 - `config.py` — `settings` is a plain `Settings` object composing five `BaseSettings` groups: `settings.misc`, `.auth`, `.llm`, `.database`, `.assets`. Each has its own env prefix (`LLM_`, `DATABASE_`; `auth`/`misc`/`assets` are unprefixed). Always read config through `settings.<group>.<KEY>`.
 - `database.py` — engine + `SessionLocal` + `get_db()` FastAPI dependency. Connection string is assembled from `settings.database` parts, not a single `DATABASE_URL`.
 - `routers/` — `texts`, `auth`, `annotations`, `analysis`, `inscriptions`, `translate_assist`. All prefixed `/api/...`.
-- `services/` — `morphology` (CLTK), `llm` (Ollama provider behind an ABC), `translate_assist`, `ithaca_service/` (JAX/Flax model wrapper).
-- `vendor/predictingthepast/` — vendored DeepMind model code; `ithaca_service` imports from it. Don't "fix" vendored files. Note `uv run black .` reformats them too (no exclude is configured), so check `git status` before committing.
+- `services/` — `morphology` (CLTK), `llm` (Ollama provider behind an ABC), `translate_assist`, `ithaca_client` (HTTP client for the inference service, see below).
 - `parsers/` — `cts_metadata_parser` (reads `__cts__.xml` for work/version metadata) and `perseus_xml_parser` (extracts segments).
 - `scripts/` — populators; each is both a CLI (`if __name__ == "__main__"`) and an importable `*_on_startup()` coroutine called from `main.py`.
 
 ### Startup sequence (`main.py`)
 
-`Base.metadata.create_all()` → Perseus text population → LLM population of lxml failures (only if `OPENROUTER_API_KEY` set) → PHI inscriptions → CLTK morphology → Ithaca/Aeneas models.
+`Base.metadata.create_all()` → Perseus text population → LLM population of lxml failures (only if `OPENROUTER_API_KEY` set) → PHI inscriptions → CLTK morphology.
 
 Every step after table creation is wrapped in try/except and logs-and-continues — a missing model file or empty data dir degrades features but must not block boot. Preserve that when adding startup work.
 
@@ -98,9 +113,41 @@ Three-level hierarchy, deliberately separating a work from its language versions
 
 Populators are resumable and idempotent: they prefetch existing `local_id`s and use `insert(...).on_conflict_do_nothing()`. Keep that property in any new loader.
 
-### Ithaca / Aeneas models
+### Ithaca / Aeneas models — a separate service
 
-`ithaca_service` loads two separate JAX checkpoints — Greek (Ithaca, `iphi.json` + `ithaca_*.pkl`) and Latin (Aeneas, `led.json` + `aeneas_*.pkl`) — from `settings.assets.INSCRIPTIONS_DIR`. The backend Dockerfile downloads all six files at build time; local runs need them fetched manually or the service reports unavailable and the endpoints degrade.
+**Inference does not run in the backend.** It lives in `ithaca-service/`, its own
+deployable with its own `pyproject.toml`, lockfile and Dockerfile. The backend
+carries no JAX at all and reaches it over HTTP via
+`backend/src/services/ithaca_client.py`. In production it is a GPU-backed Cloud
+Run service that scales to zero; in compose it is a CPU container on `:8001`.
+
+- `ithaca-service/src/ithaca_service/` — the model wrapper (JAX/Flax).
+- `ithaca-service/src/vendor/predictingthepast/` — vendored DeepMind code, imported
+  as `vendor.predictingthepast.*` because `src/` is the Python root. Don't "fix"
+  vendored files. `uv run black .` reformats them (no exclude configured), so run
+  `uv run black --exclude '(/vendor/|/\.venv/)' src/` and check `git status`.
+- `ithaca-service/src/app.py` — `POST /restore`, `/attribute`, `/contextualize`,
+  `GET /health`. One round trip per user action; beam search stays server-side.
+
+It loads two JAX checkpoints — Greek (Ithaca, `iphi.json` + `ithaca_*.pkl`) and
+Latin (Aeneas, `led.json` + `aeneas_*.pkl`) — from `INSCRIPTIONS_DIR`. Six files,
+~2GB, listed in `ithaca-service/Dockerfile`. The CPU image expects them mounted;
+the GPU image will bake them in. Without them the service reports unavailable.
+
+**An unreachable service is a degraded feature, not an error.** The client turns
+every timeout, refusal and 5xx into `available=False` plus a message — the same
+body shape the routers returned when a checkpoint was missing, so the frontend
+needs no special case. Preserve that when touching `ithaca_client.py`.
+
+`ITHACA_DEBUG=True` on the service skips ID-token verification (that is how
+compose runs it). With it off, `ITHACA_AUDIENCE` is mandatory and the service
+refuses to start without it.
+
+**Historical note:** a CPU sharding layer (`distributed_forward.py`,
+`chunked_forward.py`, `cpu_detect.py`, `shard_worker.py`) existed to split beam
+search across machines, because the CPU forward pass is ~49% serial and
+saturates at ~2 cores. It was removed with this extraction — one accelerator
+runs the whole beam in a single pass. Don't reintroduce it without re-measuring.
 
 ### Auth
 

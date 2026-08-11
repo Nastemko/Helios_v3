@@ -19,9 +19,7 @@ from typing import Any, Dict, Literal, Optional
 import jax
 
 from config import settings
-from services.ithaca_service.chunked_forward import resolve_chunk_count
-from services.ithaca_service.distributed_forward import DistributedForward
-from services.ithaca_service.models import (
+from ithaca_service.models import (
     AttributionResult,
     ContextualizationResult,
     LocationPrediction,
@@ -161,40 +159,19 @@ class IthacaModel:
                 checkpoint = pickle.load(f)
 
             # Extract model components
+            # `jax.device_put` with no explicit device targets the default
+            # backend, so this is GPU when a CUDA jaxlib is installed and CPU
+            # otherwise -- the same line works for both images.
             self.params = jax.device_put(checkpoint["params"])
             model = Model(**checkpoint["model_config"])
+
+            # Plain `model.apply`. This used to be wrapped in DistributedForward
+            # to fan the batch out across a CPU cluster, which existed because
+            # the CPU forward pass is ~49% serial and saturates at ~2 cores. A
+            # single accelerator runs the whole beam in one pass, so the shard
+            # coordinator, the per-node chunking and the cgroup CPU detection
+            # all became dead weight and were removed with this extraction.
             self.forward = model.apply
-
-            # Parallelise each forward pass. This is the single seam for it:
-            # the vendored beam search calls whatever `forward` it is handed,
-            # so nothing under vendor/ has to change. Falls back to a plain
-            # local pass per call if a shard is unreachable.
-            shard_urls = settings.ithaca_shard.URLS
-            local_chunks = resolve_chunk_count(settings.ithaca_shard.LOCAL_CHUNKS)
-
-            # Installed for either reason: to fan out across the cluster, or
-            # just to chunk this node's own batch across threads. Chunking
-            # alone measured 1.80x on the coordinator, so it must not be gated
-            # behind having a cluster configured.
-            if shard_urls or local_chunks > 1:
-                self.forward = DistributedForward(
-                    local_forward=model.apply,
-                    shard_urls=shard_urls,
-                    language=self.language,
-                    timeout=settings.ithaca_shard.TIMEOUT,
-                    min_rows_per_node=settings.ithaca_shard.MIN_ROWS_PER_NODE,
-                    local_chunks=local_chunks,
-                    min_rows_per_chunk=settings.ithaca_shard.MIN_ROWS_PER_CHUNK,
-                )
-                # "configured", not "sharded"/"chunked": this runs at startup
-                # and can only report what was requested. Whether any given
-                # generation actually splits is decided per call (batch size,
-                # vision inputs, shard health) and is logged there, at DEBUG.
-                logger.info(
-                    f"{self.language.upper()} forward configured with "
-                    f"{local_chunks} local chunk(s) across "
-                    f"{len(shard_urls) + 1} node(s): {shard_urls}"
-                )
 
             self.region_map = checkpoint["region_map"]
             self.vocab_char_size = checkpoint["model_config"]["vocab_char_size"]

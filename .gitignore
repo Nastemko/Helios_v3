@@ -1,9 +1,10 @@
 # Python / Backend
-backend/venv/
-backend/env/
-backend/.venv/
-backend/__pycache__/
-backend/**/__pycache__/
+# Not scoped to backend/ any more: ithaca-service/ is a second Python project
+# with its own venv, and uv only writes a self-ignoring .gitignore inside it.
+**/venv/
+**/env/
+**/.venv/
+**/__pycache__/
 *.py[cod]
 *$py.class
 *.so

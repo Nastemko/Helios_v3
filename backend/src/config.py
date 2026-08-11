@@ -32,63 +32,39 @@ class LLMSettings(BaseSettings):
     )
 
 
-class IthacaShardSettings(BaseSettings):
-    """Distributed Ithaca inference settings.
+class IthacaServiceSettings(BaseSettings):
+    """Where to reach the Ithaca inference service.
 
-    Beam search runs one forward pass per generation over a batch of
-    ``beam_width`` candidate rows, and every row is independent through the
-    model. Splitting that batch across machines is bit-exact, so it buys
-    latency without changing predictions.
+    Inference no longer runs in this process. It lives in its own deployable
+    (``ithaca-service/``) so that JAX, the Flax model code and ~2GB of
+    checkpoints stay off the API image, and so the model can sit on an
+    accelerator that scales to zero while the API does not.
 
-    Adding cores to one box does not help: the forward pass is ~49% serial and
-    saturates at ~2 cores (measured 1->19.93s, 2->13.17s, 4->12.94s at beam 35).
-    Sharding sidesteps that serial section because each node runs a full,
-    independent forward pass.
-
-    Empty URLS (the default) disables sharding entirely and restores the
-    single-process path exactly.
+    An unreachable service is a degraded feature, not an error: the client
+    returns ``available=False`` and the inscription endpoints report the model
+    as unavailable, exactly as they did when a checkpoint file was missing.
     """
 
-    # The *remote* workers only. The coordinator always takes a slice itself,
-    # so two URLs here means a three-node cluster.
-    URLS: list[str] = []
+    URL: str = "http://ithaca:8001"
 
-    # Per-generation deadline. Must stay well under the service's overall
-    # time budget so a hung shard falls back locally instead of consuming the
-    # whole restoration budget.
-    TIMEOUT: float = 60.0
+    # Sized for a cold start, not a warm call. The service scales to zero, so
+    # a first request pays instance start plus a multi-second checkpoint load
+    # before inference begins. It must also exceed the service's own
+    # restoration time budget (180s) so a slow-but-working restore is waited
+    # out rather than abandoned, and stay under the platform request timeout.
+    TIMEOUT: float = 240.0
 
-    # Skip the fan-out unless every node gets at least this many rows. A
-    # remote slice has to repay its round trip, and the beam's head and tail
-    # are small -- generation 1 is a single row, and the beam shrinks again as
-    # candidates complete. The '#' expansion tail is what trips this.
-    #
-    # Still 4 pending a re-measure: a trial at 2 improved '5 ?' but regressed
-    # '#' past its single-node baseline, and local chunking below changes what
-    # a local pass costs, which moves the crossover again.
-    MIN_ROWS_PER_NODE: int = 4
-
-    # Threads to split this node's own batch across. 0 autodetects from the
-    # cgroup CPU quota, which is the only source that is correct inside a
-    # capped container -- the deployed worker is limited to 3 CPUs on a
-    # 4-core box, where os.cpu_count() reports 4.
-    #
-    # Set explicitly to tune a specific machine. The measured optimum does
-    # not track core count identically across nodes (the 6-core coordinator
-    # peaked at 5 chunks for 1.80x; the 3-CPU worker still improved at 5),
-    # so autodetection is a sane default rather than an optimum.
-    LOCAL_CHUNKS: int = 0
-
-    # Don't chunk unless every thread gets at least this many rows. Same
-    # reasoning as MIN_ROWS_PER_NODE above: the beam's head and tail are
-    # small, and thread overhead is not repaid on tiny slices.
-    MIN_ROWS_PER_CHUNK: int = 4
+    # Expected `aud` claim on the ID token sent to the service. Empty means
+    # "use URL", which is what Cloud Run wants unless a custom audience is
+    # configured. Must never carry a path component -- an audience with a path
+    # is the usual cause of a 401 that reads like a credentials failure.
+    AUDIENCE: str = ""
 
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",
         case_sensitive=True,
-        env_prefix="ITHACA_SHARD_",
+        env_prefix="ITHACA_SERVICE_",
     )
 
 
@@ -175,7 +151,7 @@ class Settings:
         self.llm = LLMSettings()
         self.database = DatabaseSettings()
         self.assets = AssetSettings()
-        self.ithaca_shard = IthacaShardSettings()
+        self.ithaca_service = IthacaServiceSettings()
 
     def validate_production(self) -> None:
         """

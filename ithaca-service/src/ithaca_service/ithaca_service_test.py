@@ -19,9 +19,7 @@ class TestInitializeModelIdempotency(unittest.TestCase):
         existing = _StubModel(available=True)
         service._models["greek"] = existing
 
-        with patch(
-            "src.services.ithaca_service.ithaca_service.IthacaModel"
-        ) as mock_model_cls:
+        with patch("src.ithaca_service.ithaca_service.IthacaModel") as mock_model_cls:
             result = service.initialize_model("greek")
 
         self.assertTrue(result)
@@ -36,9 +34,9 @@ class TestInitializeModelIdempotency(unittest.TestCase):
         fresh.initialize.return_value = True
 
         with patch(
-            "src.services.ithaca_service.ithaca_service.IthacaModel", return_value=fresh
+            "src.ithaca_service.ithaca_service.IthacaModel", return_value=fresh
         ) as mock_model_cls, patch(
-            "src.services.ithaca_service.ithaca_service.Path.exists", return_value=True
+            "src.ithaca_service.ithaca_service.Path.exists", return_value=True
         ):
             result = service.initialize_model("greek")
 
@@ -53,9 +51,9 @@ class TestInitializeModelIdempotency(unittest.TestCase):
         fresh.initialize.return_value = True
 
         with patch(
-            "src.services.ithaca_service.ithaca_service.IthacaModel", return_value=fresh
+            "src.ithaca_service.ithaca_service.IthacaModel", return_value=fresh
         ) as mock_model_cls, patch(
-            "src.services.ithaca_service.ithaca_service.Path.exists", return_value=True
+            "src.ithaca_service.ithaca_service.Path.exists", return_value=True
         ):
             result = service.initialize_model("latin")
 
@@ -82,7 +80,7 @@ class TestInferenceFailuresAreReported(unittest.TestCase):
 
     def test_restore_reports_the_reason_it_declined(self):
         with patch(
-            "src.services.ithaca_service.ithaca_service.inference.restore",
+            "src.ithaca_service.ithaca_service.inference.restore",
             side_effect=ValueError("Input text too short."),
         ):
             result = self.service.restore("εδοξεν ?", language="greek")
@@ -92,7 +90,7 @@ class TestInferenceFailuresAreReported(unittest.TestCase):
 
     def test_attribute_reports_the_reason_it_declined(self):
         with patch(
-            "src.services.ithaca_service.ithaca_service.inference.attribute",
+            "src.ithaca_service.ithaca_service.inference.attribute",
             side_effect=ValueError("Input text too short."),
         ):
             result = self.service.attribute("εδοξεν", language="greek")
@@ -102,7 +100,7 @@ class TestInferenceFailuresAreReported(unittest.TestCase):
 
     def test_contextualize_reports_the_reason_it_declined(self):
         with patch(
-            "src.services.ithaca_service.ithaca_service.inference.contextualize",
+            "src.ithaca_service.ithaca_service.inference.contextualize",
             side_effect=ValueError("Input text too short."),
         ):
             result = self.service.contextualize("εδοξεν", language="greek")
@@ -116,7 +114,7 @@ class TestInferenceFailuresAreReported(unittest.TestCase):
         Latin has no 'j'; neither alphabet has ',' or ';'.
         """
         with patch(
-            "src.services.ithaca_service.ithaca_service.inference.restore",
+            "src.ithaca_service.ithaca_service.inference.restore",
             side_effect=KeyError("j"),
         ):
             result = self.service.restore("imp caesar j?", language="greek")
@@ -140,7 +138,7 @@ class TestInferenceFailuresAreReported(unittest.TestCase):
         inference_result.prediction_saliency = []
 
         with patch(
-            "src.services.ithaca_service.ithaca_service.inference.restore",
+            "src.ithaca_service.ithaca_service.inference.restore",
             return_value=inference_result,
         ):
             result = self.service.restore("εδοξ?ν", language="greek")

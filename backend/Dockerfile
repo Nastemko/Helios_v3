@@ -33,38 +33,13 @@ RUN apt-get update && \
     && curl -LsSf https://astral.sh/uv/install.sh | sh \
     && mv /root/.local/bin/uv /usr/local/bin/uv
 
-RUN curl -fSL -o /app/assets/inscriptions/models/ithaca_153143996_2.pkl \
-    https://storage.googleapis.com/ithaca-resources/models/ithaca_153143996_2.pkl && \
-    curl -fSL -o /app/assets/inscriptions/iphi.json \
-    https://storage.googleapis.com/ithaca-resources/models/iphi.json && \
-    curl -fSL -o /app/assets/inscriptions/models/iphi_emb_xid153143996.pkl \
-    https://storage.googleapis.com/ithaca-resources/models/iphi_emb_xid153143996.pkl && \
-    curl -fSL -o /app/assets/inscriptions/models/aeneas_117149994_2.pkl \
-    https://storage.googleapis.com/ithaca-resources/models/aeneas_117149994_2.pkl && \
-    curl -fSL -o /app/assets/inscriptions/led.json \
-    https://storage.googleapis.com/ithaca-resources/models/led.json && \
-    curl -fSL -o /app/assets/inscriptions/models/led_emb_xid117149994.pkl \
-    https://storage.googleapis.com/ithaca-resources/models/led_emb_xid117149994.pkl && \
-    chown -R helios:helios /app/assets/inscriptions
-
-# Thread-pool sizing for CPU inference. JAX/XLA and OpenBLAS each default to
-# sizing a pool to the host core count and then oversubscribe each other, which
-# costs more than it gains. Keep these in sync with the CPU limit set on the
-# backend service in docker-compose.yml.
-# Declared after the model download layer so changing them does not invalidate
-# that ~2GB cached layer.
+# The Ithaca/Aeneas checkpoints (~2GB) and the JAX/OpenBLAS thread-pool tuning
+# that used to live here are gone: inference moved to ithaca-service/, which
+# owns the model files and its own accelerator-specific configuration. This
+# image no longer imports JAX at all.
 #
-# The deploy host has 6 processors. One is left to postgres/ollama/nginx rather
-# than pinning all six here, since a saturated inference pool would otherwise
-# contend with the database serving the same request.
-ENV OMP_NUM_THREADS=5 \
-    OPENBLAS_NUM_THREADS=5 \
-    MKL_NUM_THREADS=5 \
-    XLA_FLAGS="--xla_cpu_multi_thread_eigen=true"
-
-# Persistent XLA compilation cache, so a container restart does not re-pay
-# compilation of the Ithaca forward pass.
-RUN mkdir -p /app/.cache/jax && chown -R helios:helios /app/.cache
+# `iphi.json` is still read at startup by the PHI inscription populator, but it
+# is supplied through INSCRIPTIONS_DIR (a volume in compose), not baked in.
 
 # Set the working directory for subsequent commands
 WORKDIR /app
