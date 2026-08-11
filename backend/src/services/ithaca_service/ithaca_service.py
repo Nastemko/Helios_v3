@@ -19,6 +19,7 @@ from typing import Any, Dict, Literal, Optional
 import jax
 
 from config import settings
+from services.ithaca_service.chunked_forward import resolve_chunk_count
 from services.ithaca_service.distributed_forward import DistributedForward
 from services.ithaca_service.models import (
     AttributionResult,
@@ -164,27 +165,35 @@ class IthacaModel:
             model = Model(**checkpoint["model_config"])
             self.forward = model.apply
 
-            # Fan each forward pass out across the cluster when one is
-            # configured. This is the single seam for distribution: the
-            # vendored beam search calls whatever `forward` it is handed, so
-            # nothing under vendor/ has to change. Falls back to the local pass
-            # per call if a shard is unreachable.
+            # Parallelise each forward pass. This is the single seam for it:
+            # the vendored beam search calls whatever `forward` it is handed,
+            # so nothing under vendor/ has to change. Falls back to a plain
+            # local pass per call if a shard is unreachable.
             shard_urls = settings.ithaca_shard.URLS
-            if shard_urls:
+            local_chunks = resolve_chunk_count(settings.ithaca_shard.LOCAL_CHUNKS)
+
+            # Installed for either reason: to fan out across the cluster, or
+            # just to chunk this node's own batch across threads. Chunking
+            # alone measured 1.80x on the coordinator, so it must not be gated
+            # behind having a cluster configured.
+            if shard_urls or local_chunks > 1:
                 self.forward = DistributedForward(
                     local_forward=model.apply,
                     shard_urls=shard_urls,
                     language=self.language,
                     timeout=settings.ithaca_shard.TIMEOUT,
                     min_rows_per_node=settings.ithaca_shard.MIN_ROWS_PER_NODE,
+                    local_chunks=local_chunks,
+                    min_rows_per_chunk=settings.ithaca_shard.MIN_ROWS_PER_CHUNK,
                 )
-                # "configured", not "sharded": this runs at startup and can only
-                # report that URLs were supplied. Whether any given generation
-                # actually fans out is decided per call (batch size, vision
-                # inputs, shard health) and is logged there, at DEBUG.
+                # "configured", not "sharded"/"chunked": this runs at startup
+                # and can only report what was requested. Whether any given
+                # generation actually splits is decided per call (batch size,
+                # vision inputs, shard health) and is logged there, at DEBUG.
                 logger.info(
-                    f"{self.language.upper()} forward sharding configured across "
-                    f"{len(shard_urls) + 1} nodes: {shard_urls}"
+                    f"{self.language.upper()} forward configured with "
+                    f"{local_chunks} local chunk(s) across "
+                    f"{len(shard_urls) + 1} node(s): {shard_urls}"
                 )
 
             self.region_map = checkpoint["region_map"]

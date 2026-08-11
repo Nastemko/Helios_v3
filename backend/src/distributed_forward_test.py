@@ -597,3 +597,30 @@ class TestLocalChunking:
         dist(FAKE_PARAMS, text_char=x)
 
         assert [call["text_char"].shape[0] for call in forward.received] == [35]
+
+
+class TestChunkingWithoutCluster:
+    """Chunking is worth having with no remote workers configured.
+
+    The 1.80x was measured on a single node; gating it behind having a
+    cluster would leave the largest available win switched off in the
+    common case.
+    """
+
+    def test_no_shard_urls_still_chunks(self):
+        forward = _make_forward()
+        dist = DistributedForward(
+            local_forward=forward,
+            shard_urls=[],
+            language="greek",
+            local_chunks=4,
+            min_rows_per_chunk=4,
+        )
+        x = np.random.randint(1, VOCAB, size=(35, 199), dtype=np.int32)
+
+        _, _, want_mask, _, _ = forward(FAKE_PARAMS, text_char=x)
+        forward.received.clear()
+        _, _, got_mask, _, _ = dist(FAKE_PARAMS, text_char=x)
+
+        assert np.array_equal(got_mask, want_mask)
+        assert sorted(c["text_char"].shape[0] for c in forward.received) == [8, 9, 9, 9]
