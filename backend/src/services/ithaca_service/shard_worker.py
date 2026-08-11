@@ -21,6 +21,8 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, HTTPException, Request, Response
 from starlette.concurrency import run_in_threadpool
 
+from config import settings
+from services.ithaca_service.chunked_forward import chunked_forward, resolve_chunk_count
 from services.ithaca_service.distributed_forward import decode_batch, encode_logits
 from services.ithaca_service.ithaca_service import (
     Language,
@@ -29,6 +31,12 @@ from services.ithaca_service.ithaca_service import (
 )
 
 logger = logging.getLogger(__name__)
+
+# Resolved once at import: autodetection reads the cgroup CPU quota, which
+# does not change while the process is alive. Without this the worker would
+# run its whole slice in one call and leave most of its own cores idle --
+# the cluster would only parallelise on the coordinator.
+CHUNK_COUNT = resolve_chunk_count(settings.ithaca_shard.LOCAL_CHUNKS)
 
 
 @asynccontextmanager
@@ -47,10 +55,16 @@ app = FastAPI(
 
 @app.get("/health")
 def health() -> dict[str, object]:
-    """Report which languages this worker can serve."""
+    """Report which languages this worker can serve, and how it is tuned.
+
+    ``chunks`` is reported because it is autodetected per machine: it is the
+    only way to confirm what a given node resolved to without shelling into
+    the container.
+    """
     service = get_ithaca_service()
     return {
         "status": "ok",
+        "chunks": CHUNK_COUNT,
         "languages": {
             language: service.is_available(language) for language in ("greek", "latin")
         },
@@ -72,12 +86,21 @@ def _run_forward(body: bytes, language: Language) -> bytes:
             status_code=422, detail=f"Could not decode batch: {exc}"
         ) from exc
 
-    _, _, mask_logits, _, unk_logits = model.forward(
-        model.params,
-        text_char=text_char,
-        text_char_onehot=None,
-        vision_img=None,
-        vision_available=None,
+    def run(rows) -> tuple:
+        _, _, mask_logits, _, unk_logits = model.forward(
+            model.params,
+            text_char=rows,
+            text_char_onehot=None,
+            vision_img=None,
+            vision_available=None,
+        )
+        return mask_logits, unk_logits
+
+    mask_logits, unk_logits = chunked_forward(
+        run,
+        text_char,
+        chunk_count=CHUNK_COUNT,
+        min_rows_per_chunk=settings.ithaca_shard.MIN_ROWS_PER_CHUNK,
     )
     return encode_logits(mask_logits, unk_logits)
 
