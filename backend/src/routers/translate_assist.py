@@ -8,6 +8,8 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field
 
 from config import settings
+from middleware.auth import get_current_user
+from models.user import User
 from services.translate_assist import (
     TranslateAssistError,
     TranslateAssistService,
@@ -45,6 +47,7 @@ class TranslateRequest(BaseModel):
 async def translate_text(
     payload: TranslateRequest,
     service: TranslateAssistService = Depends(get_translate_assist_service),
+    current_user: User = Depends(get_current_user),
 ):
     """
     Translate a passage of Ancient Greek text.

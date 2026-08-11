@@ -32,6 +32,9 @@ backend/models/
 # Allow keeping the models directory structure
 !backend/models/.gitkeep
 
+# Perseus MariaDB dumps (~839MB of upstream tarballs - fetch with perseus/download.sh)
+perseus/dumps/
+
 # CLTK data (downloaded models)
 **/.cltk_data/
 **/cltk_data/
@@ -126,7 +129,20 @@ temp/
 *.backup
 *~
 
+# Generated security audit output — names the location of live credentials,
+# so it must not be committed. Kept locally, untracked.
+security_best_practices_report.md
+
 # Don't ignore these important files
 !.gitkeep
 !.env.example
 !README.md
+
+# superpowers
+docs/superpowers/
+
+# playwright
+.playwright/
+.playwright-cli/
+
+bench/

@@ -259,7 +259,7 @@ def _generate_text_emb(params, forward, alphabet, input_text, emb_mode="avg"):
     """Computes model embeddings for retrieval."""
 
     # Text preparation and inference
-    (_, _, _, text_char, text_len, _, _) = _prepare_text(input_text, alphabet)
+    _, _, _, text_char, text_len, _, _ = _prepare_text(input_text, alphabet)
 
     # Generate embeddings
     rng = jax.random.PRNGKey(SEED)
@@ -328,7 +328,7 @@ def attribute(
 ) -> AttributionResults:
     """Computes predicted date and geographical region."""
 
-    (text, _, _, text_char, text_len, padding, _) = _prepare_text(text, alphabet)
+    text, _, _, text_char, text_len, padding, _ = _prepare_text(text, alphabet)
 
     if vision_img is not None:
         vision_img = process_img(vision_img, output_size=vision_output_size)
@@ -392,6 +392,8 @@ def restore(
     temperature=RESTORATION_TEMPERATURE,
     unk_restoration_max_len=UNK_RESTORATION_MAX_LEN,
     a_penalty=A_PENALTY,
+    top_chars=None,
+    time_budget=None,
 ) -> RestorationResults:
     """Performs search to compute text restoration. Slower, runs synchronously."""
 
@@ -402,7 +404,7 @@ def restore(
         raise ValueError("At least one character must be missing.")
 
     count_unk = text.count(ALPHABET_MISSING_UNK_RESTORE)
-    (text, _, text_padded, _, text_len, _, restore_mask_idx) = _prepare_text(
+    text, _, text_padded, _, text_len, _, restore_mask_idx = _prepare_text(
         text, alphabet
     )
 
@@ -429,6 +431,20 @@ def restore(
     else:
         max_len = text_len[0]
 
+    # Bound the search. beam_search_batch loops `while beam:` and upstream
+    # leaves max_iterations=None, so a pathological input can run unbounded --
+    # this is how a single request occupied a worker for 947s in production.
+    #
+    # With sequential_decoding=False every '?' in an entry is filled in the same
+    # iteration, so a '?'-only input converges in one. Each '#' may instead
+    # expand by one character per iteration, up to unk_restoration_max_len, and
+    # closing the gap takes one more. The +2 is slack so the bound can only ever
+    # catch a runaway, never truncate a legitimate restoration.
+    if count_unk:
+        max_iterations = count_unk * (unk_restoration_max_len + 1) + 2
+    else:
+        max_iterations = len(restore_mask_idx) + 2
+
     beam_result = eval_util.beam_search_batch(
         forward,
         params,
@@ -440,7 +456,20 @@ def restore(
         temperature=temperature,
         sequential_decoding=False,
         a_penalty=a_penalty,
+        top_chars=top_chars,
+        max_iterations=max_iterations,
+        time_budget=time_budget,
     )
+
+    # A time_budget expiring before any candidate completed leaves nothing to
+    # show. Say so, rather than returning an empty prediction list that the UI
+    # would render as a successful restoration of nothing.
+    if time_budget is not None and not beam_result:
+        raise ValueError(
+            "Restoration exceeded its %.0fs time budget before finding a "
+            "candidate. Try a narrower beam_width, or a smaller "
+            "max_restoration_len if the text contains '#'." % time_budget
+        )
 
     # For visualization purposes, we strip out the SOS and padding, and adjust
     # restored_indices accordingly

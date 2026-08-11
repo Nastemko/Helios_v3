@@ -1,30 +1,16 @@
-import { useEffect, useState } from 'react';
+import { useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 
 export default function Login() {
-  const { isAuthenticated, login, devLogin, isLoading } = useAuth();
+  const { isAuthenticated, login, isLoading } = useAuth();
   const navigate = useNavigate();
-  const [devLoginError, setDevLoginError] = useState<string | null>(null);
-  const [isDevLoggingIn, setIsDevLoggingIn] = useState(false);
 
   useEffect(() => {
     if (isAuthenticated) {
       navigate('/');
     }
   }, [isAuthenticated, navigate]);
-
-  const handleDevLogin = async () => {
-    setDevLoginError(null);
-    setIsDevLoggingIn(true);
-    try {
-      await devLogin();
-    } catch (error: any) {
-      setDevLoginError(error.response?.data?.detail || 'Dev login failed');
-    } finally {
-      setIsDevLoggingIn(false);
-    }
-  };
 
   if (isLoading) {
     return (
@@ -84,32 +70,7 @@ export default function Login() {
             </svg>
             <span className="font-medium text-gray-700">Continue with Google</span>
           </button>
-          
-          {/* Dev Login - for local development */}
-          <div className="relative">
-            <div className="absolute inset-0 flex items-center">
-              <div className="w-full border-t border-helios-cream-dark"></div>
-            </div>
-            <div className="relative flex justify-center text-sm">
-              <span className="px-2 bg-white text-gray-500">or for development</span>
-            </div>
-          </div>
-          
-          <button
-            onClick={handleDevLogin}
-            disabled={isDevLoggingIn}
-            className="w-full flex items-center justify-center gap-2 bg-helios-gold hover:bg-helios-gold-light text-helios-teal-dark rounded-xl py-3 px-4 transition duration-200 disabled:opacity-50 font-medium"
-          >
-            <span className="text-lg">🔧</span>
-            <span>
-              {isDevLoggingIn ? 'Logging in...' : 'Dev Login (No OAuth)'}
-            </span>
-          </button>
-          
-          {devLoginError && (
-            <p className="text-sm text-red-500 text-center">{devLoginError}</p>
-          )}
-          
+
           <p className="text-xs text-gray-500 text-center mt-4">
             By signing in, you agree to use this educational tool responsibly
           </p>

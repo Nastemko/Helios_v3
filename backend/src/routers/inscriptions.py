@@ -1,18 +1,27 @@
 """API endpoints for browsing and querying PHI inscriptions"""
 
-from typing import Annotated, List, Literal, Optional
+import logging
+from typing import Annotated, Any, Dict, List, Literal, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Path, Query
-from pydantic import BaseModel, field_validator
-from sqlalchemy import Integer, case, cast, func, select
+from pydantic import BaseModel, Field, field_validator
+from sqlalchemy import case, func, select
 from sqlalchemy.orm import Session
 
 from database import get_db
-from models.text import Text, TextSegment, TextSource
+from middleware.auth import get_current_user
+from models.inscription import Inscription, InscriptionSegment
+from models.user import User
 from services.ithaca_service.ithaca_service import (
+    DEFAULT_BEAM_WIDTH,
+    DEFAULT_MAX_RESTORATION_LEN,
+    MAX_BEAM_WIDTH,
+    MAX_RESTORATION_LEN,
     get_ithaca_service,
     initialize_all_models,
 )
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/inscriptions", tags=["inscriptions"])
 
@@ -21,8 +30,8 @@ Language = Literal["greek", "latin"]
 
 
 # Response models
-class InscriptionResponse(BaseModel):
-    """Inscription metadata response"""
+class TextResponse(BaseModel):
+    """Text metadata response"""
 
     id: int
     phi_id: Optional[int] = None
@@ -34,14 +43,14 @@ class InscriptionResponse(BaseModel):
     date_min: Optional[int] = None
     date_max: Optional[int] = None
     date_circa: Optional[bool] = None
-    metadata_raw: Optional[str] = None
+    # JSONB column: the residual PHI fields that have no dedicated column.
+    metadata_raw: Optional[Dict[str, Any]] = None
 
-    class Config:
-        from_attributes = True
+    model_config = {"from_attributes": True}
 
 
-class InscriptionListItem(BaseModel):
-    """Inscription list item (lighter version)"""
+class TextListItem(BaseModel):
+    """Text list item (lighter version)"""
 
     id: int
     phi_id: Optional[int] = None
@@ -53,8 +62,7 @@ class InscriptionListItem(BaseModel):
     date_min: Optional[int] = None
     date_max: Optional[int] = None
 
-    class Config:
-        from_attributes = True
+    model_config = {"from_attributes": True}
 
 
 class RegionCount(BaseModel):
@@ -65,7 +73,7 @@ class RegionCount(BaseModel):
     count: int
 
 
-class InscriptionStats(BaseModel):
+class TextStats(BaseModel):
     """Statistics about the inscription corpus"""
 
     total_inscriptions: int
@@ -74,18 +82,18 @@ class InscriptionStats(BaseModel):
     date_range: dict
 
 
-def _get_full_text(db: Session, text_id: int) -> str:
+def _get_full_text(db: Session, inscription_id: int) -> str:
     """Get full inscription text by joining segments"""
     segments = db.scalars(
-        select(TextSegment)
-        .filter(TextSegment.text_id == text_id)
-        .order_by(TextSegment.sequence)
+        select(InscriptionSegment)
+        .filter(InscriptionSegment.inscription_id == inscription_id)
+        .order_by(InscriptionSegment.sequence)
     ).all()
 
     return ". ".join(str(seg.content) for seg in segments if str(seg.content))
 
 
-@router.get("/", response_model=List[InscriptionListItem])
+@router.get("/", response_model=List[TextListItem])
 async def list_inscriptions(
     search: Optional[str] = Query(None, description="Search in text content"),
     region_main: Optional[str] = Query(None, description="Filter by main region"),
@@ -102,43 +110,45 @@ async def list_inscriptions(
     Date format: negative values are BC (e.g., -350 = 350 BC), positive are AD.
     """
     # Base query - only inscriptions
-    query = select(Text).filter(Text.source == TextSource.PHI)
+    query = select(Inscription)
 
-    # Search in text content
+    # Search in inscription content
     if search:
-        # Get texts that have matching segments
+        # Get inscriptions that have matching segments
         search_pattern = f"%{search}%"
-        matching_text_ids = db.scalars(
-            select(TextSegment.text_id)
-            .filter(TextSegment.content.ilike(search_pattern))
+        matching_inscription_ids = db.scalars(
+            select(InscriptionSegment.inscription_id)
+            .filter(InscriptionSegment.content.ilike(search_pattern))
             .distinct()
         ).all()
-        query = query.filter(Text.id.in_(matching_text_ids))
+        query = query.filter(Inscription.id.in_(matching_inscription_ids))
 
     # Region filters - use extracted columns for better performance
     if region_main:
-        query = query.filter(Text.region_main == region_main)
+        query = query.filter(Inscription.region_main == region_main)
 
     if region_sub:
-        query = query.filter(Text.region_sub == region_sub)
+        query = query.filter(Inscription.region_sub == region_sub)
 
     # Add date filtering to query using extracted columns
     if date_min is not None:
-        query = query.filter(Text.date_max >= date_min)
+        query = query.filter(Inscription.date_max >= date_min)
     if date_max is not None:
-        query = query.filter(Text.date_min <= date_max)
+        query = query.filter(Inscription.date_min <= date_max)
 
     # Apply pagination after all filters
-    texts = db.scalars(query.order_by(Text.id).offset(skip).limit(limit)).all()
+    inscriptions = db.scalars(
+        query.order_by(Inscription.id).offset(skip).limit(limit)
+    ).all()
 
-    # Build response with text previews
+    # Build response with inscription previews
     results = []
-    for text in texts:
-        # Get text preview from first segment
+    for inscription in inscriptions:
+        # Get inscription preview from first segment
         first_segment_content = db.scalar(
-            select(TextSegment.content)
-            .filter(TextSegment.text_id == text.id)
-            .order_by(TextSegment.sequence)
+            select(InscriptionSegment.content)
+            .filter(InscriptionSegment.inscription_id == inscription.id)
+            .order_by(InscriptionSegment.sequence)
             .limit(1)
         )
 
@@ -146,18 +156,16 @@ async def list_inscriptions(
             first_segment_content = first_segment_content[:150] + "..."
 
         results.append(
-            InscriptionListItem(
-                id=text.id,
-                phi_id=int(text.local_id)
-                if (text.local_id and text.local_id.isdigit())
-                else None,
-                title=text.title,
+            TextListItem(
+                id=inscription.id,
+                phi_id=inscription.phi_id,
+                title=inscription.title,
                 text_preview=first_segment_content or "",
-                region_main=text.region_main,
-                region_sub=text.region_sub,
-                date_str=(text.text_metadata or {}).get("date_str"),
-                date_min=text.date_min,
-                date_max=text.date_max,
+                region_main=inscription.region_main,
+                region_sub=inscription.region_sub,
+                date_str=inscription.date_str,
+                date_min=inscription.date_min,
+                date_max=inscription.date_max,
             )
         )
     return results
@@ -174,84 +182,73 @@ async def list_regions(
     Use level='main' for top-level regions (e.g., 'Attica (IG I-III)'),
     or level='sub' for sub-regions (e.g., 'Athens: Agora').
     """
-    # Optimized query using extracted columns instead of JSONB
-    if level == "main":
-        # Use direct column queries for main regions and extract region_id from JSON metadata
-        query = (
-            select(
-                Text.region_main.label("region"),
-                func.min(
-                    cast(Text.text_metadata["region_main_id"].astext, Integer)
-                ).label("region_id"),
-                func.count().label("count"),
-            )
-            .filter(Text.source == TextSource.PHI, Text.region_main.isnot(None))
-            .group_by(Text.region_main)
-            .order_by(func.count().desc())
+    # PHI records carry no region_main_id/region_sub_id — the region name is the
+    # only identifier in the source data, so region_id is always None. The
+    # previous JSONB cast queried keys that never existed and returned NULL.
+    region_column = (
+        Inscription.region_main if level == "main" else Inscription.region_sub
+    )
+
+    query = (
+        select(
+            region_column.label("region"),
+            func.count().label("count"),
         )
-    else:
-        # Use direct column queries for sub regions and extract region_id from JSON metadata
-        query = (
-            select(
-                Text.region_sub.label("region"),
-                func.min(
-                    cast(Text.text_metadata["region_sub_id"].astext, Integer)
-                ).label("region_id"),
-                func.count().label("count"),
-            )
-            .filter(Text.source == TextSource.PHI, Text.region_sub.isnot(None))
-            .group_by(Text.region_sub)
-            .order_by(func.count().desc())
-        )
+        .filter(region_column.isnot(None))
+        .group_by(region_column)
+        .order_by(func.count().desc())
+    )
 
     results = db.execute(query).all()
 
     return [
         RegionCount(
             region=row.region,
-            region_id=str(row.region_id) if row.region_id is not None else None,
+            region_id=None,
             count=row.count,
         )
         for row in results
     ]
 
 
-@router.get("/stats", response_model=InscriptionStats)
+@router.get("/stats", response_model=TextStats)
 async def get_inscription_stats(db: Session = Depends(get_db)):
     """
     Get statistics about the inscription corpus.
     """
-    # Optimized single query using extracted columns
     stats_query = select(
         func.count().label("total_inscriptions"),
-        # Use a CASE expression to yield 1 when either date_min or date_max is present,
-        # otherwise 0. SUM across rows to get the total inscriptions that have any date.
-        # Wrapped in COALESCE to ensure 0 instead of NULL.
         func.coalesce(
             func.sum(
                 case(
-                    ((Text.date_min.isnot(None) | Text.date_max.isnot(None)), 1),
+                    (
+                        (
+                            Inscription.date_min.isnot(None)
+                            | Inscription.date_max.isnot(None)
+                        ),
+                        1,
+                    ),
                     else_=0,
                 )
             ),
             0,
         ).label("inscriptions_with_dates"),
-        func.count(func.distinct(Text.region_main)).label("regions_count"),
-        func.min(Text.date_min).label("earliest_date"),
-        func.max(Text.date_max).label("latest_date"),
-    ).filter(Text.source == TextSource.PHI)
+        func.count(func.distinct(Inscription.region_main)).label("regions_count"),
+        func.min(Inscription.date_min).label("earliest_date"),
+        func.max(Inscription.date_max).label("latest_date"),
+    )
 
     result = db.execute(stats_query).first()
 
     if not result:
-        return InscriptionStats(
+        return TextStats(
             total_inscriptions=0,
             inscriptions_with_dates=0,
             regions_count=0,
             date_range={"earliest": None, "latest": None},
         )
 
-    return InscriptionStats(
+    return TextStats(
         total_inscriptions=result.total_inscriptions,
         inscriptions_with_dates=result.inscriptions_with_dates,
         regions_count=result.regions_count,
@@ -262,39 +259,33 @@ async def get_inscription_stats(db: Session = Depends(get_db)):
     )
 
 
-@router.get("/{text_id}", response_model=InscriptionResponse)
+@router.get("/{text_id}", response_model=TextResponse)
 async def get_inscription(
     text_id: Annotated[int, Path()], db: Session = Depends(get_db)
 ):
     """
     Get a specific inscription by its text ID.
     """
-    text = (
-        db.query(Text)
-        .filter(Text.id == text_id, Text.source == TextSource.PHI)
-        .scalar()
-    )
+    inscription = db.query(Inscription).filter(Inscription.id == text_id).scalar()
 
-    if not text:
-        raise HTTPException(status_code=404, detail=f"Inscription not found: {text_id}")
+    if not inscription:
+        raise HTTPException(status_code=404, detail=f"Text not found: {text_id}")
 
-    full_text = _get_full_text(db, text.id)
-    meta = text.text_metadata or {}
+    full_text = _get_full_text(db, inscription.id)
+    meta = inscription.metadata_raw or {}
 
-    return InscriptionResponse(
-        id=text.id,
-        phi_id=int(text.local_id)
-        if (text.local_id and text.local_id.isdigit())
-        else None,
-        title=text.title,
+    return TextResponse(
+        id=inscription.id,
+        phi_id=inscription.phi_id,
+        title=inscription.title,
         text=full_text,
-        region_main=text.region_main,
-        region_sub=text.region_sub,
-        date_str=meta.get("date_str"),
-        date_min=text.date_min,
-        date_max=text.date_max,
-        date_circa=meta.get("date_circa"),
-        metadata_raw=meta.get("metadata_raw"),
+        region_main=inscription.region_main,
+        region_sub=inscription.region_sub,
+        date_str=inscription.date_str,
+        date_min=inscription.date_min,
+        date_max=inscription.date_max,
+        date_circa=inscription.date_circa,
+        metadata_raw=meta or None,
     )
 
 
@@ -303,19 +294,56 @@ async def get_inscription(
 # ============================================================================
 
 
-class RestoreRequest(BaseModel):
-    """Request for text restoration"""
+class _InscriptionTextRequest(BaseModel):
+    """Shared gap-notation validation for the model endpoints.
+
+    The model takes '?' for one missing character and '#' for a gap of unknown
+    length (vendor/predictingthepast/eval/inference.py:199-200). '-' is the
+    model's *internal* spelling of '?', not user notation: it is in the
+    vocabulary, so it tokenizes without error but never enters
+    ``restore_mask_idx`` and is therefore never filled. Rejecting it here turns
+    a silent no-op into a message that teaches the notation.
+    """
 
     text: str
-    language: Language = "greek"
-    temperature: float = 1.0
-    beam_width: int = 100
-    max_restoration_len: int = 15
 
     @field_validator("text", mode="after")
     @classmethod
-    def text_cleanup(cls, value: str):
-        return value.replace("-", "?")
+    def reject_internal_markers(cls, value: str) -> str:
+        if "-" in value:
+            raise ValueError(
+                "Use '?' for each missing character (e.g. '?????' for five) "
+                "and '#' for a gap of unknown length. '-' is not supported."
+            )
+        return value
+
+
+class RestoreRequest(_InscriptionTextRequest):
+    """Request for text restoration"""
+
+    language: Language = "greek"
+    temperature: float = 1.0
+    beam_width: int = Field(
+        DEFAULT_BEAM_WIDTH,
+        ge=1,
+        le=MAX_BEAM_WIDTH,
+        description=(
+            "Number of candidates kept during beam search. Higher is slower; "
+            "cost is roughly linear in this value."
+        ),
+    )
+    # Upper bound matches UNK_RESTORATION_MAX_LEN in the vendored inference
+    # module, which raises above it.
+    max_restoration_len: int = Field(
+        DEFAULT_MAX_RESTORATION_LEN,
+        ge=1,
+        le=MAX_RESTORATION_LEN,
+        description=(
+            "Longest gap, in characters, that a '#' may be restored to. Only "
+            "affects inputs containing '#'. Lower is much faster -- set it to "
+            "your estimate of the lacuna size."
+        ),
+    )
 
 
 class RestorationCandidate(BaseModel):
@@ -339,10 +367,9 @@ class RestoreResponse(BaseModel):
     message: Optional[str] = None
 
 
-class AttributeRequest(BaseModel):
+class AttributeRequest(_InscriptionTextRequest):
     """Request for attribution (date + location)"""
 
-    text: str
     language: Language = "greek"
 
 
@@ -368,15 +395,14 @@ class AttributeResponse(BaseModel):
     message: Optional[str] = None
 
 
-class ContextualizeRequest(BaseModel):
+class ContextualizeRequest(_InscriptionTextRequest):
     """Request for finding similar inscriptions"""
 
-    text: str
     language: Language = "greek"
     top_k: int = 20
 
 
-class SimilarInscription(BaseModel):
+class SimilarText(BaseModel):
     """A similar inscription"""
 
     id: str  # PHI ID as string
@@ -392,25 +418,37 @@ class SimilarInscription(BaseModel):
 class ContextualizeResponse(BaseModel):
     """Response with similar inscriptions"""
 
-    similar: List[SimilarInscription]
+    similar: List[SimilarText]
     language: str
     available: bool
     message: Optional[str] = None
 
 
 @router.post("/restore", response_model=RestoreResponse)
-async def restore_inscription(request: RestoreRequest):
+def restore_inscription(
+    request: RestoreRequest,
+    current_user: User = Depends(get_current_user),
+):
     """
     Restore missing characters in an inscription.
 
-    Use '?' for single missing characters and '#' for unknown-length gaps.
+    Use one '?' per missing character ('?????' is exactly five) and '#' for a
+    gap whose length is unknown. '-' is rejected: see _InscriptionTextRequest.
+
+    A '#' is much more expensive than '?': it searches over how long the gap is
+    as well as what fills it, so one '#' takes ~30 forward passes where nine '?'
+    take 9. If you know roughly how large the lacuna is, pass
+    max_restoration_len set just above it -- headroom far past the true gap is
+    still searched and still costs, but a cap below it forces a worse (and not
+    necessarily faster) restoration.
 
     Args:
         text: The inscription text with missing characters
         language: 'greek' or 'latin' (default: greek)
         temperature: Sampling temperature (default: 1.0)
-        beam_width: Number of candidates to consider (default: 100)
-        max_restoration_len: Max length for unknown-length gaps (default: 15)
+        beam_width: Candidates kept during search (default: 35, max 100)
+        max_restoration_len: Longest gap a '#' may expand to
+            (default: 15, max 20). Ignored when the text has no '#'.
 
     Example Greek: "εδοξεν τηι βουληι και τωι δημωι # αθηναιων"
     Example Latin: "imp caesar divi # f augustus"
@@ -429,13 +467,24 @@ async def restore_inscription(request: RestoreRequest):
             message=f"{request.language.title()} model not loaded. Check /api/inscriptions/model/status",
         )
 
-    result = service.restore(
-        text=request.text,
-        language=request.language,
-        beam_width=request.beam_width,
-        temperature=request.temperature,
-        max_restoration_len=request.max_restoration_len,
-    )
+    # beam_width and max_restoration_len are bounded by Field(ge=..., le=...) on
+    # RestoreRequest, so an out-of-range value is a 422 rather than an unbounded
+    # amount of CPU. Both were previously taken straight from the request body.
+    if not service._inference_lock.acquire(blocking=False):
+        raise HTTPException(
+            status_code=429,
+            detail="Another inference is already running; retry shortly.",
+        )
+    try:
+        result = service.restore(
+            text=request.text,
+            language=request.language,
+            beam_width=request.beam_width,
+            temperature=request.temperature,
+            max_restoration_len=request.max_restoration_len,
+        )
+    finally:
+        service._inference_lock.release()
 
     return RestoreResponse(
         input_text=result.input_text,
@@ -449,12 +498,16 @@ async def restore_inscription(request: RestoreRequest):
             for p in result.predictions
         ],
         prediction_saliency=result.prediction_saliency,
-        available=True,
+        available=result.available,
+        message=result.message,
     )
 
 
 @router.post("/attribute", response_model=AttributeResponse)
-async def attribute_inscription(request: AttributeRequest):
+def attribute_inscription(
+    request: AttributeRequest,
+    current_user: User = Depends(get_current_user),
+):
     """
     Predict the date and geographic origin of an inscription.
 
@@ -483,7 +536,15 @@ async def attribute_inscription(request: AttributeRequest):
             message=f"{request.language.title()} model not loaded. Check /api/inscriptions/model/status",
         )
 
-    result = service.attribute(request.text, language=request.language)
+    if not service._inference_lock.acquire(blocking=False):
+        raise HTTPException(
+            status_code=429,
+            detail="Another inference is already running; retry shortly.",
+        )
+    try:
+        result = service.attribute(request.text, language=request.language)
+    finally:
+        service._inference_lock.release()
 
     return AttributeResponse(
         input_text=result.input_text,
@@ -498,12 +559,16 @@ async def attribute_inscription(request: AttributeRequest):
         predicted_date_range=result.predicted_date_range,
         date_saliency=result.date_saliency,
         location_saliency=result.location_saliency,
-        available=True,
+        available=result.available,
+        message=result.message,
     )
 
 
 @router.post("/contextualize", response_model=ContextualizeResponse)
-async def contextualize_inscription(request: ContextualizeRequest):
+def contextualize_inscription(
+    request: ContextualizeRequest,
+    current_user: User = Depends(get_current_user),
+):
     """
     Find similar inscriptions in the corpus.
 
@@ -524,13 +589,21 @@ async def contextualize_inscription(request: ContextualizeRequest):
             message=f"{request.language.title()} model not loaded. Check /api/inscriptions/model/status",
         )
 
-    result = service.contextualize(
-        request.text, language=request.language, top_k=request.top_k
-    )
+    if not service._inference_lock.acquire(blocking=False):
+        raise HTTPException(
+            status_code=429,
+            detail="Another inference is already running; retry shortly.",
+        )
+    try:
+        result = service.contextualize(
+            request.text, language=request.language, top_k=request.top_k
+        )
+    finally:
+        service._inference_lock.release()
 
     return ContextualizeResponse(
         similar=[
-            SimilarInscription(
+            SimilarText(
                 id=str(s.id),
                 ids_alt=s.ids_alt,
                 text=s.text,
@@ -543,7 +616,8 @@ async def contextualize_inscription(request: ContextualizeRequest):
             for s in result.similar
         ],
         language=request.language,
-        available=True,
+        available=result.available,
+        message=result.message,
     )
 
 
@@ -567,6 +641,7 @@ async def initialize_models(
     language: Optional[Language] = Query(
         None, description="Specific language to initialize, or omit for both"
     ),
+    current_user: User = Depends(get_current_user),
 ):
     """
     Initialize inscription analysis models.

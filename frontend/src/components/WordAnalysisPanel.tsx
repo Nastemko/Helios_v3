@@ -26,14 +26,15 @@ export default function WordAnalysisPanel({ word, language, segmentId, textId, o
   // Fetch user's annotations for this segment
   const { data: annotations } = useQuery({
     queryKey: ['annotations', textId, segmentId],
-    queryFn: () => annotationApi.list({ text_id: textId, segment_id: segmentId }),
+    queryFn: () =>
+      annotationApi.list({ lang_version_id: textId, segment_id: segmentId }),
   });
   
   // Create annotation mutation
   const createAnnotation = useMutation({
     mutationFn: (noteText: string) =>
       annotationApi.create({
-        text_id: textId,
+        lang_version_id: textId,
         segment_id: segmentId,
         word,
         note: noteText,

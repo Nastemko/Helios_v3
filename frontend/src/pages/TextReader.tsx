@@ -54,7 +54,7 @@ export default function TextReader() {
     clearSelection();
     
     // Clean punctuation from word
-    const cleanWord = word.replace(/[.,;:!?·\[\]()]/g, '').trim();
+    const cleanWord = word.replace(/[.,;:!?·[\]()]/g, '').trim();
     if (!cleanWord) return;
     
     setSelectedWord({
@@ -236,7 +236,7 @@ export default function TextReader() {
                                         handleWordClick(word, segment.id);
                                     }}
                                     className={`cursor-pointer rounded px-0.5 transition-colors inline-block ${
-                                        selectedWord?.word === word.replace(/[.,;:!?·\[\]()]/g, '').trim() && selectedWord?.segmentId === segment.id
+                                        selectedWord?.word === word.replace(/[.,;:!?·[\]()]/g, '').trim() && selectedWord?.segmentId === segment.id
                                         ? 'bg-blue-200 text-blue-900'
                                         : 'hover:bg-blue-50'
                                     }`}

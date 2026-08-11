@@ -7,6 +7,8 @@ interface InscriptionInputProps {
   onChange: (value: string) => void;
   temperature: number;
   onTemperatureChange: (temp: number) => void;
+  maxRestorationLen: number;
+  onMaxRestorationLenChange: (len: number) => void;
   onContextualize: () => void;
   onAttribute: () => void;
   onRestore: () => void;
@@ -20,7 +22,7 @@ interface InscriptionInputProps {
 const GREEK_EXAMPLES = [
   {
     name: "Athenian Decree (with gaps)",
-    text: "εδοξεν τηι βουληι και τωι δημωι λυσιστρατος ειπε- επειδη διοφανης ανηρ αγαθος ων διατελει περι δηλιους δεδοχθαι τωι ----- διοφανην καλλι-------- --ηναιον προξενον ειναι δ--------- αυτογ και εκγονους κ-- ειναι αυτοις ατελειαν εν δηλωι παντων και γης και οικιας εγκτησιν και προσοδον προς τημ βουλην και τον δημον πρωτοις μετα τα ιερα και τα αλλα οσα και τοις αλλοις προξενοις και ευεργεταις του ιερου δεδοται",
+    text: "εδοξεν τηι βουληι και τωι δημωι λυσιστρατος ειπε επειδη διοφανης ανηρ αγαθος ων διατελει περι δηλιους δεδοχθαι τωι ????? διοφανην καλλι???????? ??ηναιον προξενον ειναι δ????????? αυτογ και εκγονους κ?? ειναι αυτοις ατελειαν εν δηλωι παντων και γης και οικιας εγκτησιν και προσοδον προς τημ βουλην και τον δημον πρωτοις μετα τα ιερα και τα αλλα οσα και τοις αλλοις προξενοις και ευεργεταις του ιερου δεδοται",
   },
   {
     name: "Funerary Inscription",
@@ -39,7 +41,7 @@ const GREEK_EXAMPLES = [
 const LATIN_EXAMPLES = [
   {
     name: "Military Diploma (with gaps)",
-    text: "imp caesar divi # f augustus pontifex maximus tribunicia potestate ----- cos xiii pater patriae",
+    text: "imp caesar divi # f augustus pontifex maximus tribunicia potestate ????? cos xiii pater patriae",
   },
   {
     name: "Funerary Inscription",
@@ -60,6 +62,8 @@ export default function InscriptionInput({
   onChange,
   temperature,
   onTemperatureChange,
+  maxRestorationLen,
+  onMaxRestorationLenChange,
   onContextualize,
   onAttribute,
   onRestore,
@@ -69,24 +73,30 @@ export default function InscriptionInput({
   language,
 }: InscriptionInputProps) {
   const [showExamples, setShowExamples] = useState(false);
-  
+
+  // The model rejects anything shorter than MIN_TEXT_LEN=25 after it strips
+  // accents and collapses whitespace, so anything below that never reaches it.
   const charCount = value.length;
-  const isValidLength = charCount >= 1 && charCount <= 760;
-  const hasGaps = value.includes('-') || value.includes('?') || value.includes('#');
-  
+  const isValidLength = charCount >= 25 && charCount <= 760;
+  // '-' is deliberately absent: the API rejects it, so it must not enable Restore.
+  const hasGaps = value.includes('?') || value.includes('#');
+  // '#' searches over gap length as well as content, so it is far slower than
+  // '?'. The control below only matters for these inputs, so only show it then.
+  const hasUnknownLengthGap = value.includes('#');
+
   const examples = language === 'greek' ? GREEK_EXAMPLES : LATIN_EXAMPLES;
-  
-  const placeholderText = language === 'greek' 
+
+  const placeholderText = language === 'greek'
     ? `Enter Greek inscription text here...
 
-Use ? for single missing characters (e.g., κα?λος)
-Use # for unknown-length gaps (e.g., εδοξεν # τωι δημωι)
-Use ----- for known-length gaps (5 missing chars)`
+Use one ? per missing character (e.g., κα?λος)
+????? means exactly five missing characters
+Use # when you don't know how many are missing (e.g., εδοξεν # τωι δημωι)`
     : `Enter Latin inscription text here...
 
-Use ? for single missing characters (e.g., ma?imus)
-Use # for unknown-length gaps (e.g., imp caesar # augustus)
-Use ----- for known-length gaps (5 missing chars)`;
+Use one ? per missing character (e.g., ma?imus)
+????? means exactly five missing characters
+Use # when you don't know how many are missing (e.g., imp caesar # augustus)`;
   
   const handleExampleSelect = (text: string) => {
     onChange(text);
@@ -109,23 +119,23 @@ Use ----- for known-length gaps (5 missing chars)`;
         <div className={`absolute bottom-3 right-3 text-sm ${
           !isValidLength && value.length > 0 ? 'text-red-500' : 'text-stone-400'
         }`}>
-          {charCount}/760
+          {charCount}/760 (min 25)
         </div>
       </div>
 
       {/* Helper Text */}
       <div className="mt-3 text-sm text-stone-500">
         <span className="font-medium">Notation:</span>{' '}
-        <code className="bg-stone-100 px-1.5 py-0.5 rounded text-stone-700">?</code> single missing char,{' '}
-        <code className="bg-stone-100 px-1.5 py-0.5 rounded text-stone-700">#</code> unknown-length gap,{' '}
-        <code className="bg-stone-100 px-1.5 py-0.5 rounded text-stone-700">-----</code> known-length gap
+        <code className="bg-stone-100 px-1.5 py-0.5 rounded text-stone-700">?</code> one missing character,{' '}
+        <code className="bg-stone-100 px-1.5 py-0.5 rounded text-stone-700">?????</code> exactly five,{' '}
+        <code className="bg-stone-100 px-1.5 py-0.5 rounded text-stone-700">#</code> a gap of unknown length
       </div>
 
       {/* Length Warning */}
       {value.length > 0 && !isValidLength && (
         <div className="mt-2 text-sm text-red-600">
-          {charCount < 50 
-            ? `Text too short (minimum 1 character, currently ${charCount})`
+          {charCount < 25
+            ? `Text too short — the model needs at least 25 characters, currently ${charCount}`
             : `Text too long (maximum 760 characters, currently ${charCount})`
           }
         </div>
@@ -148,6 +158,37 @@ Use ----- for known-length gaps (5 missing chars)`;
         />
         <span className="text-sm font-mono text-stone-600 w-8">{temperature.toFixed(1)}</span>
       </div>
+
+      {/* Max Gap Length — only relevant when the text contains a '#' */}
+      {hasUnknownLengthGap && (
+        <div className="mt-4">
+          <div className="flex items-center gap-4">
+            <label className="text-sm font-medium text-stone-700 whitespace-nowrap">
+              Longest <code className="bg-stone-100 px-1 rounded">#</code> gap:
+            </label>
+            <input
+              type="range"
+              min="1"
+              max="20"
+              step="1"
+              value={maxRestorationLen}
+              onChange={(e) => onMaxRestorationLenChange(parseInt(e.target.value, 10))}
+              className="flex-1 h-2 bg-stone-200 rounded-lg appearance-none cursor-pointer accent-helios-teal"
+              disabled={isProcessing}
+            />
+            <span className="text-sm font-mono text-stone-600 w-16">
+              {maxRestorationLen} char{maxRestorationLen === 1 ? '' : 's'}
+            </span>
+          </div>
+          <p className="mt-1.5 text-xs text-stone-500">
+            The most characters a <code className="bg-stone-100 px-1 rounded">#</code> may
+            expand to. Set it a little above your estimate of the lacuna: headroom well
+            past the true gap is still searched and costs time (15 took ~2× as long as 8
+            for the same answer), while a value below it forces a shorter, worse
+            restoration. Gaps longer than this cannot be found.
+          </p>
+        </div>
+      )}
 
       {/* Action Buttons */}
       <div className="mt-6 flex flex-wrap items-center gap-3">
@@ -181,7 +222,7 @@ Use ----- for known-length gaps (5 missing chars)`;
           onClick={onRestore}
           disabled={isProcessing || !isValidLength || !hasGaps}
           className="px-5 py-2.5 bg-teal-700 text-white font-medium rounded-full hover:bg-teal-800 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-          title={!hasGaps ? 'Add gaps (?, #, or -----) to enable restoration' : ''}
+          title={!hasGaps ? 'Add ? or # to mark missing characters' : ''}
         >
           Restore
         </button>

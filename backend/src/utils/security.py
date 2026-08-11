@@ -1,15 +1,20 @@
-"""Security utilities for JWT tokens and password hashing"""
+"""Security utilities for JWT tokens"""
 
-from datetime import datetime, timedelta
+import logging
+from datetime import UTC, datetime, timedelta
 from typing import Optional
 
-from jose import JWTError, jwt
-from passlib.context import CryptContext
+import jwt
+from jwt.exceptions import PyJWTError
 
 from config import settings
 
-# Password hashing context
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+logger = logging.getLogger(__name__)
+
+# Pinned deliberately rather than read from settings: feeding a configurable
+# algorithm to jwt.decode would let `ALGORITHM=none` in .env disable signature
+# verification entirely.
+JWT_ALGORITHM = "HS256"
 
 
 def create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -> str:
@@ -26,15 +31,15 @@ def create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -
     to_encode = data.copy()
 
     if expires_delta:
-        expire = datetime.utcnow() + expires_delta
+        expire = datetime.now(UTC) + expires_delta
     else:
-        expire = datetime.utcnow() + timedelta(
+        expire = datetime.now(UTC) + timedelta(
             minutes=settings.auth.ACCESS_TOKEN_EXPIRE_MINUTES
         )
 
     to_encode.update({"exp": expire})
     encoded_jwt = jwt.encode(
-        to_encode, settings.auth.SECRET_KEY, algorithm=settings.auth.ALGORITHM
+        to_encode, settings.auth.SECRET_KEY, algorithm=JWT_ALGORITHM
     )
 
     return encoded_jwt
@@ -50,20 +55,12 @@ def verify_token(token: str) -> Optional[dict]:
     Returns:
         Decoded token payload or None if invalid
     """
-    import logging
-
-    logger = logging.getLogger(__name__)
-
     try:
-        logger.debug(
-            f"Verifying token with SECRET_KEY: {settings.auth.SECRET_KEY[:10]}... and algorithm: {settings.auth.ALGORITHM}"
-        )
         payload = jwt.decode(
-            token, settings.auth.SECRET_KEY, algorithms=[settings.auth.ALGORITHM]
+            token, settings.auth.SECRET_KEY, algorithms=[JWT_ALGORITHM]
         )
-        logger.info(f"Token verified successfully. Payload: {payload}")
         return payload
-    except JWTError as e:
+    except PyJWTError as e:
         logger.error(f"JWT verification failed: {type(e).__name__}: {str(e)}")
         return None
     except Exception as e:
@@ -71,13 +68,3 @@ def verify_token(token: str) -> Optional[dict]:
             f"Unexpected error during token verification: {type(e).__name__}: {str(e)}"
         )
         return None
-
-
-def hash_password(password: str) -> str:
-    """Hash a password"""
-    return pwd_context.hash(password)
-
-
-def verify_password(plain_password: str, hashed_password: str) -> bool:
-    """Verify a password against a hash"""
-    return pwd_context.verify(plain_password, hashed_password)

@@ -47,6 +47,25 @@ RUN curl -fSL -o /app/assets/inscriptions/models/ithaca_153143996_2.pkl \
     https://storage.googleapis.com/ithaca-resources/models/led_emb_xid117149994.pkl && \
     chown -R helios:helios /app/assets/inscriptions
 
+# Thread-pool sizing for CPU inference. JAX/XLA and OpenBLAS each default to
+# sizing a pool to the host core count and then oversubscribe each other, which
+# costs more than it gains. Keep these in sync with the CPU limit set on the
+# backend service in docker-compose.yml.
+# Declared after the model download layer so changing them does not invalidate
+# that ~2GB cached layer.
+#
+# The deploy host has 6 processors. One is left to postgres/ollama/nginx rather
+# than pinning all six here, since a saturated inference pool would otherwise
+# contend with the database serving the same request.
+ENV OMP_NUM_THREADS=5 \
+    OPENBLAS_NUM_THREADS=5 \
+    MKL_NUM_THREADS=5 \
+    XLA_FLAGS="--xla_cpu_multi_thread_eigen=true"
+
+# Persistent XLA compilation cache, so a container restart does not re-pay
+# compilation of the Ithaca forward pass.
+RUN mkdir -p /app/.cache/jax && chown -R helios:helios /app/.cache
+
 # Set the working directory for subsequent commands
 WORKDIR /app
 
@@ -66,8 +85,4 @@ COPY --chown=helios:helios ./src .
 # Expose the port the application will run on
 EXPOSE 8000
 
-# Add a health check to ensure the application is running correctly
-HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
-    CMD curl -f http://127.0.0.1:8000/health || exit 1
-
-CMD ["uv", "run", "uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "2", "--proxy-headers", "--forwarded-allow-ips", "*"]
+CMD ["uv", "run", "uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000", "--proxy-headers", "--forwarded-allow-ips", "*"]

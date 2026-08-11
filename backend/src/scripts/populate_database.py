@@ -1,40 +1,54 @@
 """Unified script to populate database with Perseus texts.
 
-This script replaces both populate_on_startup.py and populate_texts.py with
-a superior implementation that eliminates duplicate key constraint violations
-through atomic database operations.
+This script uses CTS metadata to properly:
+- Create parent LiteraryText records (one per work)
+- Create LiteraryTextLangVersion records (one per language version)
+- Link all versions of the same work to the same parent
 
 Features:
-- Prefetch existing URNs to avoid individual database queries
-- Optimized batching using itertools.batched for efficient processing
-- PostgreSQL ON CONFLICT DO NOTHING to eliminate SELECT queries
-- SQLAlchemy 2.x compatible for modern database operations
-- Configurable language filtering (default: all languages)
-- Fail-fast error handling for reliable processing
-- Comprehensive CLI interface
-- FastAPI startup-compatible async wrapper
-- Detailed progress logging and statistics
+- Parses __cts__.xml files for accurate metadata
+- Correctly identifies translations and extracts translator names
+- Two-pass approach: parent records first, then language versions
 """
 
 import argparse
-import itertools
+import json
 import logging
 import sys
 import time
+from datetime import datetime, timezone
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Dict, List, Optional
 
-from sqlalchemy import select, text
+from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import Session
 
 from config import settings
-from database import Base, SessionLocal, engine
-from models.text import Text, TextSegment, TextSource
+from database import SessionLocal
+from models.text import (
+    Language,
+    LiteraryText,
+    LiteraryTextLangVersion,
+    TextSegment,
+)
+from parsers.cts_metadata_parser import CTSMetadataParser, VersionInfo, WorkInfo
 from parsers.perseus_xml_parser import PerseusXMLParser
 
 logger = logging.getLogger(__name__)
+
+LANGUAGE_MAP = {
+    "grc": Language.GRC,
+    "lat": Language.LAT,
+    "eng": Language.EN,
+    "en": Language.EN,
+}
+
+# Codes present in the corpus that the Language enum cannot represent. These are
+# skipped and reported rather than silently coerced to Greek (8 files: German,
+# French and Italian Thucydides translations plus one Arabic Aristotle).
+UNSUPPORTED_LANGUAGES = frozenset({"ger", "deu", "fre", "fra", "ita", "ara"})
 
 
 @dataclass
@@ -42,225 +56,195 @@ class PopulateConfig:
     """Configuration for database population."""
 
     limit: Optional[int] = None
-    force: bool = False
     dry_run: bool = False
-    languages: List[str] = field(default_factory=list)  # Empty = all languages
+    languages: List[str] = field(default_factory=list)
     commit_batch: int = 100
     fail_fast: bool = True
     data_dir: Optional[Path] = None
+    failures_output: Optional[Path] = None
+    rebuild: bool = False
 
 
 @dataclass
 class PopulateStats:
     """Statistics for database population operation."""
 
-    inserted: int = 0
+    inserted_works: int = 0
+    inserted_versions: int = 0
     skipped: int = 0
+    skipped_unsupported_language: int = 0
     errors: int = 0
     total_segments: int = 0
     processing_time: float = 0.0
     files_processed: int = 0
+    failed_files: List[Path] = field(default_factory=list)
 
 
 class DatabasePopulator:
-    """Handles database population with batched operations and prefetched local_id cache."""
+    """Handles database population with CTS-aware metadata processing."""
 
     def __init__(self, config: PopulateConfig):
         self.config = config
         self.stats = PopulateStats()
-        self.existing_local_ids = set()
+        self.existing_version_ids = set()
+        self.cts_parser: Optional[CTSMetadataParser] = None
+        self.cts_data: Dict[str, WorkInfo] = {}
+        self.literary_text_ids: Dict[str, int] = {}
 
-    def prefetch_existing_local_ids(self, db: Session) -> None:
-        """Prefetch all existing local_ids to avoid individual database queries."""
-        logger.info("Prefetching existing local_ids...")
-        existing_texts = db.execute(select(Text.local_id)).all()
-        self.existing_local_ids = {row.local_id for row in existing_texts}
-        logger.info(f"Prefetched {len(self.existing_local_ids)} existing local_ids")
+    def prefetch_existing_version_ids(self, db: Session) -> None:
+        """Prefetch all existing local_ids from LiteraryTextLangVersion."""
+        logger.info("Prefetching existing version local_ids...")
+        existing = db.execute(select(LiteraryTextLangVersion.local_id)).all()
+        self.existing_version_ids = {row.local_id for row in existing}
+        logger.info(f"Found {len(self.existing_version_ids)} existing versions")
 
     def is_database_populated(self, db: Session) -> bool:
-        """Check if the database already has texts loaded."""
-        if self.existing_local_ids:
-            return len(self.existing_local_ids) > 0
-        return db.scalar(select(Text).limit(1)) is not None
+        """Check if database already has texts loaded."""
+        return db.scalar(select(LiteraryTextLangVersion).limit(1)) is not None
 
     def clear_database(self, db: Session) -> None:
         """Clear all existing texts and segments."""
         logger.warning("Clearing existing texts and segments...")
         db.query(TextSegment).delete()
-        db.query(Text).delete()
+        db.query(LiteraryTextLangVersion).delete()
+        db.query(LiteraryText).delete()
         db.commit()
-        self.existing_local_ids.clear()  # Clear cache after clearing database
+        self.existing_version_ids.clear()
 
-    def should_process_text(self, text_data: Dict) -> bool:
+    def load_cts_metadata(self) -> None:
+        """Load and parse all CTS metadata files."""
+        data_dir = self.config.data_dir or Path(settings.assets.PERSEUS_DATA_DIR)
+        logger.info(f"Loading CTS metadata from {data_dir}...")
+
+        self.cts_parser = CTSMetadataParser(data_dir)
+        self.cts_data = self.cts_parser.parse_all()
+
+        logger.info(f"Loaded {len(self.cts_data)} works from CTS metadata")
+
+        total_versions = sum(len(w.versions) for w in self.cts_data.values())
+        logger.info(f"Found {total_versions} total versions")
+
+        translations = sum(
+            1
+            for w in self.cts_data.values()
+            for v in w.versions
+            if v.translator is not None
+        )
+        logger.info(f"Found {translations} translations")
+
+    def create_parent_records(self, db: Session) -> Dict[str, int]:
         """
-        Check if text should be processed based on language filter and existing local_id cache.
+        Create LiteraryText parent records for all works in CTS data.
 
-        Returns True if text should be processed, False if should be skipped.
+        Returns:
+            Dictionary mapping work_local_id to database ID
         """
-        # Check language filter
-        if self.config.languages and text_data["language"] not in self.config.languages:
-            return False
+        logger.info("Creating LiteraryText parent records...")
 
-        # Check if text already exists using prefetched cache
-        if text_data["local_id"] in self.existing_local_ids:
-            return False
+        existing = db.execute(select(LiteraryText.local_id, LiteraryText.id)).all()
+        id_map = {row.local_id: row.id for row in existing}
 
+        new_parents = []
+        for work_local_id, work_info in self.cts_data.items():
+            if work_local_id not in id_map:
+                new_parents.append(
+                    {
+                        "local_id": work_local_id,
+                    }
+                )
+
+        if new_parents:
+            stmt = (
+                insert(LiteraryText)
+                .values(new_parents)
+                .on_conflict_do_nothing(index_elements=["local_id"])
+                .returning(LiteraryText.id, LiteraryText.local_id)
+            )
+            result = db.execute(stmt)
+            inserted = result.fetchall()
+            for row in inserted:
+                id_map[row.local_id] = row.id
+            db.commit()
+            # Count rows actually returned, not rows attempted: on_conflict_do_nothing
+            # means some of new_parents may not have been inserted.
+            self.stats.inserted_works = len(inserted)
+
+        logger.info(f"Total parent records: {len(id_map)}")
+        return id_map
+
+    def should_process_version(self, local_id: str, language: str) -> bool:
+        """Check if version should be processed."""
+        if self.config.languages and language not in self.config.languages:
+            return False
+        if local_id in self.existing_version_ids:
+            return False
         return True
 
-    def prepare_batch_data(
-        self, parser: PerseusXMLParser, xml_files: List[Path]
-    ) -> List[Dict]:
-        """
-        Parse and prepare batch data for insertion.
-
-        Returns list of text data ready for database insertion.
-        """
-        batch_data = []
-
-        for xml_file in xml_files:
-            try:
-                text_data = parser.parse_file(xml_file)
-                if not text_data:
-                    logger.debug(f"Could not parse {xml_file}")
-                    continue
-
-                if self.should_process_text(text_data):
-                    batch_data.append(text_data)
-                    self.stats.files_processed += 1
-                else:
-                    self.stats.skipped += 1
-
-            except Exception as e:
-                logger.error(f"Error parsing {xml_file}: {e}")
-                self.stats.errors += 1
-                if self.config.fail_fast:
-                    raise RuntimeError(
-                        f"Failed to parse {xml_file}. Stopping due to fail_fast=True."
-                    )
-
-        return batch_data
-
-    def insert_batch(self, db: Session, batch_data: List[Dict]) -> None:
-        """
-        Insert a batch of texts and their segments in a single transaction.
-        Uses PostgreSQL ON CONFLICT DO NOTHING to avoid SELECT queries.
-        SQLAlchemy 2.x compatible with proper handling of empty results.
-        """
-        if not batch_data:
-            return
-
-        # Prepare values for bulk insert
-        text_values = []
-        for text_data in batch_data:
-            text_values.append(
-                {
-                    "local_id": text_data["local_id"],
-                    "source": TextSource.GreekLit,
-                    "author": text_data["author"],
-                    "title": text_data["title"],
-                    "language": text_data["language"],
-                    "is_fragment": text_data["is_fragment"],
-                    # Extracted columns - set None for Perseus data (no inscription-specific fields)
-                    "region_main": None,
-                    "region_sub": None,
-                    "date_min": None,
-                    "date_max": None,
-                    "text_metadata": text_data["text_metadata"],
-                }
-            )
-
-        # Use SQLAlchemy's PostgreSQL insert() dialect
-        stmt = (
-            insert(Text)
-            .values(text_values)
-            .on_conflict_do_nothing(index_elements=["local_id"])
-            .returning(Text.id, Text.local_id)
-        )
-
-        try:
-            # Execute bulk insert with parameters
-            result = db.execute(stmt)
-            inserted_texts = result.fetchall()  # This will be [] if all conflicted
-
-            # Handle empty results gracefully - this is the key fix
-            if not inserted_texts:
-                logger.debug("All texts in batch already exist (no new rows inserted)")
-                # Mark all as skipped
-                self.stats.skipped += len(batch_data)
-                return
-
-            # Get mapping of local_id to ID for inserted texts
-            local_id_to_id = {row.local_id: row.id for row in inserted_texts}
-
-            # Now insert segments for successfully inserted texts only
-            for text_data in batch_data:
-                if text_data["local_id"] in local_id_to_id:
-                    text_id = local_id_to_id[text_data["local_id"]]
-
-                    # Create TextSegment objects for this text
-                    for seg_data in text_data["segments"]:
-                        segment = TextSegment(
-                            text_id=text_id,
-                            book=seg_data["book"],
-                            line=seg_data["line"],
-                            reference=seg_data["reference"],
-                            content=seg_data["content"],
-                            sequence=seg_data["sequence"],
-                        )
-                        db.add(segment)
-                        self.stats.total_segments += 1
-
-                    self.stats.inserted += 1
-                    # Add to cache to avoid re-processing within the same run
-                    self.existing_local_ids.add(text_data["local_id"])
-                else:
-                    # Text already existed, count as skipped
-                    self.stats.skipped += 1
-
-        except Exception as e:
-            logger.error(f"Error during batch insert: {e}")
-            raise
-
-    def process_file_batch(
-        self, db: Session, parser: PerseusXMLParser, xml_files: List[Path]
+    def insert_version(
+        self,
+        db: Session,
+        text_data: Dict,
+        version_info: Optional[VersionInfo],
+        parent_id: int,
     ) -> None:
         """
-        Process a batch of XML files with a single database transaction.
+        Insert a single LiteraryTextLangVersion and its segments.
+
+        Returns:
+            The new version ID or None if skipped
         """
-        try:
-            # Parse and prepare all data for this batch
-            batch_data = self.prepare_batch_data(parser, xml_files)
+        local_id = text_data["local_id"]
 
-            if self.config.dry_run:
-                logger.info(
-                    f"DRY RUN: Would insert {len(batch_data)} texts from this batch"
-                )
-                for text_data in batch_data[:3]:  # Show first 3
-                    logger.info(
-                        f"  - {text_data['author']}: {text_data['title']} ({len(text_data['segments'])} segments)"
-                    )
-                return
+        language = "grc"
+        translator = None
+        author = "Unknown"
+        title = "Unknown"
 
-            # Insert all data in this batch as a single transaction
-            self.insert_batch(db, batch_data)
+        if version_info:
+            language = version_info.language
+            translator = version_info.translator
+            author = version_info.author
+            title = version_info.title
+        else:
+            language = text_data.get("language", "grc")
+            author = text_data.get("author", "Unknown")
+            title = text_data.get("title", "Unknown")
+            if language not in ["grc", "lat"]:
+                translator = "unknown"
 
-            # Commit the entire batch at once
-            db.commit()
-            logger.info(f"Successfully committed batch with {len(batch_data)} texts")
+        lang_enum = LANGUAGE_MAP.get(language, Language.GRC)
 
-        except Exception as e:
-            logger.error(f"Error processing batch: {e}")
-            db.rollback()
-            self.stats.errors += len(xml_files)  # Mark all files in batch as errors
-            if self.config.fail_fast:
-                raise RuntimeError(
-                    f"Batch processing failed. Stopping due to fail_fast=True."
-                )
+        version = LiteraryTextLangVersion(
+            local_id=local_id,
+            literary_text_id=parent_id,
+            language=lang_enum,
+            author=author,
+            title=title,
+            translator=translator,
+        )
+        db.add(version)
+        db.flush()
+
+        for seg_data in text_data["segments"]:
+            segment = TextSegment(
+                lang_version_id=version.id,
+                book=seg_data["book"],
+                line=seg_data["line"],
+                reference=seg_data["reference"],
+                content=seg_data["content"],
+                sequence=seg_data["sequence"],
+            )
+            db.add(segment)
+            self.stats.total_segments += 1
+
+        self.stats.inserted_versions += 1
 
     def run_population(self, db: Session) -> PopulateStats:
         """
-        Main population method with batched processing and prefetched URN cache.
-        SQLAlchemy 2.x compatible.
+        Main population method with CTS-aware processing.
+
+        Already-processed versions are skipped via should_process_version, so
+        this method is safe to run on every startup — it resumes where it left off.
 
         Args:
             db: Database session
@@ -270,28 +254,26 @@ class DatabasePopulator:
         """
         start_time = time.time()
 
-        # Prefetch existing local_ids for efficient duplicate checking
-        self.prefetch_existing_local_ids(db)
-
-        # Check if already populated
-        if not self.config.force and self.is_database_populated(db):
-            logger.info(
-                f"Database already contains {len(self.existing_local_ids)} texts. Skipping population."
-            )
-            self.stats.skipped = len(self.existing_local_ids)
-            return self.stats
-
-        if self.config.force:
+        if self.config.rebuild and not self.config.dry_run:
+            logger.warning("--rebuild requested: clearing existing texts and segments")
             self.clear_database(db)
 
-        # Verify data directory
+        self.prefetch_existing_version_ids(db)
+
+        if self.config.dry_run:
+            logger.info("Dry run mode — skipping actual population.")
+
         data_dir = self.config.data_dir or Path(settings.assets.PERSEUS_DATA_DIR)
         if not data_dir.exists():
             raise FileNotFoundError(f"Data directory not found: {data_dir}")
 
         logger.info(f"Starting database population from {data_dir}")
 
-        # Initialize parser
+        self.load_cts_metadata()
+
+        parent_ids = self.create_parent_records(db)
+        self.literary_text_ids = parent_ids
+
         parser = PerseusXMLParser(data_dir)
         xml_files = parser.find_all_text_files()
 
@@ -299,24 +281,112 @@ class DatabasePopulator:
             xml_files = xml_files[: self.config.limit]
             logger.info(f"Limited to first {self.config.limit} files")
 
-        logger.info(f"Found {len(xml_files)} XML files to process")
+        logger.info(f"Processing {len(xml_files)} XML files...")
 
-        # Process files in batches for better performance using itertools.batched
-        batch_size = self.config.commit_batch
-        total_batches = (len(xml_files) + batch_size - 1) // batch_size
+        batch_count = 0
+        for xml_file in xml_files:
+            work_local_id = ""
+            try:
+                text_data = parser.parse_file(xml_file)
+                if not text_data:
+                    self.stats.failed_files.append(xml_file)
+                    continue
 
-        for batch_num, batch_files in enumerate(
-            itertools.batched(xml_files, batch_size), start=1
-        ):
-            logger.info(
-                f"Processing batch {batch_num}/{total_batches} ({len(batch_files)} files)..."
-            )
+                local_id = text_data["local_id"]
 
-            # Process entire batch in a single transaction
-            self.process_file_batch(db, parser, list(batch_files))
+                if not self.should_process_version(
+                    local_id, text_data.get("language", "grc")
+                ):
+                    self.stats.skipped += 1
+                    continue
 
-        # Calculate processing time
+                if self.config.dry_run:
+                    logger.info(f"DRY RUN: Would insert {local_id}")
+                    continue
+
+                version_info = None
+                if self.cts_parser:
+                    version_info = self.cts_parser.get_version_info(local_id)
+
+                language = (
+                    version_info.language
+                    if version_info
+                    else text_data.get("language", "grc")
+                )
+                if language in UNSUPPORTED_LANGUAGES or language not in LANGUAGE_MAP:
+                    logger.warning(
+                        "Skipping %s: language '%s' has no Language enum member",
+                        local_id,
+                        language,
+                    )
+                    self.stats.skipped_unsupported_language += 1
+                    continue
+
+                work_local_id = ".".join(local_id.split(".")[:2])
+
+                # A SAVEPOINT per file: a failure rolls back only this version,
+                # leaving the session usable so the rest of the batch survives.
+                with db.begin_nested():
+                    parent_id = parent_ids.get(work_local_id)
+
+                    if not parent_id:
+                        logger.debug(f"Creating parent record for {work_local_id}")
+                        new_parent = LiteraryText(
+                            local_id=work_local_id,
+                        )
+                        db.add(new_parent)
+                        db.flush()
+                        db.refresh(new_parent, ["id"])
+                        parent_id: int = new_parent.id  # type: ignore[assignment]
+                        parent_ids[work_local_id] = parent_id
+                        self.stats.inserted_works += 1
+
+                    assert parent_id is not None
+                    self.insert_version(db, text_data, version_info, parent_id)
+
+                self.stats.files_processed += 1
+                batch_count += 1
+
+                if batch_count >= self.config.commit_batch:
+                    db.commit()
+                    logger.info(
+                        f"Committed batch: {self.stats.inserted_versions} versions, "
+                        f"{self.stats.total_segments} segments"
+                    )
+                    batch_count = 0
+
+            except Exception as e:
+                logger.error(
+                    "Error processing %s: %s: %s", xml_file, type(e).__name__, e
+                )
+                self.stats.errors += 1
+                self.stats.failed_files.append(xml_file)
+                # The savepoint rolled back, so any parent inserted inside it is
+                # gone; drop the cached id to avoid handing out a stale FK.
+                parent_ids.pop(work_local_id, None)
+                if self.config.fail_fast:
+                    db.rollback()
+                    raise
+
+        if batch_count > 0:
+            db.commit()
+
         self.stats.processing_time = time.time() - start_time
+
+        if self.stats.failed_files and self.config.failures_output:
+            out_path = self.config.failures_output
+            payload = {
+                "generated_at": datetime.now(timezone.utc).isoformat(),
+                "data_dir": str(data_dir),
+                "failed_files": [str(p.resolve()) for p in self.stats.failed_files],
+            }
+            out_path.parent.mkdir(parents=True, exist_ok=True)
+            out_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+            logger.info(
+                "Wrote %d failed file paths to %s",
+                len(self.stats.failed_files),
+                out_path,
+            )
 
         return self.stats
 
@@ -339,8 +409,12 @@ def run_population(config: PopulateConfig) -> PopulateStats:
         stats = populator.run_population(db)
 
         logger.info("Population complete!")
-        logger.info(f"  Inserted: {stats.inserted} texts")
-        logger.info(f"  Skipped: {stats.skipped} texts")
+        logger.info(f"  Works inserted: {stats.inserted_works}")
+        logger.info(f"  Versions inserted: {stats.inserted_versions}")
+        logger.info(f"  Skipped: {stats.skipped}")
+        logger.info(
+            f"  Skipped (unsupported language): {stats.skipped_unsupported_language}"
+        )
         logger.info(f"  Errors: {stats.errors}")
         logger.info(f"  Total segments: {stats.total_segments}")
         logger.info(f"  Processing time: {stats.processing_time:.2f} seconds")
@@ -355,136 +429,100 @@ async def populate_on_startup(config: Optional[PopulateConfig] = None) -> Dict:
     """
     Async wrapper for running population on FastAPI startup.
 
-    This function is designed to be called from the FastAPI startup event.
-
     Args:
-        config: Optional configuration (uses defaults if not provided)
+        config: Optional configuration
 
     Returns:
-        Dictionary with statistics compatible with existing startup code
+        Dictionary with statistics
     """
     if config is None:
-        config = PopulateConfig()
+        data_dir = Path(settings.assets.PERSEUS_DATA_DIR)
+        failures_output = data_dir.parent / "lxml_failures.json"
+        config = PopulateConfig(fail_fast=False, failures_output=failures_output)
 
     logger.info("Checking if database needs population...")
 
-    # Run the synchronous population in a thread pool
     import asyncio
 
     loop = asyncio.get_event_loop()
     stats = await loop.run_in_executor(None, run_population, config)
 
-    # Convert to dict for compatibility with existing startup code
     return {
-        "inserted": stats.inserted,
+        "inserted_works": stats.inserted_works,
+        "inserted_versions": stats.inserted_versions,
         "skipped": stats.skipped,
+        "skipped_unsupported_language": stats.skipped_unsupported_language,
         "errors": stats.errors,
         "total_segments": stats.total_segments,
         "processing_time": stats.processing_time,
         "files_processed": stats.files_processed,
+        "failed_files": [str(p) for p in stats.failed_files],
     }
 
 
-def main():
-    """CLI interface for the database population script."""
-    parser = argparse.ArgumentParser(
-        description="Populate database with Perseus texts",
-        formatter_class=argparse.RawDescriptionHelpFormatter,
-        epilog="""
-Examples:
-  # Populate all languages
-  python populate_database.py
-
-  # Dry run to see what would be processed
-  python populate_database.py --dry-run
-
-  # Process only first 50 texts
-  python populate_database.py --limit 50
-
-  # Force repopulation
-  python populate_database.py --force
-
-  # Process only Greek texts
-  python populate_database.py --languages grc
-
-  # Process Greek and Latin texts
-  python populate_database.py --languages grc lat
-        """,
-    )
-
-    parser.add_argument(
-        "--limit", type=int, help="Limit number of texts to process (for testing)"
-    )
-    parser.add_argument(
-        "--dry-run",
-        action="store_true",
-        help="Parse files but don't insert into database",
-    )
-    parser.add_argument(
-        "--force",
-        action="store_true",
-        help="Clear existing texts and repopulate (use with caution!)",
-    )
-    parser.add_argument(
+if __name__ == "__main__":
+    ap = argparse.ArgumentParser(description="Populate database with Perseus texts")
+    ap.add_argument("--limit", type=int, help="Limit number of files to process")
+    ap.add_argument("--dry-run", action="store_true", help="Show what would be done")
+    ap.add_argument(
         "--languages",
-        nargs="+",
-        help="Languages to process (e.g., grc lat). Default: all languages",
+        nargs="*",
+        default=[],
+        help="Filter by language codes (grc, lat, en)",
     )
-    parser.add_argument(
-        "--commit-batch",
+    ap.add_argument(
+        "--batch-size",
         type=int,
         default=100,
-        help="Batch size for database transactions (default: 100)",
+        help="Commit batch size",
     )
-    parser.add_argument(
-        "--data-dir",
-        type=str,
-        help="Path to Perseus data directory (uses config if not provided)",
-    )
-    parser.add_argument(
-        "--continue-on-error",
+    ap.add_argument(
+        "--fail-fast",
         action="store_true",
-        help="Continue processing on individual file errors (default: fail-fast)",
+        default=True,
+        help="Stop on first error",
+    )
+    ap.add_argument(
+        "--data-dir",
+        type=Path,
+        help="Override data directory",
+    )
+    ap.add_argument(
+        "--rebuild",
+        action="store_true",
+        help=(
+            "Delete all existing texts, versions and segments before loading. "
+            "Use this once after fixing the parsers to clear duplicated segments "
+            "written by earlier runs. Never triggered on startup."
+        ),
+    )
+    ap.add_argument(
+        "--failures-output",
+        type=Path,
+        default=None,
+        help=(
+            "Path to write a JSON list of files where lxml parsing failed "
+            "(consumed by populate_database_llm.py --from-failures-file). "
+            "Defaults to <data-dir>/../lxml_failures.json when omitted."
+        ),
     )
 
-    args = parser.parse_args()
+    args = ap.parse_args()
 
-    # Configure logging
-    logging.basicConfig(
-        level=logging.INFO,
-        format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-    )
+    failures_output = args.failures_output
+    if failures_output is None and args.data_dir is not None:
+        failures_output = args.data_dir.parent / "lxml_failures.json"
 
-    # Create configuration
     config = PopulateConfig(
         limit=args.limit,
         dry_run=args.dry_run,
-        force=args.force,
-        languages=args.languages or [],
-        commit_batch=args.commit_batch,
-        fail_fast=not args.continue_on_error,
-        data_dir=Path(args.data_dir) if args.data_dir else None,
+        languages=args.languages,
+        commit_batch=args.batch_size,
+        fail_fast=args.fail_fast,
+        data_dir=args.data_dir,
+        failures_output=failures_output,
+        rebuild=args.rebuild,
     )
 
-    # Safety check for force operation
-    if args.force:
-        response = input(
-            "Are you sure you want to clear all existing texts and repopulate? (yes/no): "
-        )
-        if response.lower() != "yes":
-            logger.info("Force operation cancelled")
-            sys.exit(0)
-
-    try:
-        stats = run_population(config)
-        sys.exit(0 if stats.errors == 0 else 1)
-    except KeyboardInterrupt:
-        logger.info("Population interrupted by user")
-        sys.exit(130)
-    except Exception as e:
-        logger.error(f"Population failed: {e}")
-        sys.exit(1)
-
-
-if __name__ == "__main__":
-    main()
+    stats = run_population(config)
+    sys.exit(0 if stats.errors == 0 else 1)

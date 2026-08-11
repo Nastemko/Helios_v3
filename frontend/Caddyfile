@@ -23,6 +23,10 @@
         header {
                 # Prevent some browsers from MIME-sniffing a response away from the declared Content-Type
                 X-Content-Type-Options "nosniff"
+                # Prevent clickjacking
+                X-Frame-Options "DENY"
+                # Control referrer information to prevent token leakage
+                Referrer-Policy "strict-origin-when-cross-origin"
                 # Remove Server header
                 -Server
         }

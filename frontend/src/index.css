@@ -1,5 +1,18 @@
 @import "tailwindcss";
-@config "../tailwind.config.js";
+
+@theme {
+  --font-greek: "GFS Didot", Georgia, serif;
+
+  /* Helios brand colors from logo */
+  --color-helios-gold: #C9A962;
+  --color-helios-gold-light: #D4BC7D;
+  --color-helios-gold-dark: #A88B4A;
+  --color-helios-teal: #1E5F74;
+  --color-helios-teal-light: #2A7A94;
+  --color-helios-teal-dark: #164858;
+  --color-helios-cream: #F8F5EE;
+  --color-helios-cream-dark: #EDE8DC;
+}
 
 :root {
   font-family: Inter, system-ui, Avenir, Helvetica, Arial, sans-serif;

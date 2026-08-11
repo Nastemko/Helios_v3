@@ -1,6 +1,7 @@
 """Main FastAPI application"""
 
 import logging
+from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI
@@ -22,10 +23,9 @@ from routers import (
 )
 from scripts.load_phi_inscriptions import initialize_phi_inscriptions
 from scripts.populate_database import populate_on_startup
-from services.ithaca_service.ithaca_service import (
-    initialize_all_models,
-    initialize_ithaca_service,
-)
+from scripts.populate_database_llm import llm_populate_on_startup, openrouter_config
+from services.ithaca_service.ithaca_service import initialize_all_models
+from services.morphology import get_morphology_service
 
 # Configure logging
 logging.basicConfig(
@@ -34,41 +34,18 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# Create FastAPI app
-app = FastAPI(
-    title=settings.misc.APP_NAME,
-    debug=settings.misc.DEBUG,
-    docs_url="/docs" if settings.misc.DEBUG else None,
-    redoc_url="/redoc" if settings.misc.DEBUG else None,
-)
-
-# Add Session middleware (required for OAuth)
-# Note: This must be added before other middleware that might use sessions
-app.add_middleware(
-    SessionMiddleware,
-    secret_key=settings.auth.SECRET_KEY,
-    max_age=3600,  # Session expires after 1 hour
-    same_site="lax",
-    https_only=False,  # Set to True in production with HTTPS
-)
-
-# Add CORS middleware
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=settings.misc.CORS_ORIGINS,
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
-
-# Add performance monitoring middleware
-app.middleware("http")(performance_middleware)
+# Validate production configuration
+try:
+    settings.validate_production()
+except ValueError as e:
+    logger.error(f"Configuration error: {e}")
+    raise
 
 
-# Application lifecycle events
-@app.on_event("startup")
-async def startup_event():
-    """Initialize services on startup"""
+# Application lifecycle
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Initialize services on startup and clean up on shutdown"""
     logger.info(f"Starting {settings.misc.APP_NAME}")
 
     # Create database tables
@@ -80,13 +57,39 @@ async def startup_event():
 
     try:
         stats = await populate_on_startup()
-        if stats["inserted"] > 0:
-            logger.info(f"Populated database with {stats['inserted']} Greek texts")
+        if stats["inserted_versions"] > 0:
+            logger.info(
+                f"Populated database with {stats['inserted_versions']} text versions"
+            )
         elif stats["skipped"] > 0:
             logger.info(f"Database already contains {stats['skipped']} texts")
     except Exception as e:
         logger.error(f"Error during text population: {e}")
         # Continue startup even if population fails
+
+    # Run LLM-based population on failed files if OPENROUTER_API_KEY is set
+    failures_file = Path(settings.assets.PERSEUS_DATA_DIR).parent / "lxml_failures.json"
+    if failures_file.exists():
+        if openrouter_config.API_KEY and openrouter_config.API_KEY != "<your-key-here>":
+            logger.info("Running LLM-based population on failed files...")
+            try:
+                llm_stats = await llm_populate_on_startup(failures_file=failures_file)
+                if llm_stats["inserted_versions"] > 0:
+                    logger.info(
+                        f"LLM populated {llm_stats['inserted_versions']} versions "
+                        f"({llm_stats['llm_calls']} LLM calls)"
+                    )
+            except Exception as e:
+                logger.error(f"Error during LLM-based population: {e}")
+                # Continue startup even if LLM population fails
+        else:
+            logger.info(
+                "Skipping LLM population: OPENROUTER_API_KEY not set. "
+                "Failed files are in %s",
+                failures_file,
+            )
+    else:
+        logger.info("No lxml failures file found, skipping LLM population")
 
     # Initialize PHI inscriptions
     logger.info("Initializing PHI inscriptions...")
@@ -99,14 +102,8 @@ async def startup_event():
 
     # Initialize Morphology service
     logger.info("Initializing CLTK morphology service...")
-    from services.morphology import get_morphology_service
-
     morphology_service = get_morphology_service()
     logger.info(f"Morphology service initialized: {morphology_service.initialized}")
-
-    # Initialize Ithaca service
-    logger.info("Initializing Ithaca service")
-    initialize_ithaca_service()
 
     # Initialize Ithaca inscription models (Greek and Latin)
     logger.info("Initializing Ithaca inscription models...")
@@ -126,11 +123,41 @@ async def startup_event():
 
     logger.info(f"{settings.misc.APP_NAME} started successfully")
 
+    yield
 
-@app.on_event("shutdown")
-async def shutdown_event():
-    """Cleanup on shutdown"""
     logger.info(f"Shutting down {settings.misc.APP_NAME}")
+
+
+# Create FastAPI app
+app = FastAPI(
+    title=settings.misc.APP_NAME,
+    debug=settings.misc.DEBUG,
+    docs_url="/docs" if settings.misc.DEBUG else None,
+    redoc_url="/redoc" if settings.misc.DEBUG else None,
+    lifespan=lifespan,
+)
+
+# Add Session middleware (required for OAuth)
+# Note: This must be added before other middleware that might use sessions
+app.add_middleware(
+    SessionMiddleware,
+    secret_key=settings.auth.SECRET_KEY,
+    max_age=3600,  # Session expires after 1 hour
+    same_site="lax",
+    https_only=not settings.misc.DEBUG,  # Secure in production, HTTP-safe in dev
+)
+
+# Add CORS middleware
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=settings.misc.CORS_ORIGINS,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# Add performance monitoring middleware
+app.middleware("http")(performance_middleware)
 
 
 # Health check endpoint

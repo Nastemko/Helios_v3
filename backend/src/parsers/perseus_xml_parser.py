@@ -8,6 +8,11 @@ import lxml.etree as ET
 
 logger = logging.getLogger(__name__)
 
+XML_NS = "{http://www.w3.org/XML/1998/namespace}"
+
+# Elements that carry citable text inside a leaf textpart, in priority order.
+CONTENT_CARRIERS = ("l", "p", "ab")
+
 
 class PerseusXMLParser:
     """Parse Perseus TEI XML files to extract text and metadata"""
@@ -79,10 +84,20 @@ class PerseusXMLParser:
         if div is not None:
             urn = div.get("n")
             if urn:
-                # Extract everything after 2nd colon: greekLit:tlg0013.tlg001.perseus-grc2
-                parts = urn.split(":", 2)
-                if len(parts) >= 3:
-                    return parts[2]
+                # Extract everything after 3rd colon: urn:cts:greekLit:tlg0013.tlg001.perseus-grc2
+                parts = urn.split(":", 3)
+                if len(parts) >= 4:
+                    return parts[3]
+
+        # Also check div[@type='translation']
+        div = root.find(f".//{self.TEI_NS}div[@type='translation']")
+        if div is not None:
+            urn = div.get("n")
+            if urn:
+                # Extract everything after 3rd colon: urn:cts:greekLit:tlg0013.tlg001.perseus-grc2
+                parts = urn.split(":", 3)
+                if len(parts) >= 4:
+                    return parts[3]
 
         # Fallback to file path parsing
         # tl tlg0013/tlg001/tlg0013.tlg001.perseus-grc2.xml -> tlg0013.tlg001.perseus-grc2
@@ -101,12 +116,15 @@ class PerseusXMLParser:
         Returns:
             Language code ('grc' for Greek, 'lat' for Latin)
         """
-        # Try to get from div xml:lang
-        div = root.find(f".//{self.TEI_NS}div[@type='edition']")
-        if div is not None:
-            lang = div.get("{http://www.w3.org/XML/1998/namespace}lang")
-            if lang:
-                return lang
+        # Try to get from div xml:lang. Translations must be checked too --
+        # looking only at div[@type='edition'] silently defaulted every
+        # translation file to Greek.
+        for div_type in ("edition", "translation"):
+            div = root.find(f".//{self.TEI_NS}div[@type='{div_type}']")
+            if div is not None:
+                lang = div.get(f"{XML_NS}lang")
+                if lang:
+                    return lang
 
         # Try to get from langUsage in profileDesc
         lang_usage = root.find(f".//{self.TEI_NS}langUsage")
@@ -183,96 +201,107 @@ class PerseusXMLParser:
         Returns:
             List of segment dictionaries
         """
-        segments = []
-        sequence = 0
+        segments: List[Dict] = []
 
         # Find the body/text content
         body = root.find(f".//{self.TEI_NS}body")
         if body is None:
             return segments
 
-        # Find all textpart divisions (books, chapters, etc.)
-        textparts = body.findall(f".//{self.TEI_NS}div[@type='textpart']")
-
-        if textparts:
-            # Text is divided into books/chapters/sections
-            for textpart in textparts:
-                subtype = textpart.get("subtype", "")
-                section_num = textpart.get("n", "")
-
-                # Find all lines within this textpart
-                lines = textpart.findall(f".//{self.TEI_NS}l")
-                for line in lines:
-                    line_num = line.get("n", "")
-                    content = self._extract_text_content(line)
-
-                    if content:
-                        segments.append(
-                            {
-                                "book": section_num,
-                                "line": line_num,
-                                "reference": f"{section_num}.{line_num}"
-                                if section_num
-                                else line_num,
-                                "content": content,
-                                "sequence": sequence,
-                            }
-                        )
-                        sequence += 1
-
-                # If no lines found, check for paragraphs within this textpart
-                if not lines:
-                    paras = textpart.findall(f".//{self.TEI_NS}p")
-                    for para in paras:
-                        content = self._extract_text_content(para)
-                        if content:
-                            segments.append(
-                                {
-                                    "book": section_num,
-                                    "line": "",
-                                    "reference": section_num,
-                                    "content": content,
-                                    "sequence": sequence,
-                                }
-                            )
-                            sequence += 1
-        else:
-            # Text without explicit textparts - try to find all lines
-            lines = body.findall(f".//{self.TEI_NS}l")
-            for line in lines:
-                line_num = line.get("n", "")
-                content = self._extract_text_content(line)
-
-                if content:
-                    segments.append(
-                        {
-                            "book": "",
-                            "line": line_num,
-                            "reference": line_num,
-                            "content": content,
-                            "sequence": sequence,
-                        }
-                    )
-                    sequence += 1
-
-            # Also try paragraphs if no lines found
-            if not segments:
-                paras = body.findall(f".//{self.TEI_NS}p")
-                for idx, para in enumerate(paras):
-                    content = self._extract_text_content(para)
-                    if content:
-                        segments.append(
-                            {
-                                "book": "",
-                                "line": str(idx + 1),
-                                "reference": str(idx + 1),
-                                "content": content,
-                                "sequence": sequence,
-                            }
-                        )
-                        sequence += 1
+        # Recurse from each top-level div (edition/translation). Emitting only
+        # at leaf textparts is what prevents the same <l> being collected once
+        # per ancestor textpart.
+        for top_div in body.findall(f"{self.TEI_NS}div"):
+            self._collect_segments(top_div, [], segments)
 
         return segments
+
+    def _is_textpart(self, element: ET.Element) -> bool:
+        """
+        Check whether an element is a citable textpart subdivision.
+
+        Both <div type="textpart"> and <ab type="textpart"> occur in the corpus.
+
+        Args:
+            element: XML element
+
+        Returns:
+            True if the element subdivides the citation hierarchy
+        """
+        return (
+            element.tag
+            in (
+                f"{self.TEI_NS}div",
+                f"{self.TEI_NS}ab",
+            )
+            and element.get("type") == "textpart"
+        )
+
+    def _collect_segments(
+        self, element: ET.Element, chain: List[str], segments: List[Dict]
+    ) -> None:
+        """
+        Walk the citation hierarchy and append segments found at its leaves.
+
+        Args:
+            element: Current node in the citation tree
+            chain: Ancestor @n values, forming the CTS reference (e.g. ["1", "80"])
+            segments: Accumulator, mutated in place
+        """
+        children = [child for child in element if self._is_textpart(child)]
+        if children:
+            for child in children:
+                self._collect_segments(child, chain + [child.get("n", "")], segments)
+            return
+
+        # Leaf: emit its content carriers, preferring lines over paragraphs.
+        carriers: List[ET.Element] = []
+        for tag in CONTENT_CARRIERS:
+            carriers = element.findall(f".//{self.TEI_NS}{tag}")
+            if carriers:
+                break
+
+        if not carriers:
+            # A leaf holding text directly, with no carrier element to hang it on.
+            content = self._extract_text_content(element)
+            if content:
+                segments.append(self._make_segment(chain, content, len(segments)))
+            return
+
+        # Carriers sharing a leaf may lack their own @n (a section holding
+        # several <p>, or verse where only some lines are numbered). Fall back
+        # to a positional ordinal so each segment keeps a distinct reference.
+        for ordinal, carrier in enumerate(carriers, start=1):
+            content = self._extract_text_content(carrier)
+            if not content:
+                continue
+            carrier_n = carrier.get("n", "")
+            if not carrier_n and len(carriers) > 1:
+                carrier_n = str(ordinal)
+            carrier_chain = chain + [carrier_n] if carrier_n else chain
+            segments.append(self._make_segment(carrier_chain, content, len(segments)))
+
+    def _make_segment(self, chain: List[str], content: str, sequence: int) -> Dict:
+        """
+        Build a segment dict from a citation chain.
+
+        Args:
+            chain: Citation components, outermost first (e.g. ["1", "80", "1"])
+            content: Extracted text content
+            sequence: Zero-based position within the version
+
+        Returns:
+            Segment dictionary
+        """
+        parts = [part for part in chain if part]
+        reference = ".".join(parts) if parts else str(sequence + 1)
+        return {
+            "book": parts[0] if len(parts) > 1 else "",
+            "line": parts[-1] if parts else "",
+            "reference": reference,
+            "content": content,
+            "sequence": sequence,
+        }
 
     def _extract_text_content(self, element: ET.Element) -> str:
         """
@@ -314,7 +343,9 @@ class PerseusXMLParser:
 
             xml_files.append(xml_file)
 
-        return xml_files
+        # Sorted so that --limit selects a reproducible subset; rglob order is
+        # filesystem-dependent.
+        return sorted(xml_files)
 
     def parse_all(self, limit: Optional[int] = None) -> List[Dict]:
         """

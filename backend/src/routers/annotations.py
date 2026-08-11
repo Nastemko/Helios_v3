@@ -11,17 +11,16 @@ from sqlalchemy.orm import Session
 from database import get_db
 from middleware.auth import get_current_user
 from models.annotation import Annotation
-from models.text import Text, TextSegment
+from models.text import LiteraryTextLangVersion, TextSegment
 from models.user import User
 
 router = APIRouter(prefix="/api/annotations", tags=["annotations"])
 
 
-# Request/Response models
 class AnnotationCreate(BaseModel):
     """Request model for creating an annotation"""
 
-    text_id: int
+    lang_version_id: int
     segment_id: int
     word: str
     note: str
@@ -38,7 +37,7 @@ class AnnotationResponse(BaseModel):
 
     id: int
     user_id: int
-    text_id: int
+    lang_version_id: int
     segment_id: int
     word: str
     note: str
@@ -63,24 +62,28 @@ async def create_annotation(
 
     User must be authenticated. The annotation will be associated with the current user.
     """
-    # Verify text exists
-
-    text = db.query(Text).filter(Text.id == annotation.text_id).scalar()
-    if not text:
-        raise HTTPException(status_code=404, detail="Text not found")
+    version = (
+        db.query(LiteraryTextLangVersion)
+        .filter(LiteraryTextLangVersion.id == annotation.lang_version_id)
+        .first()
+    )
+    if not version:
+        raise HTTPException(status_code=404, detail="Text version not found")
 
     segment = (
         db.query(TextSegment)
-        .filter(TextSegment.text_id == text.id, TextSegment.id == annotation.segment_id)
-        .scalar()
+        .filter(
+            TextSegment.lang_version_id == version.id,
+            TextSegment.id == annotation.segment_id,
+        )
+        .first()
     )
     if not segment:
         raise HTTPException(status_code=404, detail="Text segment not found")
 
-    # Create annotation
     db_annotation = Annotation(
         user_id=current_user.id,
-        text_id=annotation.text_id,
+        lang_version_id=annotation.lang_version_id,
         segment_id=annotation.segment_id,
         word=annotation.word,
         note=annotation.note,
@@ -95,7 +98,7 @@ async def create_annotation(
 
 @router.get("/", response_model=List[AnnotationResponse])
 async def list_annotations(
-    text_id: Optional[int] = Query(None, description="Filter by text ID"),
+    lang_version_id: Optional[int] = Query(None, description="Filter by version ID"),
     segment_id: Optional[int] = Query(None, description="Filter by segment ID"),
     word: Optional[str] = Query(None, description="Filter by word"),
     skip: int = Query(0, ge=0),
@@ -107,13 +110,12 @@ async def list_annotations(
     List user's annotations
 
     Returns only annotations belonging to the authenticated user.
-    Optional filters for text, segment, or specific word.
+    Optional filters for version, segment, or specific word.
     """
     query = db.query(Annotation).filter(Annotation.user_id == current_user.id)
 
-    # Apply filters
-    if text_id:
-        query = query.filter(Annotation.text_id == text_id)
+    if lang_version_id:
+        query = query.filter(Annotation.lang_version_id == lang_version_id)
 
     if segment_id:
         query = query.filter(Annotation.segment_id == segment_id)
@@ -121,10 +123,7 @@ async def list_annotations(
     if word:
         query = query.filter(Annotation.word == word)
 
-    # Order by most recent first
     query = query.order_by(Annotation.created_at.desc())
-
-    # Apply pagination
     annotations = query.offset(skip).limit(limit).all()
 
     return [AnnotationResponse.model_validate(ann) for ann in annotations]
@@ -150,7 +149,7 @@ async def get_annotation(
     if not annotation:
         raise HTTPException(status_code=404, detail="Annotation not found")
 
-    return AnnotationResponse.model_validate(annotation, extra="ignore")
+    return AnnotationResponse.model_validate(annotation)
 
 
 @router.put("/{annotation_id}", response_model=AnnotationResponse)
@@ -174,13 +173,12 @@ async def update_annotation(
     if not annotation:
         raise HTTPException(status_code=404, detail="Annotation not found")
 
-    # Update the note
     annotation.note = annotation_update.note
 
     db.commit()
     db.refresh(annotation)
 
-    return AnnotationResponse.model_validate(annotation, extra="ignore")
+    return AnnotationResponse.model_validate(annotation)
 
 
 @router.delete("/{annotation_id}", status_code=204)
@@ -209,32 +207,40 @@ async def delete_annotation(
     return None
 
 
-@router.get("/text/{text_id}/summary")
-async def get_text_annotations_summary(
-    text_id: int,
+@router.get("/version/{version_id}/summary")
+async def get_version_annotations_summary(
+    version_id: int,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
     """
-    Get summary of annotations for a text
+    Get summary of annotations for a text version
 
     Returns count of annotations and most annotated words.
     """
-    text = db.query(Text).filter(Text.id == text_id).first()
-    if not text:
-        raise HTTPException(status_code=404, detail="Text not found")
+    version = (
+        db.query(LiteraryTextLangVersion)
+        .filter(LiteraryTextLangVersion.id == version_id)
+        .first()
+    )
+    if not version:
+        raise HTTPException(status_code=404, detail="Text version not found")
 
-    # Get total count
     total = (
         db.query(Annotation)
-        .filter(Annotation.user_id == current_user.id, Annotation.text_id == text_id)
+        .filter(
+            Annotation.user_id == current_user.id,
+            Annotation.lang_version_id == version_id,
+        )
         .count()
     )
 
-    # Get most annotated words
     most_annotated = (
         db.query(Annotation.word, func.count(Annotation.id).label("count"))
-        .filter(Annotation.user_id == current_user.id, Annotation.text_id == text_id)
+        .filter(
+            Annotation.user_id == current_user.id,
+            Annotation.lang_version_id == version_id,
+        )
         .group_by(Annotation.word)
         .order_by(func.count(Annotation.id).desc())
         .limit(10)
@@ -242,7 +248,7 @@ async def get_text_annotations_summary(
     )
 
     return {
-        "text_id": text_id,
+        "version_id": version_id,
         "total_annotations": total,
         "most_annotated_words": [
             {"word": word, "count": count} for word, count in most_annotated
