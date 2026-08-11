@@ -4,7 +4,7 @@ from unittest.mock import patch
 
 # To run this test, it's expected that the `src` directory is in the Python path.
 # For example, by running `pytest` from the `backend` directory, or by setting PYTHONPATH.
-from .config import Settings
+from .config import IthacaShardSettings, Settings
 
 
 class TestConfig(unittest.TestCase):
@@ -181,3 +181,23 @@ class TestValidateProduction(unittest.TestCase):
         self.assertIn("SECRET_KEY", message)
         self.assertIn("GOOGLE_CLIENT_ID", message)
         self.assertIn("GOOGLE_CLIENT_SECRET", message)
+
+
+class TestIthacaShardChunking(unittest.TestCase):
+    """Per-machine chunking configuration."""
+
+    def test_local_chunks_defaults_to_autodetect(self):
+        """0 means 'work it out from this machine', not 'disabled'."""
+        self.assertEqual(IthacaShardSettings().LOCAL_CHUNKS, 0)
+
+    def test_min_rows_per_chunk_default(self):
+        self.assertEqual(IthacaShardSettings().MIN_ROWS_PER_CHUNK, 4)
+
+    @patch.dict(os.environ, {"ITHACA_SHARD_LOCAL_CHUNKS": "5"})
+    def test_local_chunks_env_override(self):
+        """Nodes differ in shape, so an explicit value must always win."""
+        self.assertEqual(IthacaShardSettings().LOCAL_CHUNKS, 5)
+
+    @patch.dict(os.environ, {"ITHACA_SHARD_MIN_ROWS_PER_CHUNK": "8"})
+    def test_min_rows_per_chunk_env_override(self):
+        self.assertEqual(IthacaShardSettings().MIN_ROWS_PER_CHUNK, 8)

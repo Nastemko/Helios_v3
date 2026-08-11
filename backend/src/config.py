@@ -58,11 +58,31 @@ class IthacaShardSettings(BaseSettings):
     # whole restoration budget.
     TIMEOUT: float = 60.0
 
-    # Skip the fan-out unless every node gets at least this many rows. Per-row
-    # cost is flat (~290ms) down to batch 4 but collapses below it (483ms at
-    # batch 2, 529ms at batch 1), so tiny slices waste both compute and a
-    # round trip. The '#' expansion tail is what trips this.
+    # Skip the fan-out unless every node gets at least this many rows. A
+    # remote slice has to repay its round trip, and the beam's head and tail
+    # are small -- generation 1 is a single row, and the beam shrinks again as
+    # candidates complete. The '#' expansion tail is what trips this.
+    #
+    # Still 4 pending a re-measure: a trial at 2 improved '5 ?' but regressed
+    # '#' past its single-node baseline, and local chunking below changes what
+    # a local pass costs, which moves the crossover again.
     MIN_ROWS_PER_NODE: int = 4
+
+    # Threads to split this node's own batch across. 0 autodetects from the
+    # cgroup CPU quota, which is the only source that is correct inside a
+    # capped container -- the deployed worker is limited to 3 CPUs on a
+    # 4-core box, where os.cpu_count() reports 4.
+    #
+    # Set explicitly to tune a specific machine. The measured optimum does
+    # not track core count identically across nodes (the 6-core coordinator
+    # peaked at 5 chunks for 1.80x; the 3-CPU worker still improved at 5),
+    # so autodetection is a sane default rather than an optimum.
+    LOCAL_CHUNKS: int = 0
+
+    # Don't chunk unless every thread gets at least this many rows. Same
+    # reasoning as MIN_ROWS_PER_NODE above: the beam's head and tail are
+    # small, and thread overhead is not repaid on tiny slices.
+    MIN_ROWS_PER_CHUNK: int = 4
 
     model_config = SettingsConfigDict(
         env_file=".env",
