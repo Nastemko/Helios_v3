@@ -27,6 +27,8 @@ from typing import Any, Callable
 import httpx
 import numpy as np
 
+from services.ithaca_service.chunked_forward import chunked_forward
+
 logger = logging.getLogger(__name__)
 
 # Row counts below this per node are cheaper to run locally than to ship: per-row
@@ -136,12 +138,18 @@ class DistributedForward:
         language: str,
         timeout: float = 60.0,
         min_rows_per_node: int = DEFAULT_MIN_ROWS_PER_NODE,
+        local_chunks: int = 0,
+        min_rows_per_chunk: int = 4,
     ) -> None:
         self.local_forward = local_forward
         self.shard_urls = list(shard_urls)
         self.language = language
         self.timeout = timeout
         self.min_rows_per_node = min_rows_per_node
+        # 0 or 1 disables chunking, keeping the single-call path exactly as
+        # before. The caller resolves autodetection, so this stays a plain int.
+        self.local_chunks = local_chunks
+        self.min_rows_per_chunk = min_rows_per_chunk
         # Coordinator plus each remote worker.
         self.node_count = len(self.shard_urls) + 1
         self._client = httpx.Client(timeout=timeout)
@@ -167,16 +175,32 @@ class DistributedForward:
 
         ``params`` is threaded through explicitly rather than stashed on the
         instance: Flax's ``apply`` requires it positionally, and an instance
-        attribute would be shared mutable state across concurrent calls.
+        attribute would be shared mutable state across concurrent calls. That
+        matters more now that the slice below is computed on several threads
+        at once.
+
+        The slice is split across threads when ``local_chunks`` allows it.
+        The forward pass leaves about half of each node's CPU idle, and rows
+        are independent through the model, so overlapping several smaller
+        passes is bit-exact and recovers that headroom.
         """
-        _, _, mask_logits, _, unk_logits = self.local_forward(
-            params,
-            text_char=text_char,
-            text_char_onehot=None,
-            vision_img=None,
-            vision_available=None,
+
+        def run(rows: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+            _, _, mask_logits, _, unk_logits = self.local_forward(
+                params,
+                text_char=rows,
+                text_char_onehot=None,
+                vision_img=None,
+                vision_available=None,
+            )
+            return np.asarray(mask_logits), np.asarray(unk_logits)
+
+        return chunked_forward(
+            run,
+            text_char,
+            chunk_count=self.local_chunks,
+            min_rows_per_chunk=self.min_rows_per_chunk,
         )
-        return np.asarray(mask_logits), np.asarray(unk_logits)
 
     def _call_remote(
         self, url: str, text_char: np.ndarray

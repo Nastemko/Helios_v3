@@ -520,3 +520,80 @@ class TestBeamSearchEndToEnd:
         # Every shipped slice must be a strict subset of the beam, or the
         # coordinator sent the whole batch out and kept no work for itself.
         assert all(shape[0] < 35 for shape in client.calls)
+
+
+class TestLocalChunking:
+    """The coordinator's own slice is split across threads.
+
+    The forward pass leaves about half of each node's CPU idle (measured 280%
+    of 600% on the deployed coordinator), and rows are independent through the
+    model, so overlapping several smaller passes recovers that headroom for
+    free. Chunking must be invisible in the result and visible only in timing,
+    so these assert bit-exactness first and the split second.
+    """
+
+    def test_chunked_local_slice_is_bit_identical(self):
+        forward = _make_forward()
+        dist = DistributedForward(
+            local_forward=forward,
+            shard_urls=[],
+            language="greek",
+            local_chunks=4,
+            min_rows_per_chunk=4,
+        )
+        x = np.random.randint(1, VOCAB, size=(35, 199), dtype=np.int32)
+
+        _, _, want_mask, _, want_unk = forward(FAKE_PARAMS, text_char=x)
+        _, _, got_mask, _, got_unk = dist(FAKE_PARAMS, text_char=x)
+
+        assert np.array_equal(got_mask, want_mask)
+        assert np.array_equal(got_unk, want_unk)
+
+    def test_local_slice_is_actually_chunked(self):
+        """Guard against silently degrading to one whole-batch call."""
+        forward = _make_forward()
+        dist = DistributedForward(
+            local_forward=forward,
+            shard_urls=[],
+            language="greek",
+            local_chunks=4,
+            min_rows_per_chunk=4,
+        )
+        x = np.random.randint(1, VOCAB, size=(35, 199), dtype=np.int32)
+        dist(FAKE_PARAMS, text_char=x)
+
+        rows = sorted(call["text_char"].shape[0] for call in forward.received)
+        assert rows == [8, 9, 9, 9]
+
+    def test_chunking_composes_with_sharding(self):
+        """A node chunks its own slice while the cluster splits the batch."""
+        forward, dist, _ = _make_distributed(shard_count=2)
+        dist.local_chunks = 3
+        dist.min_rows_per_chunk = 4
+        x = np.random.randint(1, VOCAB, size=(35, 199), dtype=np.int32)
+
+        _, _, want_mask, _, _ = forward(FAKE_PARAMS, text_char=x)
+        forward.received.clear()
+        _, _, got_mask, _, _ = dist(FAKE_PARAMS, text_char=x)
+
+        assert np.array_equal(got_mask, want_mask)
+        # The coordinator keeps 12 of the 35 rows and splits them 4/4/4 across
+        # threads; the loopback client runs the two remote slices (12 and 11)
+        # through the same fake, so filter those out by size.
+        local_rows = sorted(
+            call["text_char"].shape[0]
+            for call in forward.received
+            if call["text_char"].shape[0] == 4
+        )
+        assert local_rows == [4, 4, 4]
+
+    def test_chunking_off_by_default(self):
+        """Existing deployments must be untouched until they opt in."""
+        forward = _make_forward()
+        dist = DistributedForward(
+            local_forward=forward, shard_urls=[], language="greek"
+        )
+        x = np.random.randint(1, VOCAB, size=(35, 199), dtype=np.int32)
+        dist(FAKE_PARAMS, text_char=x)
+
+        assert [call["text_char"].shape[0] for call in forward.received] == [35]
