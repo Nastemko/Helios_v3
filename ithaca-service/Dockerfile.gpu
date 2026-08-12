@@ -1,0 +1,90 @@
+# Ithaca/Aeneas inference service -- GPU build for Cloud Run.
+#
+# Mirrors Dockerfile (the CPU build) deliberately: same base user, same uv
+# workflow, same source layout, so a bug reproduced locally is the same bug
+# here. Four things differ, each for a reason noted inline:
+#
+#   1. CUDA base image and the jax[cuda13] wheel.
+#   2. No CPU thread-pool tuning -- meaningless on GPU, and XLA_FLAGS actively
+#      wrong.
+#   3. The six checkpoints are baked in rather than mounted.
+#   4. PORT defaults to 8080, matching Cloud Run.
+#
+# Build server-side (the checkpoint download is ~2GB and should not cross a
+# home uplink):
+#   gcloud builds submit ./ithaca-service --config=ithaca-service/cloudbuild.yaml
+FROM nvidia/cuda:13.0.1-runtime-ubuntu24.04
+
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    DEBIAN_FRONTEND=noninteractive
+
+# Same non-root user and uid as the CPU image.
+RUN useradd -m -u 1100 helios && \
+    mkdir -p /app /app/assets/inscriptions/models && \
+    chown -R helios:helios /app
+
+# python3 and python3-venv are explicit here: the CUDA base image, unlike
+# ubuntu:24.04, does not ship a Python interpreter for uv to bootstrap onto.
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
+    curl \
+    ca-certificates \
+    python3 \
+    python3-venv \
+    libgomp1 \
+    && rm -rf /var/lib/apt/lists/* \
+    && curl -LsSf https://astral.sh/uv/install.sh | sh \
+    && mv /root/.local/bin/uv /usr/local/bin/uv
+
+# NOTE: the CPU image sets OMP_NUM_THREADS/OPENBLAS_NUM_THREADS/MKL_NUM_THREADS
+# and XLA_FLAGS=--xla_cpu_multi_thread_eigen=true here. That block is
+# deliberately absent: those values tune a CPU forward pass, and the XLA flag
+# is wrong once the computation is on an accelerator.
+
+# Persistent XLA compilation cache, so a cold instance does not re-pay
+# compilation of the forward pass on its first request.
+RUN mkdir -p /app/.cache/jax && chown -R helios:helios /app/.cache
+ENV JAX_COMPILATION_CACHE_DIR=/app/.cache/jax
+
+WORKDIR /app
+USER helios
+
+# Dependencies first, so this layer survives source edits.
+COPY --chown=helios:helios ./pyproject.toml ./uv.lock ./
+RUN uv sync
+
+# The CUDA-enabled JAX wheel, layered over the CPU resolution above rather than
+# changed in pyproject.toml -- that file stays CPU-default so local dev and the
+# test suite are unaffected by anything done for this image. This replaces the
+# CPU jaxlib with one carrying CUDA 13 kernels.
+RUN uv pip install --upgrade "jax[cuda13]>=0.11.0"
+
+# The six model files, in their own layer so source edits never re-fetch ~2GB.
+# Two checkpoints, two datasets, two retrieval-embedding files -- all are
+# required: contextualize needs the datasets and embeddings, not just the
+# checkpoints. Paths match ithaca_service.py's expectations exactly (models in
+# models/, datasets at the INSCRIPTIONS_DIR root).
+RUN MODELS=https://storage.googleapis.com/ithaca-resources/models && \
+    curl -fSL -o /app/assets/inscriptions/models/ithaca_153143996_2.pkl \
+    ${MODELS}/ithaca_153143996_2.pkl && \
+    curl -fSL -o /app/assets/inscriptions/iphi.json \
+    ${MODELS}/iphi.json && \
+    curl -fSL -o /app/assets/inscriptions/models/iphi_emb_xid153143996.pkl \
+    ${MODELS}/iphi_emb_xid153143996.pkl && \
+    curl -fSL -o /app/assets/inscriptions/models/aeneas_117149994_2.pkl \
+    ${MODELS}/aeneas_117149994_2.pkl && \
+    curl -fSL -o /app/assets/inscriptions/led.json \
+    ${MODELS}/led.json && \
+    curl -fSL -o /app/assets/inscriptions/models/led_emb_xid117149994.pkl \
+    ${MODELS}/led_emb_xid117149994.pkl
+
+COPY --chown=helios:helios ./src .
+
+# Cloud Run's default. Overridden by the platform at runtime; see the CPU
+# Dockerfile for why this is shell-form.
+ENV PORT=8080
+
+EXPOSE 8080
+
+CMD exec uv run uvicorn app:app --host 0.0.0.0 --port ${PORT}

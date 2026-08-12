@@ -63,6 +63,15 @@ COPY --chown=helios:helios ./src .
 # Cloud Run has nothing to mount and container streaming makes an in-image copy
 # the faster option at this size.
 
+# Cloud Run injects PORT and health-checks that port specifically, so the
+# listen port has to come from the environment rather than being baked in.
+# Shell-form CMD (not exec-form) is what makes ${PORT} expand; `exec` keeps
+# uvicorn as PID 1 so it still receives SIGTERM on shutdown.
+#
+# The default stays 8001, so docker-compose.yml and the backend's
+# ITHACA_SERVICE_URL keep working with no change.
+ENV PORT=8001
+
 EXPOSE 8001
 
-CMD ["uv", "run", "uvicorn", "app:app", "--host", "0.0.0.0", "--port", "8001"]
+CMD exec uv run uvicorn app:app --host 0.0.0.0 --port ${PORT}

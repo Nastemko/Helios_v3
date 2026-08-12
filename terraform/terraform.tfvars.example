@@ -1,0 +1,26 @@
+# Copy to terraform.tfvars and fill in. That file is gitignored -- it holds
+# your billing account ID.
+#
+#   cp terraform.tfvars.example terraform.tfvars
+
+project_id = "your-gcp-project-id"
+
+# Must be an L4 region: us-central1, us-east4, europe-west1, europe-west4,
+# asia-southeast1.
+region = "us-central1"
+
+# Find it with: gcloud billing accounts list
+billing_account_id = "000000-000000-000000"
+
+# Set false if you lack roles/billing.admin on the billing account -- the
+# budget is the one resource here that needs billing-account-level permission.
+enable_budget = true
+
+# $20/month, in whole dollars. An alert, not a cap.
+budget_amount_usd = "20"
+
+# Leave false for the first apply; see variables.tf for the two-pass flow.
+enable_auth = false
+
+# Set after the first Cloud Build run. Prefer a digest over a tag.
+# image = "us-central1-docker.pkg.dev/PROJECT/helios/ithaca@sha256:..."
