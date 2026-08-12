@@ -4,12 +4,23 @@ The perf work on the Ithaca service must not change what the model predicts,
 so this script records both wall time and the full prediction list. Later runs
 are diffed against the baseline to prove outputs are unchanged.
 
-Runs standalone (no database needed). Inside the backend image:
+Runs standalone (no database needed). Locally:
+
+    cd ithaca-service
+    PYTHONPATH=./src uv run python src/scripts/bench_ithaca.py --out bench/cpu.json
+
+Or inside the image:
 
     docker run --rm \
-      -v "$PWD/backend/src:/app/src:ro,Z" -v "$PWD/bench:/bench:Z" \
-      -e PYTHONPATH=/app/src helios-backend:perf \
+      -v "$PWD/ithaca-service/src:/app/src:ro,Z" -v "$PWD/bench:/bench:Z" \
+      -e PYTHONPATH=/app/src helios-ithaca:cpu \
       uv run python /app/src/scripts/bench_ithaca.py --out /bench/baseline.json
+
+This is also the GPU gate: run it on a `g2-standard-8` against the GPU image and
+diff the predictions against a CPU baseline. Wall time is the metric; identical
+predictions are the correctness bar. The sharding layer this script was
+originally written to measure has been removed, so the comparison that matters
+now is CPU-vs-accelerator, not one node against several.
 """
 
 import argparse
@@ -18,7 +29,7 @@ import logging
 import time
 from typing import Any
 
-from services.ithaca_service.ithaca_service import (
+from ithaca_service.ithaca_service import (
     DEFAULT_BEAM_WIDTH,
     IthacaService,
     get_ithaca_service,

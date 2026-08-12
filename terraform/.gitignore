@@ -1,0 +1,17 @@
+# State contains resource metadata and must never be committed. With a local
+# backend it is also the only record of what exists in GCP -- back it up
+# somewhere outside the repo.
+*.tfstate
+*.tfstate.*
+.terraform/
+
+# NOTE: .terraform.lock.hcl is deliberately NOT ignored. It pins provider
+# checksums so every init resolves the same versions; committing it is the
+# recommended practice.
+
+# Real variable values, including the billing account ID.
+*.tfvars
+!terraform.tfvars.example
+
+crash.log
+crash.*.log

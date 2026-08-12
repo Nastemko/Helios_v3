@@ -1,0 +1,51 @@
+[project]
+name = "helios-ithaca-service"
+version = "0.1.0"
+description = "On-demand Ithaca/Aeneas inference service for Helios"
+authors = [
+    {name = "Your Name", email = "you@example.com"}
+]
+requires-python = "~=3.13.0"
+
+# Deliberately narrow: this service runs the model and nothing else. No
+# SQLAlchemy, no auth stack, no CLTK -- those stay in the backend, which no
+# longer carries JAX in return.
+dependencies = [
+    "fastapi[standard]>=0.141.1",
+    "uvicorn[standard]>=0.52.0",
+    "pydantic>=2.13.4",
+    "pydantic-settings>=2.14.2",
+    "python-dotenv>=1.2.2",
+    "jax>=0.11.0",
+    "jaxlib>=0.11.0",
+    "flax>=0.12.8",
+    "ml-collections>=1.1.0",
+    "pillow>=12.3.0",
+    "tqdm>=4.70.0",
+    # Verifies the OIDC ID token the backend presents. Cloud Run rejects
+    # unauthenticated callers before the container is reached, so this is a
+    # second layer rather than the only one. The [requests] extra is required:
+    # google.auth.transport.requests raises ImportError without it, and that is
+    # the transport used to fetch Google's token-signing certificates.
+    "google-auth[requests]>=2.43.0",
+]
+
+# The CPU wheels above are the local-development default. The GPU image swaps
+# in `jax[cuda13]` at build time -- see Dockerfile.gpu. Keeping plain jax here
+# means `uv sync` on a laptop stays a small download and the test suite runs
+# without CUDA.
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.pytest.ini_options]
+# Mirrors the backend: `src/` is the Python root, so absolute imports like
+# `from vendor.predictingthepast...` and `from config import settings` resolve
+# without PYTHONPATH. Scripts run outside pytest still need PYTHONPATH=./src.
+pythonpath = ["src"]
+
+[dependency-groups]
+dev = [
+    "black>=26.5.1",
+    "pytest>=9.1.1",
+]

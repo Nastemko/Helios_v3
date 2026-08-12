@@ -12,13 +12,13 @@ from database import get_db
 from middleware.auth import get_current_user
 from models.inscription import Inscription, InscriptionSegment
 from models.user import User
-from services.ithaca_service.ithaca_service import (
+from services.ithaca_client import (
     DEFAULT_BEAM_WIDTH,
     DEFAULT_MAX_RESTORATION_LEN,
     MAX_BEAM_WIDTH,
     MAX_RESTORATION_LEN,
-    get_ithaca_service,
-    initialize_all_models,
+    MAX_TOP_K,
+    get_ithaca_client,
 )
 
 logger = logging.getLogger(__name__)
@@ -399,7 +399,10 @@ class ContextualizeRequest(_InscriptionTextRequest):
     """Request for finding similar inscriptions"""
 
     language: Language = "greek"
-    top_k: int = 20
+    # Bounded now that this crosses a network: an unbounded top_k was merely a
+    # long list in-process, but is a response-size and serialisation cost once
+    # the results have to come back over the wire.
+    top_k: int = Field(20, ge=1, le=MAX_TOP_K)
 
 
 class SimilarText(BaseModel):
@@ -453,38 +456,23 @@ def restore_inscription(
     Example Greek: "εδοξεν τηι βουληι και τωι δημωι # αθηναιων"
     Example Latin: "imp caesar divi # f augustus"
     """
-    service = get_ithaca_service()
-
-    if not service.is_available(request.language):
-        return RestoreResponse(
-            input_text=request.text,
-            language=request.language,
-            top_prediction=request.text,
-            missing_indices=[],
-            predictions=[],
-            prediction_saliency=[],
-            available=False,
-            message=f"{request.language.title()} model not loaded. Check /api/inscriptions/model/status",
-        )
-
     # beam_width and max_restoration_len are bounded by Field(ge=..., le=...) on
     # RestoreRequest, so an out-of-range value is a 422 rather than an unbounded
-    # amount of CPU. Both were previously taken straight from the request body.
-    if not service._inference_lock.acquire(blocking=False):
-        raise HTTPException(
-            status_code=429,
-            detail="Another inference is already running; retry shortly.",
-        )
-    try:
-        result = service.restore(
-            text=request.text,
-            language=request.language,
-            beam_width=request.beam_width,
-            temperature=request.temperature,
-            max_restoration_len=request.max_restoration_len,
-        )
-    finally:
-        service._inference_lock.release()
+    # amount of compute. Both were previously taken straight from the request body.
+    #
+    # No availability pre-check and no inference lock any more. The pre-check
+    # cost a second round trip to say what the call itself reports, and
+    # serialising inference is now the inference service's concern -- it runs at
+    # concurrency 1 and the platform queues, so a busy model delays a request
+    # rather than rejecting it with a 429.
+    client = get_ithaca_client()
+    result = client.restore(
+        text=request.text,
+        language=request.language,
+        beam_width=request.beam_width,
+        temperature=request.temperature,
+        max_restoration_len=request.max_restoration_len,
+    )
 
     return RestoreResponse(
         input_text=result.input_text,
@@ -521,30 +509,8 @@ def attribute_inscription(
     - predicted_date_range: Most likely date range
     - saliency maps: Which characters influenced the predictions
     """
-    service = get_ithaca_service()
-
-    if not service.is_available(request.language):
-        return AttributeResponse(
-            input_text=request.text,
-            language=request.language,
-            locations=[],
-            year_scores=[0.0] * 160,
-            predicted_date_range={"min": None, "max": None, "confidence": 0.0},
-            date_saliency=[],
-            location_saliency=[],
-            available=False,
-            message=f"{request.language.title()} model not loaded. Check /api/inscriptions/model/status",
-        )
-
-    if not service._inference_lock.acquire(blocking=False):
-        raise HTTPException(
-            status_code=429,
-            detail="Another inference is already running; retry shortly.",
-        )
-    try:
-        result = service.attribute(request.text, language=request.language)
-    finally:
-        service._inference_lock.release()
+    client = get_ithaca_client()
+    result = client.attribute(request.text, language=request.language)
 
     return AttributeResponse(
         input_text=result.input_text,
@@ -579,27 +545,10 @@ def contextualize_inscription(
 
     Uses the model's embedding space to find semantically similar inscriptions.
     """
-    service = get_ithaca_service()
-
-    if not service.is_available(request.language):
-        return ContextualizeResponse(
-            similar=[],
-            language=request.language,
-            available=False,
-            message=f"{request.language.title()} model not loaded. Check /api/inscriptions/model/status",
-        )
-
-    if not service._inference_lock.acquire(blocking=False):
-        raise HTTPException(
-            status_code=429,
-            detail="Another inference is already running; retry shortly.",
-        )
-    try:
-        result = service.contextualize(
-            request.text, language=request.language, top_k=request.top_k
-        )
-    finally:
-        service._inference_lock.release()
+    client = get_ithaca_client()
+    result = client.contextualize(
+        request.text, language=request.language, top_k=request.top_k
+    )
 
     return ContextualizeResponse(
         similar=[
@@ -626,53 +575,14 @@ async def get_model_status():
     """
     Check the status of all inscription models (Greek and Latin).
     """
-    service = get_ithaca_service()
-    status = service.get_status()
+    # Reports the inference service's view, not this process's. A service that
+    # cannot be reached reads as both models unavailable, which is what a
+    # caller needs to know: from here an unreachable model and an unloaded one
+    # have the same consequence.
+    status = get_ithaca_client().get_status()
 
     return {
         "models": status,
         "features": ["restore", "attribute", "contextualize"],
         "supported_languages": ["greek", "latin"],
     }
-
-
-@router.post("/model/initialize")
-async def initialize_models(
-    language: Optional[Language] = Query(
-        None, description="Specific language to initialize, or omit for both"
-    ),
-    current_user: User = Depends(get_current_user),
-):
-    """
-    Initialize inscription analysis models.
-
-    Args:
-        language: 'greek', 'latin', or omit to initialize both
-
-    This loads the model checkpoint and required data files.
-    May take 30-60 seconds per model.
-    """
-    service = get_ithaca_service()
-
-    if language:
-        # Initialize specific language
-        success = service.initialize_model(language)
-        if success:
-            return {
-                "status": "success",
-                "message": f"{language.title()} model initialized",
-                "initialized": {language: True},
-            }
-        else:
-            raise HTTPException(
-                status_code=500,
-                detail=f"Failed to initialize {language} model. Check that model files exist in backend/models/",
-            )
-    else:
-        # Initialize both
-        results = initialize_all_models()
-        return {
-            "status": "success" if any(results.values()) else "failed",
-            "message": "Model initialization complete",
-            "initialized": results,
-        }

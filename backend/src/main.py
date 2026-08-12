@@ -24,7 +24,6 @@ from routers import (
 from scripts.load_phi_inscriptions import initialize_phi_inscriptions
 from scripts.populate_database import populate_on_startup
 from scripts.populate_database_llm import llm_populate_on_startup, openrouter_config
-from services.ithaca_service.ithaca_service import initialize_all_models
 from services.morphology import get_morphology_service
 
 # Configure logging
@@ -105,21 +104,11 @@ async def lifespan(app: FastAPI):
     morphology_service = get_morphology_service()
     logger.info(f"Morphology service initialized: {morphology_service.initialized}")
 
-    # Initialize Ithaca inscription models (Greek and Latin)
-    logger.info("Initializing Ithaca inscription models...")
-
-    try:
-        ithaca_results = initialize_all_models()
-        for lang, success in ithaca_results.items():
-            if success:
-                logger.info(f"Ithaca {lang.title()} model initialized successfully")
-            else:
-                logger.warning(
-                    f"Ithaca {lang.title()} model not available (files may not be present)"
-                )
-    except Exception as e:
-        logger.error(f"Error initializing Ithaca models: {e}")
-        # Continue startup even if Ithaca models fail to load
+    # Ithaca/Aeneas models are no longer loaded here. Inference runs in its own
+    # deployable (ithaca-service/), reached over HTTP by services/ithaca_client.py,
+    # which keeps JAX and ~2GB of checkpoints off this image and lets the model
+    # scale to zero independently of the API. Nothing to initialize at startup:
+    # the client is stateless and the first call establishes reachability.
 
     logger.info(f"{settings.misc.APP_NAME} started successfully")
 

@@ -21,6 +21,11 @@ services:
       dockerfile: Dockerfile
     container_name: helios-backend
     env_file: .env
+    environment:
+      # Where to reach inference. Production overrides this with the Cloud Run
+      # service URL; an unreachable service degrades the inscription endpoints
+      # rather than failing them, so this is not a hard dependency.
+      ITHACA_SERVICE_URL: http://ithaca:8001
     volumes:
       - backend_logs:/app/logs
     ports:
@@ -35,20 +40,65 @@ services:
       interval: 30s
       timeout: 10s
       retries: 5
-      # Startup re-scans 1612 XML files, 178k inscriptions, and loads three
-      # JAX checkpoints before /health is routed. uvicorn binds :8000 well
-      # before that finishes, so probes connect and fail until it does.
+      # Startup re-scans 1612 XML files and 178k inscriptions before /health is
+      # routed. uvicorn binds :8000 well before that finishes, so probes connect
+      # and fail until it does. No longer loads model checkpoints -- that cost
+      # moved to the ithaca service.
       start_period: 10m
     restart: unless-stopped
-    # Ithaca beam search is CPU- and memory-hungry (a wide beam materializes
-    # multi-GB attention tensors). Cap it so it cannot starve postgres/ollama or
-    # OOM the host. Keep cpus in sync with the *_NUM_THREADS values baked into
-    # backend/Dockerfile.
+    # No longer runs inference, so the old beam-search headroom is gone. What
+    # remains is the startup corpus scan and normal request serving.
+    deploy:
+      resources:
+        limits:
+          cpus: "4"
+          memory: 6g
+
+  # Ithaca/Aeneas inference.
+  #
+  # In production this is a separate, GPU-backed Cloud Run service that scales
+  # to zero; the backend reaches it over HTTP and degrades to "model
+  # unavailable" when it cannot. This container is the local stand-in: the same
+  # image and the same API, built against CPU JAX so the stack runs offline
+  # with no GPU and no GCP credentials.
+  #
+  # It replaces the former ithaca-shard-1/2 pair. Those existed to split a
+  # beam-search batch across machines because the CPU forward pass saturates at
+  # ~2 cores; a single accelerator runs the whole beam in one pass, so the
+  # sharding layer was removed along with them.
+  #
+  # Expect a slow first request: it loads ~2GB of checkpoints at startup.
+  ithaca:
+    build:
+      context: ./ithaca-service/
+      dockerfile: Dockerfile
+    container_name: helios-ithaca
+    environment:
+      # Skips ID-token verification. Safe here because the port is only
+      # published to the host; never set this on a reachable deployment.
+      ITHACA_DEBUG: "True"
+      INSCRIPTIONS_DIR: /app/assets/inscriptions
+    volumes:
+      # The checkpoints are baked into the production image but mounted here,
+      # so a local rebuild does not re-download ~2GB. Populate this directory
+      # with the six files listed in ithaca-service/Dockerfile.
+      - ./ithaca-service/assets/inscriptions:/app/assets/inscriptions:ro,Z
+    ports:
+      - "8001:8001"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://127.0.0.1:8001/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      # Checkpoint load dominates: this is the same cost that shows up as cold
+      # start on Cloud Run.
+      start_period: 5m
+    restart: unless-stopped
     deploy:
       resources:
         limits:
           cpus: "5"
-          memory: 10g
+          memory: 8g
 
   # Frontend (React/Vite with nginx)
   frontend:

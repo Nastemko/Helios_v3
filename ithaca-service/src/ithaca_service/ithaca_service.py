@@ -19,7 +19,7 @@ from typing import Any, Dict, Literal, Optional
 import jax
 
 from config import settings
-from services.ithaca_service.models import (
+from ithaca_service.models import (
     AttributionResult,
     ContextualizationResult,
     LocationPrediction,
@@ -159,9 +159,20 @@ class IthacaModel:
                 checkpoint = pickle.load(f)
 
             # Extract model components
+            # `jax.device_put` with no explicit device targets the default
+            # backend, so this is GPU when a CUDA jaxlib is installed and CPU
+            # otherwise -- the same line works for both images.
             self.params = jax.device_put(checkpoint["params"])
             model = Model(**checkpoint["model_config"])
+
+            # Plain `model.apply`. This used to be wrapped in DistributedForward
+            # to fan the batch out across a CPU cluster, which existed because
+            # the CPU forward pass is ~49% serial and saturates at ~2 cores. A
+            # single accelerator runs the whole beam in one pass, so the shard
+            # coordinator, the per-node chunking and the cgroup CPU detection
+            # all became dead weight and were removed with this extraction.
             self.forward = model.apply
+
             self.region_map = checkpoint["region_map"]
             self.vocab_char_size = checkpoint["model_config"]["vocab_char_size"]
 

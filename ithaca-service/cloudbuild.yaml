@@ -1,0 +1,40 @@
+# Server-side build of the GPU image.
+#
+# Run from the repo root:
+#   gcloud builds submit ./ithaca-service \
+#     --config=ithaca-service/cloudbuild.yaml \
+#     --region=us-central1 \
+#     --substitutions=_REPO_LOCATION=us-central1,_REPO=helios
+#
+# Building here rather than locally means the ~2GB of checkpoints are pulled
+# inside Google's network. E2_HIGHCPU_8 is for the disk and network, not CPU:
+# the image is large and the default machine's 100GB disk is tight once CUDA
+# layers and checkpoints are both present.
+
+substitutions:
+  _REPO_LOCATION: us-central1
+  _REPO: helios
+  _IMAGE: ithaca
+
+options:
+  machineType: E2_HIGHCPU_8
+  diskSizeGb: "200"
+  logging: CLOUD_LOGGING_ONLY
+
+timeout: 3600s
+
+images:
+  - "${_REPO_LOCATION}-docker.pkg.dev/${PROJECT_ID}/${_REPO}/${_IMAGE}:${SHORT_SHA}"
+  - "${_REPO_LOCATION}-docker.pkg.dev/${PROJECT_ID}/${_REPO}/${_IMAGE}:latest"
+
+steps:
+  - name: gcr.io/cloud-builders/docker
+    args:
+      - build
+      - -f
+      - Dockerfile.gpu
+      - -t
+      - "${_REPO_LOCATION}-docker.pkg.dev/${PROJECT_ID}/${_REPO}/${_IMAGE}:${SHORT_SHA}"
+      - -t
+      - "${_REPO_LOCATION}-docker.pkg.dev/${PROJECT_ID}/${_REPO}/${_IMAGE}:latest"
+      - .

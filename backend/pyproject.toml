@@ -23,22 +23,23 @@ dependencies = [
     "cltk[stanza]>=2.5.1",
     "python-dotenv>=1.2.2",
     "itsdangerous>=2.2.0",
-    "jax>=0.11.0",
-    "jaxlib>=0.11.0",
-    "flax>=0.12.8",
-    "ml-collections>=1.1.0",
     "pillow>=12.3.0",
     "tqdm>=4.70.0",
     "openai>=2.52.0",
+    # Mints the OIDC ID token used to call the Ithaca inference service. The
+    # [requests] extra is required -- google.auth.transport.requests raises
+    # ImportError without it.
+    "google-auth[requests]>=2.43.0",
     # Transitive via cltk[stanza] -> stanza. Listed directly only so the
     # [tool.uv.sources] pin below applies — uv ignores sources for deps that
     # are purely transitive, and PyPI's default torch is the +cuXXX build.
     "torch>=2.13.0",
 ]
 
-# Nothing here runs on GPU: stanza resolves to device 'cpu' and jax/jaxlib are
-# the CPU builds. The default torch wheel drags in ~2.7GB of unreachable CUDA
-# (19 nvidia-*/cuda-*/triton packages), so pin the CPU wheel instead.
+# Nothing here runs on GPU: stanza resolves to device 'cpu', and model
+# inference has moved out of this image entirely (see ithaca-service/). The
+# default torch wheel drags in ~2.7GB of unreachable CUDA (19
+# nvidia-*/cuda-*/triton packages), so pin the CPU wheel instead.
 # Revert this block if the backend ever needs to target a CUDA machine.
 [tool.uv.sources]
 torch = [{ index = "pytorch-cpu" }]

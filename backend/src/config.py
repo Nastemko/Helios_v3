@@ -32,6 +32,42 @@ class LLMSettings(BaseSettings):
     )
 
 
+class IthacaServiceSettings(BaseSettings):
+    """Where to reach the Ithaca inference service.
+
+    Inference no longer runs in this process. It lives in its own deployable
+    (``ithaca-service/``) so that JAX, the Flax model code and ~2GB of
+    checkpoints stay off the API image, and so the model can sit on an
+    accelerator that scales to zero while the API does not.
+
+    An unreachable service is a degraded feature, not an error: the client
+    returns ``available=False`` and the inscription endpoints report the model
+    as unavailable, exactly as they did when a checkpoint file was missing.
+    """
+
+    URL: str = "http://ithaca:8001"
+
+    # Sized for a cold start, not a warm call. The service scales to zero, so
+    # a first request pays instance start plus a multi-second checkpoint load
+    # before inference begins. It must also exceed the service's own
+    # restoration time budget (180s) so a slow-but-working restore is waited
+    # out rather than abandoned, and stay under the platform request timeout.
+    TIMEOUT: float = 240.0
+
+    # Expected `aud` claim on the ID token sent to the service. Empty means
+    # "use URL", which is what Cloud Run wants unless a custom audience is
+    # configured. Must never carry a path component -- an audience with a path
+    # is the usual cause of a 401 that reads like a credentials failure.
+    AUDIENCE: str = ""
+
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        env_file_encoding="utf-8",
+        case_sensitive=True,
+        env_prefix="ITHACA_SERVICE_",
+    )
+
+
 class DatabaseSettings(BaseSettings):
     """Database configuration settings"""
 
@@ -115,6 +151,7 @@ class Settings:
         self.llm = LLMSettings()
         self.database = DatabaseSettings()
         self.assets = AssetSettings()
+        self.ithaca_service = IthacaServiceSettings()
 
     def validate_production(self) -> None:
         """
