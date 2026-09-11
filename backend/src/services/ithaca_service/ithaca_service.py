@@ -294,11 +294,13 @@ class IthacaService:
         temperature: float = 1.0,
         max_restoration_len: int = DEFAULT_MAX_RESTORATION_LEN,
         top_chars: Optional[int] = DEFAULT_TOP_CHARS,
-        time_budget: Optional[float] = DEFAULT_TIME_BUDGET_SECONDS,
+        time_budget: Optional[float] = None,
     ) -> RestorationResult:
         """
         Restore missing characters in an inscription.
         """
+        if time_budget is None:
+            time_budget = settings.ithaca.TIME_BUDGET
         model = self._models.get(language)
 
         if model is None or not model.is_available:
