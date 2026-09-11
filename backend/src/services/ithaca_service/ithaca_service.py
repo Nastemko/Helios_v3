@@ -52,8 +52,13 @@ Language = Literal["greek", "latin"]
 # Caveat: those fixtures are synthetic and scored by the model's own likelihood,
 # which measures self-consistency, not correctness. Re-tune against inscriptions
 # with known restorations before treating this as an accuracy-optimal value.
-DEFAULT_BEAM_WIDTH = 35
-MAX_BEAM_WIDTH = 100
+#
+# Deprecated aliases; prefer settings.ithaca.* directly. Kept so existing
+# imports (routers, bench script) keep working. Values resolve from settings at
+# import time; restore()/contextualize() resolve them at call time instead, so
+# env overrides apply without a reimport.
+DEFAULT_BEAM_WIDTH = settings.ithaca.BEAM_WIDTH
+MAX_BEAM_WIDTH = settings.ithaca.MAX_BEAM_WIDTH
 
 # A '#' (unknown-length gap) is far more expensive than a '?' (single missing
 # character), because it searches over how long the gap is *as well as* what
@@ -81,9 +86,10 @@ MAX_BEAM_WIDTH = 100
 # the model may propose, so lowering it makes longer lacunae unrestorable. The
 # default therefore stays at the upstream 15 (safe for any gap) and is exposed
 # to callers, who are the ones who can see how big the lacuna actually is.
-DEFAULT_MAX_RESTORATION_LEN = 15
+# Deprecated aliases; prefer settings.ithaca.* directly.
+DEFAULT_MAX_RESTORATION_LEN = settings.ithaca.DEFAULT_MAX_RESTORATION_LEN
 # Upstream UNK_RESTORATION_MAX_LEN; inference.restore raises above this.
-MAX_RESTORATION_LEN = 20
+MAX_RESTORATION_LEN = settings.ithaca.MAX_RESTORATION_LEN
 
 # How many characters the beam search expands at each hole. Upstream tries the
 # whole alphabet -- 29 branches for Greek (26 letters + final sigma/koppa/stigma
@@ -95,21 +101,13 @@ MAX_RESTORATION_LEN = 20
 # 8 keeps every character with any realistic chance of surviving while cutting
 # candidate construction ~3.6x. Set to None to restore exhaustive upstream
 # behaviour if a restoration ever looks truncated.
-DEFAULT_TOP_CHARS = 8
+# Deprecated alias; prefer settings.ithaca.TOP_CHARS directly.
+DEFAULT_TOP_CHARS = settings.ithaca.TOP_CHARS
 
-# Backstop for the failure this whole module was tuned to prevent: one request
-# held a worker for 947s, and since _inference_lock serialises inference, that
-# request also blocked every other user's restore behind it.
-#
-# Checked between generations, so the real ceiling is this plus one forward
-# pass. Completed candidates found before expiry are still returned, so hitting
-# the budget degrades the answer rather than failing the request. It is
-# deliberately well above the expected cost of a legitimate restoration -- it
-# exists to bound the pathological case, not to trim normal ones.
-# Documented fallback only; the live default is IthacaSettings.TIME_BUDGET
-# (backend/src/config.py), which must match this value. `restore()` resolves
-# its budget from settings at call time — this constant is not read at runtime.
-DEFAULT_TIME_BUDGET_SECONDS = 180.0
+# Sentinel distinguishing "top_chars not passed" (use settings) from an
+# explicit None (exhaustive upstream behaviour). None is meaningful for
+# top_chars, so the usual None-means-settings convention cannot apply here.
+_TOP_CHARS_UNSET: Any = object()
 
 
 def _failure_message(error: Exception, language: Language) -> str:
@@ -237,15 +235,21 @@ class IthacaService:
 
         if checkpoint_path is None:
             if language == "greek":
-                checkpoint_path = models_dir / "ithaca_153143996_2.pkl"
+                checkpoint_path = models_dir / settings.ithaca.MODEL_GREEK_CKPT
             else:
-                checkpoint_path = models_dir / "aeneas_117149994_2.pkl"
+                checkpoint_path = models_dir / settings.ithaca.MODEL_LATIN_CKPT
 
         if dataset_path is None:
             if language == "greek":
-                dataset_path = Path(settings.assets.INSCRIPTIONS_DIR) / "iphi.json"
+                dataset_path = (
+                    Path(settings.assets.INSCRIPTIONS_DIR)
+                    / settings.ithaca.DATASET_GREEK
+                )
             else:
-                dataset_path = Path(settings.assets.INSCRIPTIONS_DIR) / "led.json"
+                dataset_path = (
+                    Path(settings.assets.INSCRIPTIONS_DIR)
+                    / settings.ithaca.DATASET_LATIN
+                )
 
         if retrieval_path is None:
             if language == "greek":
@@ -293,19 +297,30 @@ class IthacaService:
         self,
         text: str,
         language: Language = "greek",
-        beam_width: int = DEFAULT_BEAM_WIDTH,
-        temperature: float = 1.0,
-        max_restoration_len: int = DEFAULT_MAX_RESTORATION_LEN,
-        top_chars: Optional[int] = DEFAULT_TOP_CHARS,
-        time_budget: Optional[float] = None,
+        beam_width: int | None = None,
+        temperature: float | None = None,
+        max_restoration_len: int | None = None,
+        top_chars: Any = _TOP_CHARS_UNSET,
+        time_budget: float | None = None,
     ) -> RestorationResult:
         """Restore missing characters in an inscription.
 
         `time_budget=None` (the default) resolves to `settings.ithaca.TIME_BUDGET`
         at call time; there is intentionally no way to request an unbounded
         restore — one request holds `_inference_lock`, so an unbounded search
-        would starve every other restore.
+        would starve every other restore. The same None-means-settings
+        convention applies to `beam_width`, `temperature` and
+        `max_restoration_len`; `top_chars` uses the `_TOP_CHARS_UNSET` sentinel
+        instead because an explicit None requests exhaustive upstream behaviour.
         """
+        if beam_width is None:
+            beam_width = settings.ithaca.BEAM_WIDTH
+        if temperature is None:
+            temperature = settings.ithaca.DEFAULT_TEMPERATURE
+        if max_restoration_len is None:
+            max_restoration_len = settings.ithaca.DEFAULT_MAX_RESTORATION_LEN
+        if top_chars is _TOP_CHARS_UNSET:
+            top_chars = settings.ithaca.TOP_CHARS
         if time_budget is None:
             time_budget = settings.ithaca.TIME_BUDGET
         model = self._models.get(language)
@@ -391,7 +406,7 @@ class IthacaService:
                 raise TypeError("model.region_map must be a dictionary")
             names_list = model.region_map.get("names", [])
             locations = []
-            for loc in result.locations[:20]:
+            for loc in result.locations[: settings.ithaca.ATTRIBUTION_LOCATIONS_KEPT]:
                 if loc.location_id < len(names_list):
                     name = names_list[loc.location_id]
                 else:
@@ -423,11 +438,16 @@ class IthacaService:
             )
 
     def contextualize(
-        self, text: str, language: Language = "greek", top_k: int = 20
+        self, text: str, language: Language = "greek", top_k: int | None = None
     ) -> ContextualizationResult:
         """
         Find similar inscriptions in the corpus.
+
+        `top_k=None` (the default) resolves to
+        `settings.ithaca.CONTEXT_TOP_K` at call time.
         """
+        if top_k is None:
+            top_k = settings.ithaca.CONTEXT_TOP_K
         model = self._models.get(language)
 
         if model is None or not model.is_available:

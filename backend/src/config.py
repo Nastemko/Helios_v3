@@ -127,6 +127,20 @@ class IthacaSettings(BaseSettings):
     # _inference_lock, so this also bounds how long every other restore waits.
     TIME_BUDGET: float = 180.0
 
+    BEAM_WIDTH: int = 35
+    MAX_BEAM_WIDTH: int = 100
+    DEFAULT_MAX_RESTORATION_LEN: int = 15
+    MAX_RESTORATION_LEN: int = 20
+    TOP_CHARS: int = 8
+    DEFAULT_TEMPERATURE: float = 1.0
+    CONTEXT_TOP_K: int = 20
+    ATTRIBUTION_LOCATIONS_KEPT: int = 20
+    DATE_WINDOW_FRACTION: float = 0.5
+    MODEL_GREEK_CKPT: str = "ithaca_153143996_2.pkl"
+    MODEL_LATIN_CKPT: str = "aeneas_117149994_2.pkl"
+    DATASET_GREEK: str = "iphi.json"
+    DATASET_LATIN: str = "led.json"
+
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",

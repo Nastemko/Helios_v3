@@ -197,6 +197,63 @@ class TestIthacaSettings(unittest.TestCase):
             self.assertEqual(Settings().ithaca.TIME_BUDGET, 180.0)
 
 
+class TestIthacaExtended(unittest.TestCase):
+    """Ithaca/Aeneas inference knobs preserve hardcoded defaults and load env."""
+
+    def test_ithaca_extended_defaults(self):
+        with patch.dict(os.environ, {}, clear=True):
+            ithaca = IthacaSettings()
+
+            self.assertEqual(ithaca.BEAM_WIDTH, 35)
+            self.assertEqual(ithaca.MAX_BEAM_WIDTH, 100)
+            self.assertEqual(ithaca.DEFAULT_MAX_RESTORATION_LEN, 15)
+            self.assertEqual(ithaca.MAX_RESTORATION_LEN, 20)
+            self.assertEqual(ithaca.TOP_CHARS, 8)
+            self.assertEqual(ithaca.DEFAULT_TEMPERATURE, 1.0)
+            self.assertEqual(ithaca.CONTEXT_TOP_K, 20)
+            self.assertEqual(ithaca.ATTRIBUTION_LOCATIONS_KEPT, 20)
+            self.assertEqual(ithaca.DATE_WINDOW_FRACTION, 0.5)
+            self.assertEqual(ithaca.MODEL_GREEK_CKPT, "ithaca_153143996_2.pkl")
+            self.assertEqual(ithaca.MODEL_LATIN_CKPT, "aeneas_117149994_2.pkl")
+            self.assertEqual(ithaca.DATASET_GREEK, "iphi.json")
+            self.assertEqual(ithaca.DATASET_LATIN, "led.json")
+
+    @patch.dict(
+        os.environ,
+        {
+            "ITHACA_BEAM_WIDTH": "20",
+            "ITHACA_MAX_BEAM_WIDTH": "50",
+            "ITHACA_DEFAULT_MAX_RESTORATION_LEN": "8",
+            "ITHACA_MAX_RESTORATION_LEN": "10",
+            "ITHACA_TOP_CHARS": "4",
+            "ITHACA_DEFAULT_TEMPERATURE": "0.7",
+            "ITHACA_CONTEXT_TOP_K": "5",
+            "ITHACA_ATTRIBUTION_LOCATIONS_KEPT": "5",
+            "ITHACA_DATE_WINDOW_FRACTION": "0.25",
+            "ITHACA_MODEL_GREEK_CKPT": "custom_greek.pkl",
+            "ITHACA_MODEL_LATIN_CKPT": "custom_latin.pkl",
+            "ITHACA_DATASET_GREEK": "custom_iphi.json",
+            "ITHACA_DATASET_LATIN": "custom_led.json",
+        },
+    )
+    def test_ithaca_extended_env_override(self):
+        ithaca = IthacaSettings()
+
+        self.assertEqual(ithaca.BEAM_WIDTH, 20)
+        self.assertEqual(ithaca.MAX_BEAM_WIDTH, 50)
+        self.assertEqual(ithaca.DEFAULT_MAX_RESTORATION_LEN, 8)
+        self.assertEqual(ithaca.MAX_RESTORATION_LEN, 10)
+        self.assertEqual(ithaca.TOP_CHARS, 4)
+        self.assertEqual(ithaca.DEFAULT_TEMPERATURE, 0.7)
+        self.assertEqual(ithaca.CONTEXT_TOP_K, 5)
+        self.assertEqual(ithaca.ATTRIBUTION_LOCATIONS_KEPT, 5)
+        self.assertEqual(ithaca.DATE_WINDOW_FRACTION, 0.25)
+        self.assertEqual(ithaca.MODEL_GREEK_CKPT, "custom_greek.pkl")
+        self.assertEqual(ithaca.MODEL_LATIN_CKPT, "custom_latin.pkl")
+        self.assertEqual(ithaca.DATASET_GREEK, "custom_iphi.json")
+        self.assertEqual(ithaca.DATASET_LATIN, "custom_led.json")
+
+
 class TestServerSettings(unittest.TestCase):
     """Tests for server/session/perf/DB-pool tunables."""
 

@@ -333,7 +333,7 @@ class RestoreRequest(_InscriptionTextRequest):
     """Request for text restoration"""
 
     language: Language = "greek"
-    temperature: float = 1.0
+    temperature: float = settings.ithaca.DEFAULT_TEMPERATURE
     beam_width: int = Field(
         DEFAULT_BEAM_WIDTH,
         ge=1,
@@ -410,7 +410,7 @@ class ContextualizeRequest(_InscriptionTextRequest):
     """Request for finding similar inscriptions"""
 
     language: Language = "greek"
-    top_k: int = 20
+    top_k: int = settings.ithaca.CONTEXT_TOP_K
 
 
 class SimilarText(BaseModel):
