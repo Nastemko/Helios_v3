@@ -229,6 +229,18 @@ class TestRestoreTimeBudgetFromSettings(unittest.TestCase):
         mock_restore.assert_called_once()
         self.assertEqual(mock_restore.call_args.kwargs["time_budget"], 10.0)
 
+    def test_explicit_none_resolves_to_settings(self):
+        service = self._service_with_available_model()
+        with patch(
+            "src.services.ithaca_service.ithaca_service.inference.restore",
+            return_value=self._inference_result(),
+        ) as mock_restore, patch.object(settings.ithaca, "TIME_BUDGET", 1600.0):
+            service.restore("εδοξ?ν", language="greek", time_budget=None)
+
+        mock_restore.assert_called_once()
+        kwargs = mock_restore.call_args.kwargs
+        self.assertEqual(kwargs["time_budget"], 1600.0)
+
 
 if __name__ == "__main__":
     unittest.main()
