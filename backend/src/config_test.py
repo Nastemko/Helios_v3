@@ -4,7 +4,7 @@ from unittest.mock import patch
 
 # To run this test, it's expected that the `src` directory is in the Python path.
 # For example, by running `pytest` from the `backend` directory, or by setting PYTHONPATH.
-from .config import Settings
+from config import IthacaSettings, Settings
 
 
 class TestConfig(unittest.TestCase):
@@ -181,3 +181,13 @@ class TestValidateProduction(unittest.TestCase):
         self.assertIn("SECRET_KEY", message)
         self.assertIn("GOOGLE_CLIENT_ID", message)
         self.assertIn("GOOGLE_CLIENT_SECRET", message)
+
+
+class TestIthacaSettings(unittest.TestCase):
+    def test_time_budget_defaults_to_180(self):
+        os.environ.pop("ITHACA_TIME_BUDGET", None)
+        self.assertEqual(IthacaSettings().TIME_BUDGET, 180.0)
+
+    @patch.dict(os.environ, {"ITHACA_TIME_BUDGET": "1600"})
+    def test_time_budget_env_override(self):
+        self.assertEqual(IthacaSettings().TIME_BUDGET, 1600.0)
