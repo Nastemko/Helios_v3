@@ -1,8 +1,11 @@
 """Performance monitoring middleware"""
 
-import time
 import logging
+import time
+
 from fastapi import Request
+
+from config import settings
 
 logger = logging.getLogger(__name__)
 
@@ -11,7 +14,7 @@ async def performance_middleware(request: Request, call_next):
     """
     Middleware to log request performance
 
-    Logs warning if response time exceeds 500ms threshold
+    Logs warning if response time exceeds configured SLOW_REQUEST_THRESHOLD (default 0.5s)
     """
     start_time = time.time()
 
@@ -21,11 +24,12 @@ async def performance_middleware(request: Request, call_next):
 
     logger.info(f"{request.method} {request.url.path} " f"completed in {duration:.3f}s")
 
-    # Alert if response time exceeds PRD requirement of 500ms
-    if duration > 0.5:
+    # Alert if response time exceeds configured threshold
+    if duration > settings.misc.SLOW_REQUEST_THRESHOLD:
         logger.warning(
             f"Slow request: {request.method} {request.url.path} "
-            f"took {duration:.3f}s (>500ms threshold)"
+            f"took {duration:.3f}s "
+            f"(>{settings.misc.SLOW_REQUEST_THRESHOLD}s threshold)"
         )
 
     # Add response time header for debugging

@@ -195,3 +195,50 @@ class TestIthacaSettings(unittest.TestCase):
     def test_composed_settings_exposes_ithaca(self):
         with patch.dict(os.environ, {}, clear=True):
             self.assertEqual(Settings().ithaca.TIME_BUDGET, 180.0)
+
+
+class TestServerSettings(unittest.TestCase):
+    """Tests for server/session/perf/DB-pool tunables."""
+
+    def test_server_defaults_preserve_hardcoded_behavior(self):
+        """Defaults match the previously hardcoded values."""
+        with patch.dict(os.environ, {}, clear=True):
+            settings = Settings()
+
+            self.assertEqual(settings.misc.HOST, "0.0.0.0")
+            self.assertEqual(settings.misc.PORT, 8000)
+            self.assertEqual(settings.misc.SESSION_MAX_AGE, 3600)
+            self.assertEqual(settings.misc.SLOW_REQUEST_THRESHOLD, 0.5)
+            self.assertEqual(settings.database.POOL_SIZE, 20)
+            self.assertEqual(settings.database.MAX_OVERFLOW, 40)
+            self.assertEqual(settings.database.POOL_TIMEOUT, 30)
+            self.assertEqual(settings.database.POOL_RECYCLE, 3600)
+            self.assertEqual(settings.database.CONNECT_TIMEOUT, 10)
+
+    @patch.dict(
+        os.environ,
+        {
+            "HOST": "127.0.0.1",
+            "PORT": "9000",
+            "SESSION_MAX_AGE": "7200",
+            "SLOW_REQUEST_THRESHOLD": "1.5",
+            "DATABASE_POOL_SIZE": "5",
+            "DATABASE_MAX_OVERFLOW": "10",
+            "DATABASE_POOL_TIMEOUT": "60",
+            "DATABASE_POOL_RECYCLE": "1800",
+            "DATABASE_CONNECT_TIMEOUT": "5",
+        },
+    )
+    def test_server_settings_load_from_env(self):
+        """Env vars override server/session/perf/DB-pool tunables."""
+        settings = Settings()
+
+        self.assertEqual(settings.misc.HOST, "127.0.0.1")
+        self.assertEqual(settings.misc.PORT, 9000)
+        self.assertEqual(settings.misc.SESSION_MAX_AGE, 7200)
+        self.assertEqual(settings.misc.SLOW_REQUEST_THRESHOLD, 1.5)
+        self.assertEqual(settings.database.POOL_SIZE, 5)
+        self.assertEqual(settings.database.MAX_OVERFLOW, 10)
+        self.assertEqual(settings.database.POOL_TIMEOUT, 60)
+        self.assertEqual(settings.database.POOL_RECYCLE, 1800)
+        self.assertEqual(settings.database.CONNECT_TIMEOUT, 5)

@@ -18,14 +18,14 @@ def _db_url() -> str:
 def _get_engine() -> Engine:
     engine_kwargs = {
         "poolclass": QueuePool,
-        "pool_size": 20,
-        "max_overflow": 40,
-        "pool_timeout": 30,
-        "pool_recycle": 3600,
+        "pool_size": settings.database.POOL_SIZE,
+        "max_overflow": settings.database.MAX_OVERFLOW,
+        "pool_timeout": settings.database.POOL_TIMEOUT,
+        "pool_recycle": settings.database.POOL_RECYCLE,
         "echo": settings.misc.DEBUG,
         "connect_args": {
             "options": "-c timezone=utc",
-            "connect_timeout": 10,
+            "connect_timeout": settings.database.CONNECT_TIMEOUT,
         },
     }
     engine = create_engine(_db_url(), **engine_kwargs)

@@ -41,6 +41,11 @@ class DatabaseSettings(BaseSettings):
     DB: str = "helios"
     USER: str = "heliosuser"
     PASSWORD: str = ""
+    POOL_SIZE: int = 20
+    MAX_OVERFLOW: int = 40
+    POOL_TIMEOUT: int = 30
+    POOL_RECYCLE: int = 3600
+    CONNECT_TIMEOUT: int = 10
 
     model_config = SettingsConfigDict(
         env_file=".env",
@@ -100,6 +105,11 @@ class MiscSettings(BaseSettings):
         "http://localhost:3000",
         "http://127.0.0.1:3000",
     ]
+
+    HOST: str = "0.0.0.0"
+    PORT: int = 8000
+    SESSION_MAX_AGE: int = 3600
+    SLOW_REQUEST_THRESHOLD: float = 0.5
 
     model_config = SettingsConfigDict(
         env_file=".env",
