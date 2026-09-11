@@ -7,6 +7,7 @@ from pydantic import BaseModel
 from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
+from config import settings
 from database import get_db
 from models.text import (
     Language,
@@ -120,7 +121,10 @@ async def list_texts(
     language: Optional[str] = Query(None, description="Filter by language (grc, lat)"),
     skip: int = Query(0, ge=0, description="Number of records to skip"),
     limit: int = Query(
-        50, ge=1, le=100, description="Maximum number of records to return"
+        settings.pagination.DEFAULT_TEXTS_LIMIT,
+        ge=1,
+        le=settings.pagination.MAX_TEXTS_LIMIT,
+        description="Maximum number of records to return",
     ),
     db: Session = Depends(get_db),
 ):
@@ -201,7 +205,12 @@ async def list_texts(
 async def get_text(
     text_id: Annotated[int, Path()],
     skip: int = Query(0, ge=0, description="Skip segments (for pagination)"),
-    limit: int = Query(1000, ge=1, le=5000, description="Limit segments"),
+    limit: int = Query(
+        settings.pagination.DEFAULT_SEGMENTS_LIMIT,
+        ge=1,
+        le=settings.pagination.MAX_SEGMENTS_LIMIT,
+        description="Limit segments",
+    ),
     db: Session = Depends(get_db),
 ):
     """

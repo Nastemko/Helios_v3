@@ -135,6 +135,28 @@ class IthacaSettings(BaseSettings):
     )
 
 
+class PaginationSettings(BaseSettings):
+    """Pagination defaults and maxima for list endpoints."""
+
+    DEFAULT_TEXTS_LIMIT: int = 50
+    MAX_TEXTS_LIMIT: int = 100
+    DEFAULT_SEGMENTS_LIMIT: int = 1000
+    MAX_SEGMENTS_LIMIT: int = 5000
+    DEFAULT_INSCRIPTIONS_LIMIT: int = 50
+    MAX_INSCRIPTIONS_LIMIT: int = 200
+    DEFAULT_ANNOTATIONS_LIMIT: int = 100
+    MAX_ANNOTATIONS_LIMIT: int = 500
+    MOST_ANNOTATED_TOP_N: int = 10
+    LIST_PREVIEW_CHARS: int = 150
+
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        env_file_encoding="utf-8",
+        case_sensitive=True,
+        env_prefix="PAGINATION_",
+    )
+
+
 class Settings:
     def __init__(self, **kwargs):
         self.misc = MiscSettings()
@@ -143,6 +165,7 @@ class Settings:
         self.database = DatabaseSettings()
         self.assets = AssetSettings()
         self.ithaca = IthacaSettings()
+        self.pagination = PaginationSettings()
 
     def validate_production(self) -> None:
         """

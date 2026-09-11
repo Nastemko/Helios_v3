@@ -8,6 +8,7 @@ from pydantic import BaseModel, field_serializer
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
+from config import settings
 from database import get_db
 from middleware.auth import get_current_user
 from models.annotation import Annotation
@@ -102,7 +103,11 @@ async def list_annotations(
     segment_id: Optional[int] = Query(None, description="Filter by segment ID"),
     word: Optional[str] = Query(None, description="Filter by word"),
     skip: int = Query(0, ge=0),
-    limit: int = Query(100, ge=1, le=500),
+    limit: int = Query(
+        settings.pagination.DEFAULT_ANNOTATIONS_LIMIT,
+        ge=1,
+        le=settings.pagination.MAX_ANNOTATIONS_LIMIT,
+    ),
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
@@ -243,7 +248,7 @@ async def get_version_annotations_summary(
         )
         .group_by(Annotation.word)
         .order_by(func.count(Annotation.id).desc())
-        .limit(10)
+        .limit(settings.pagination.MOST_ANNOTATED_TOP_N)
         .all()
     )
 

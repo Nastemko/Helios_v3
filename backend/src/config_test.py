@@ -4,7 +4,7 @@ from unittest.mock import patch
 
 # To run this test, it's expected that the `src` directory is in the Python path.
 # For example, by running `pytest` from the `backend` directory, or by setting PYTHONPATH.
-from config import IthacaSettings, Settings
+from config import IthacaSettings, PaginationSettings, Settings
 
 
 class TestConfig(unittest.TestCase):
@@ -242,3 +242,69 @@ class TestServerSettings(unittest.TestCase):
         self.assertEqual(settings.database.POOL_TIMEOUT, 60)
         self.assertEqual(settings.database.POOL_RECYCLE, 1800)
         self.assertEqual(settings.database.CONNECT_TIMEOUT, 5)
+
+
+class TestPaginationSettings(unittest.TestCase):
+    """Tests for pagination defaults/maxima tunables."""
+
+    def test_pagination_defaults_preserve_hardcoded_behavior(self):
+        """Defaults match the previously hardcoded values."""
+        with patch.dict(os.environ, {}, clear=True):
+            settings = Settings()
+
+            self.assertEqual(settings.pagination.DEFAULT_TEXTS_LIMIT, 50)
+            self.assertEqual(settings.pagination.MAX_TEXTS_LIMIT, 100)
+            self.assertEqual(settings.pagination.DEFAULT_SEGMENTS_LIMIT, 1000)
+            self.assertEqual(settings.pagination.MAX_SEGMENTS_LIMIT, 5000)
+            self.assertEqual(settings.pagination.DEFAULT_INSCRIPTIONS_LIMIT, 50)
+            self.assertEqual(settings.pagination.MAX_INSCRIPTIONS_LIMIT, 200)
+            self.assertEqual(settings.pagination.DEFAULT_ANNOTATIONS_LIMIT, 100)
+            self.assertEqual(settings.pagination.MAX_ANNOTATIONS_LIMIT, 500)
+            self.assertEqual(settings.pagination.MOST_ANNOTATED_TOP_N, 10)
+            self.assertEqual(settings.pagination.LIST_PREVIEW_CHARS, 150)
+
+    def test_pagination_settings_direct_defaults(self):
+        """PaginationSettings alone carries the same defaults."""
+        with patch.dict(os.environ, {}, clear=True):
+            pagination = PaginationSettings()
+
+            self.assertEqual(pagination.DEFAULT_TEXTS_LIMIT, 50)
+            self.assertEqual(pagination.MAX_TEXTS_LIMIT, 100)
+            self.assertEqual(pagination.DEFAULT_SEGMENTS_LIMIT, 1000)
+            self.assertEqual(pagination.MAX_SEGMENTS_LIMIT, 5000)
+            self.assertEqual(pagination.DEFAULT_INSCRIPTIONS_LIMIT, 50)
+            self.assertEqual(pagination.MAX_INSCRIPTIONS_LIMIT, 200)
+            self.assertEqual(pagination.DEFAULT_ANNOTATIONS_LIMIT, 100)
+            self.assertEqual(pagination.MAX_ANNOTATIONS_LIMIT, 500)
+            self.assertEqual(pagination.MOST_ANNOTATED_TOP_N, 10)
+            self.assertEqual(pagination.LIST_PREVIEW_CHARS, 150)
+
+    @patch.dict(
+        os.environ,
+        {
+            "PAGINATION_DEFAULT_TEXTS_LIMIT": "25",
+            "PAGINATION_MAX_TEXTS_LIMIT": "75",
+            "PAGINATION_DEFAULT_SEGMENTS_LIMIT": "500",
+            "PAGINATION_MAX_SEGMENTS_LIMIT": "2500",
+            "PAGINATION_DEFAULT_INSCRIPTIONS_LIMIT": "30",
+            "PAGINATION_MAX_INSCRIPTIONS_LIMIT": "150",
+            "PAGINATION_DEFAULT_ANNOTATIONS_LIMIT": "60",
+            "PAGINATION_MAX_ANNOTATIONS_LIMIT": "300",
+            "PAGINATION_MOST_ANNOTATED_TOP_N": "5",
+            "PAGINATION_LIST_PREVIEW_CHARS": "100",
+        },
+    )
+    def test_pagination_settings_load_from_env(self):
+        """Env vars override pagination tunables."""
+        settings = Settings()
+
+        self.assertEqual(settings.pagination.DEFAULT_TEXTS_LIMIT, 25)
+        self.assertEqual(settings.pagination.MAX_TEXTS_LIMIT, 75)
+        self.assertEqual(settings.pagination.DEFAULT_SEGMENTS_LIMIT, 500)
+        self.assertEqual(settings.pagination.MAX_SEGMENTS_LIMIT, 2500)
+        self.assertEqual(settings.pagination.DEFAULT_INSCRIPTIONS_LIMIT, 30)
+        self.assertEqual(settings.pagination.MAX_INSCRIPTIONS_LIMIT, 150)
+        self.assertEqual(settings.pagination.DEFAULT_ANNOTATIONS_LIMIT, 60)
+        self.assertEqual(settings.pagination.MAX_ANNOTATIONS_LIMIT, 300)
+        self.assertEqual(settings.pagination.MOST_ANNOTATED_TOP_N, 5)
+        self.assertEqual(settings.pagination.LIST_PREVIEW_CHARS, 100)
