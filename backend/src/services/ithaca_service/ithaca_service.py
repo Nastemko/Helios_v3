@@ -106,6 +106,9 @@ DEFAULT_TOP_CHARS = 8
 # the budget degrades the answer rather than failing the request. It is
 # deliberately well above the expected cost of a legitimate restoration -- it
 # exists to bound the pathological case, not to trim normal ones.
+# Documented fallback only; the live default is IthacaSettings.TIME_BUDGET
+# (backend/src/config.py), which must match this value. `restore()` resolves
+# its budget from settings at call time — this constant is not read at runtime.
 DEFAULT_TIME_BUDGET_SECONDS = 180.0
 
 
@@ -296,8 +299,12 @@ class IthacaService:
         top_chars: Optional[int] = DEFAULT_TOP_CHARS,
         time_budget: Optional[float] = None,
     ) -> RestorationResult:
-        """
-        Restore missing characters in an inscription.
+        """Restore missing characters in an inscription.
+
+        `time_budget=None` (the default) resolves to `settings.ithaca.TIME_BUDGET`
+        at call time; there is intentionally no way to request an unbounded
+        restore — one request holds `_inference_lock`, so an unbounded search
+        would starve every other restore.
         """
         if time_budget is None:
             time_budget = settings.ithaca.TIME_BUDGET
