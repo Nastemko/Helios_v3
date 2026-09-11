@@ -108,6 +108,23 @@ class MiscSettings(BaseSettings):
     )
 
 
+class IthacaSettings(BaseSettings):
+    """In-process Ithaca/Aeneas inference behaviour."""
+
+    # Soft wall-clock cap per restore, enforced between beam-search
+    # generations (real ceiling = this + one forward pass). Completed
+    # candidates found before expiry are still returned. One request holds
+    # _inference_lock, so this also bounds how long every other restore waits.
+    TIME_BUDGET: float = 180.0
+
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        env_file_encoding="utf-8",
+        case_sensitive=True,
+        env_prefix="ITHACA_",
+    )
+
+
 class Settings:
     def __init__(self, **kwargs):
         self.misc = MiscSettings()
@@ -115,6 +132,7 @@ class Settings:
         self.llm = LLMSettings()
         self.database = DatabaseSettings()
         self.assets = AssetSettings()
+        self.ithaca = IthacaSettings()
 
     def validate_production(self) -> None:
         """
