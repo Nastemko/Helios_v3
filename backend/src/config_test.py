@@ -185,9 +185,13 @@ class TestValidateProduction(unittest.TestCase):
 
 class TestIthacaSettings(unittest.TestCase):
     def test_time_budget_defaults_to_180(self):
-        os.environ.pop("ITHACA_TIME_BUDGET", None)
-        self.assertEqual(IthacaSettings().TIME_BUDGET, 180.0)
+        with patch.dict(os.environ, {}, clear=True):
+            self.assertEqual(IthacaSettings().TIME_BUDGET, 180.0)
 
     @patch.dict(os.environ, {"ITHACA_TIME_BUDGET": "1600"})
     def test_time_budget_env_override(self):
         self.assertEqual(IthacaSettings().TIME_BUDGET, 1600.0)
+
+    def test_composed_settings_exposes_ithaca(self):
+        with patch.dict(os.environ, {}, clear=True):
+            self.assertEqual(Settings().ithaca.TIME_BUDGET, 180.0)
