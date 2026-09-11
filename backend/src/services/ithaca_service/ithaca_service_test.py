@@ -1,6 +1,8 @@
 import unittest
 from unittest.mock import MagicMock, patch
 
+from config import settings
+
 from .ithaca_service import IthacaModel, IthacaService
 
 
@@ -184,6 +186,48 @@ class TestInferenceConcurrencyGuard(unittest.TestCase):
         # Released again, so a later request can proceed.
         self.assertTrue(service._inference_lock.acquire(blocking=False))
         service._inference_lock.release()
+
+
+class TestRestoreTimeBudgetFromSettings(unittest.TestCase):
+    """restore() must resolve its time budget from settings at call-time."""
+
+    def _service_with_available_model(self) -> IthacaService:
+        service = IthacaService()
+        loaded = MagicMock()
+        loaded.is_available = True
+        service._models["greek"] = loaded
+        return service
+
+    def _inference_result(self) -> MagicMock:
+        inference_result = MagicMock()
+        inference_result.input_text = "εδοξ?ν"
+        inference_result.top_prediction = "εδοξεν"
+        inference_result.missing = []
+        inference_result.predictions = []
+        inference_result.prediction_saliency = []
+        return inference_result
+
+    def test_restore_uses_settings_time_budget_when_not_given(self):
+        service = self._service_with_available_model()
+        with patch(
+            "src.services.ithaca_service.ithaca_service.inference.restore",
+            return_value=self._inference_result(),
+        ) as mock_restore, patch.object(settings.ithaca, "TIME_BUDGET", 1600.0):
+            service.restore("εδοξ?ν", language="greek")
+
+        mock_restore.assert_called_once()
+        self.assertEqual(mock_restore.call_args.kwargs["time_budget"], 1600.0)
+
+    def test_restore_explicit_time_budget_passthrough(self):
+        service = self._service_with_available_model()
+        with patch(
+            "src.services.ithaca_service.ithaca_service.inference.restore",
+            return_value=self._inference_result(),
+        ) as mock_restore, patch.object(settings.ithaca, "TIME_BUDGET", 1600.0):
+            service.restore("εδοξ?ν", language="greek", time_budget=10.0)
+
+        mock_restore.assert_called_once()
+        self.assertEqual(mock_restore.call_args.kwargs["time_budget"], 10.0)
 
 
 if __name__ == "__main__":
