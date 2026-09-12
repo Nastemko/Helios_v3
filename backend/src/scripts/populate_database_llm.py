@@ -65,8 +65,8 @@ LANGUAGE_MAP = {
 
 # Maximum characters of XML to send per LLM call. Free models typically have
 # 32k–128k token context windows, but smaller chunks produce more reliable JSON.
-HEADER_CHUNK_MAX = 4_000
-BODY_CHUNK_MAX = 6_000
+HEADER_CHUNK_MAX = settings.assist.HEADER_CHUNK_MAX
+BODY_CHUNK_MAX = settings.assist.BODY_CHUNK_MAX
 
 
 # ---------------------------------------------------------------------------
@@ -81,7 +81,7 @@ class LLMPopulateConfig:
     limit: Optional[int] = None
     dry_run: bool = False
     languages: List[str] = field(default_factory=list)
-    commit_batch: int = 50
+    commit_batch: int = settings.assist.LLM_COMMIT_BATCH
     fail_fast: bool = False
     data_dir: Optional[Path] = None
     model: Optional[str] = None

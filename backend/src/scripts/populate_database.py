@@ -58,7 +58,7 @@ class PopulateConfig:
     limit: Optional[int] = None
     dry_run: bool = False
     languages: List[str] = field(default_factory=list)
-    commit_batch: int = 100
+    commit_batch: int = settings.assist.PERSEUS_COMMIT_BATCH
     fail_fast: bool = True
     data_dir: Optional[Path] = None
     failures_output: Optional[Path] = None

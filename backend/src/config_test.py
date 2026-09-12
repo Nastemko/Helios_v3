@@ -4,7 +4,7 @@ from unittest.mock import patch
 
 # To run this test, it's expected that the `src` directory is in the Python path.
 # For example, by running `pytest` from the `backend` directory, or by setting PYTHONPATH.
-from config import IthacaSettings, PaginationSettings, Settings
+from config import AssistSettings, IthacaSettings, PaginationSettings, Settings
 
 
 class TestConfig(unittest.TestCase):
@@ -365,3 +365,79 @@ class TestPaginationSettings(unittest.TestCase):
         self.assertEqual(settings.pagination.MAX_ANNOTATIONS_LIMIT, 300)
         self.assertEqual(settings.pagination.MOST_ANNOTATED_TOP_N, 5)
         self.assertEqual(settings.pagination.LIST_PREVIEW_CHARS, 100)
+
+
+class TestAssistSettings(unittest.TestCase):
+    """Tests for assist/auth-lexicon/loader tunables."""
+
+    def test_assist_defaults_preserve_hardcoded_behavior(self):
+        """Defaults match the previously hardcoded values."""
+        with patch.dict(os.environ, {}, clear=True):
+            settings = Settings()
+
+            self.assertEqual(settings.assist.MAX_TEXT_CHARS, 600)
+            self.assertEqual(settings.assist.TRANSLATION_MAX_CHARS, 300)
+            self.assertEqual(
+                settings.assist.LEXICON_BASE_URL, "https://logeion.uchicago.edu"
+            )
+            self.assertEqual(settings.assist.PERSEUS_COMMIT_BATCH, 100)
+            self.assertEqual(settings.assist.LLM_COMMIT_BATCH, 50)
+            self.assertEqual(settings.assist.HEADER_CHUNK_MAX, 4000)
+            self.assertEqual(settings.assist.BODY_CHUNK_MAX, 6000)
+            self.assertEqual(settings.assist.PHI_BATCH_SIZE, 500)
+            self.assertEqual(
+                settings.auth.SERVER_METADATA_URL,
+                "https://accounts.google.com/.well-known/openid-configuration",
+            )
+            self.assertEqual(
+                settings.auth.FRONTEND_FALLBACK_URL, "http://localhost:3000"
+            )
+
+    def test_assist_settings_direct_defaults(self):
+        """AssistSettings alone carries the same defaults."""
+        with patch.dict(os.environ, {}, clear=True):
+            assist = AssistSettings()
+
+            self.assertEqual(assist.MAX_TEXT_CHARS, 600)
+            self.assertEqual(assist.TRANSLATION_MAX_CHARS, 300)
+            self.assertEqual(assist.LEXICON_BASE_URL, "https://logeion.uchicago.edu")
+            self.assertEqual(assist.PERSEUS_COMMIT_BATCH, 100)
+            self.assertEqual(assist.LLM_COMMIT_BATCH, 50)
+            self.assertEqual(assist.HEADER_CHUNK_MAX, 4000)
+            self.assertEqual(assist.BODY_CHUNK_MAX, 6000)
+            self.assertEqual(assist.PHI_BATCH_SIZE, 500)
+
+    @patch.dict(
+        os.environ,
+        {
+            "ASSIST_MAX_TEXT_CHARS": "800",
+            "ASSIST_TRANSLATION_MAX_CHARS": "400",
+            "ASSIST_LEXICON_BASE_URL": "https://example.com/lexicon",
+            "ASSIST_PERSEUS_COMMIT_BATCH": "25",
+            "ASSIST_LLM_COMMIT_BATCH": "10",
+            "ASSIST_HEADER_CHUNK_MAX": "1000",
+            "ASSIST_BODY_CHUNK_MAX": "2000",
+            "ASSIST_PHI_BATCH_SIZE": "100",
+            "SERVER_METADATA_URL": "https://example.com/.well-known/openid-configuration",
+            "FRONTEND_FALLBACK_URL": "https://app.example.com",
+        },
+    )
+    def test_assist_settings_load_from_env(self):
+        """Env vars override assist/auth-lexicon/loader tunables."""
+        settings = Settings()
+
+        self.assertEqual(settings.assist.MAX_TEXT_CHARS, 800)
+        self.assertEqual(settings.assist.TRANSLATION_MAX_CHARS, 400)
+        self.assertEqual(
+            settings.assist.LEXICON_BASE_URL, "https://example.com/lexicon"
+        )
+        self.assertEqual(settings.assist.PERSEUS_COMMIT_BATCH, 25)
+        self.assertEqual(settings.assist.LLM_COMMIT_BATCH, 10)
+        self.assertEqual(settings.assist.HEADER_CHUNK_MAX, 1000)
+        self.assertEqual(settings.assist.BODY_CHUNK_MAX, 2000)
+        self.assertEqual(settings.assist.PHI_BATCH_SIZE, 100)
+        self.assertEqual(
+            settings.auth.SERVER_METADATA_URL,
+            "https://example.com/.well-known/openid-configuration",
+        )
+        self.assertEqual(settings.auth.FRONTEND_FALLBACK_URL, "https://app.example.com")

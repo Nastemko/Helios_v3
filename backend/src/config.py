@@ -86,6 +86,10 @@ class AuthSettings(BaseSettings):
     GOOGLE_CLIENT_ID: str = ""
     GOOGLE_CLIENT_SECRET: str = ""
     GOOGLE_REDIRECT_URI: str = "http://localhost:8000/api/auth/callback/google"
+    SERVER_METADATA_URL: str = (
+        "https://accounts.google.com/.well-known/openid-configuration"
+    )
+    FRONTEND_FALLBACK_URL: str = "http://localhost:3000"
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",
@@ -171,6 +175,26 @@ class PaginationSettings(BaseSettings):
     )
 
 
+class AssistSettings(BaseSettings):
+    """Translate-assist, lexicon and loader tunables."""
+
+    MAX_TEXT_CHARS: int = 600
+    TRANSLATION_MAX_CHARS: int = 300
+    LEXICON_BASE_URL: str = "https://logeion.uchicago.edu"
+    PERSEUS_COMMIT_BATCH: int = 100
+    LLM_COMMIT_BATCH: int = 50
+    HEADER_CHUNK_MAX: int = 4000
+    BODY_CHUNK_MAX: int = 6000
+    PHI_BATCH_SIZE: int = 500
+
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        env_file_encoding="utf-8",
+        case_sensitive=True,
+        env_prefix="ASSIST_",
+    )
+
+
 class Settings:
     def __init__(self, **kwargs):
         self.misc = MiscSettings()
@@ -180,6 +204,7 @@ class Settings:
         self.assets = AssetSettings()
         self.ithaca = IthacaSettings()
         self.pagination = PaginationSettings()
+        self.assist = AssistSettings()
 
     def validate_production(self) -> None:
         """
