@@ -21,7 +21,7 @@ import type {
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || "http://localhost:8000";
 const API_PREFIX = import.meta.env.VITE_API_PREFIX || "/api";
-const API_TIMEOUT_MS = Number(import.meta.env.VITE_API_TIMEOUT_MS || 30000);
+const API_TIMEOUT_MS = Number(import.meta.env.VITE_API_TIMEOUT_MS || 300000);
 export const LOGIN_PATH = import.meta.env.VITE_LOGIN_PATH || "/login";
 export const AUTH_TOKEN_KEY = import.meta.env.VITE_AUTH_TOKEN_KEY || "auth_token";
 
