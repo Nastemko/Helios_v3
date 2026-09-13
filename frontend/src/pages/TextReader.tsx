@@ -8,12 +8,22 @@ import TranslationAssistToggle from '../components/TranslationAssistToggle';
 import { useTranslationAssist } from '../hooks/useTranslationAssist';
 import type { TextSegment, TranslationCard } from '../types';
 
+const normalizeToken = (t: string) =>
+  t
+    .normalize('NFC')
+    .replace(/ς/g, 'σ')
+    .replace(/[.,;:!?·()[\]'"“”‘’«»„—–…]/g, '')
+    .trim()
+    .toLowerCase();
+
 export default function TextReader() {
   const { textId } = useParams<{ textId: string }>();
   const [selectedWord, setSelectedWord] = useState<{
     word: string;
     language: string;
     segmentId: number;
+    context: string;
+    wordOccurrence: number;
   } | null>(null);
   const [aiModeActive, setAiModeActive] = useState(false);
   const [translationCards, setTranslationCards] = useState<TranslationCard[]>([]);
@@ -49,31 +59,48 @@ export default function TextReader() {
     return detail ?? translationError.message;
   }, [translationError]);
 
-  const handleWordClick = (word: string, segmentId: number) => {
+  const handleWordClick = (
+    rawWord: string,
+    segmentId: number,
+    context: string,
+    tokenIndex: number
+  ) => {
     if (!text) return;
     clearSelection();
-    
+
     // Clean punctuation from word
-    const cleanWord = word.replace(/[.,;:!?·[\]()]/g, '').trim();
+    const cleanWord = rawWord.replace(/[.,;:!?·[\]()]/g, '').trim();
     if (!cleanWord) return;
-    
+
+    // Count identical words before this one so the backend can
+    // disambiguate repeated occurrences within the segment.
+    const wordOccurrence = context
+      .split(/\s+/)
+      .slice(0, tokenIndex)
+      .filter((t) => normalizeToken(t) === normalizeToken(rawWord)).length;
+
     setSelectedWord({
       word: cleanWord,
       language: text.language,
       segmentId,
+      context,
+      wordOccurrence,
     });
   };
 
   // Handler for when user clicks a note in the Notes tab
   const handleNoteClick = (word: string, segmentId: number) => {
     if (!text) return;
-    
+
+    const segment = segments.find((s) => s.id === segmentId);
     setSelectedWord({
       word,
       language: text.language,
       segmentId,
+      context: segment?.content ?? '',
+      wordOccurrence: 0,
     });
-    
+
     // Scroll to the segment
     const segmentElement = document.querySelector(`[data-segment-id="${segmentId}"]`);
     if (segmentElement) {
@@ -233,10 +260,12 @@ export default function TextReader() {
                                     key={idx}
                                     onClick={(e) => {
                                         e.stopPropagation(); // Prevent highlight handler from firing awkwardly
-                                        handleWordClick(word, segment.id);
+                                        handleWordClick(word, segment.id, segment.content, idx);
                                     }}
                                     className={`cursor-pointer rounded px-0.5 transition-colors inline-block ${
-                                        selectedWord?.word === word.replace(/[.,;:!?·[\]()]/g, '').trim() && selectedWord?.segmentId === segment.id
+                                        selectedWord?.segmentId === segment.id &&
+                                        selectedWord?.word &&
+                                        normalizeToken(word) === normalizeToken(selectedWord.word)
                                         ? 'bg-blue-200 text-blue-900'
                                         : 'hover:bg-blue-50'
                                     }`}
