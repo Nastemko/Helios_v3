@@ -15,7 +15,9 @@ export default function TextReader() {
     language: string;
     segmentId: number;
   } | null>(null);
-  const [aiModeActive, setAiModeActive] = useState(false);
+  const [aiModeActive, setAiModeActive] = useState(
+    import.meta.env.VITE_ENABLE_TRANSLATE_ASSIST === 'true'
+  );
   const [translationCards, setTranslationCards] = useState<TranslationCard[]>([]);
   const textContainerRef = useRef<HTMLDivElement>(null);
 
@@ -122,7 +124,7 @@ export default function TextReader() {
     if (!rawText) return;
 
     // Validate length (max ~600 chars / 1 paragraph)
-    if (rawText.length > 600) {
+    if (rawText.length > Number(import.meta.env.VITE_TRANSLATE_MAX_CHARS || 600)) {
       alert('Please select a shorter passage (max ~1 paragraph).');
       clearSelection();
       return;

@@ -15,13 +15,13 @@ export default function InscriptionBrowser({
   const [dateMin, setDateMin] = useState<string>("");
   const [dateMax, setDateMax] = useState<string>("");
   const [page, setPage] = useState(0);
-  const limit = 20;
+  const limit = Number(import.meta.env.VITE_INSCRIPTIONS_PAGE_SIZE || 20);
 
   // Fetch regions for dropdown
   const { data: regionsData } = useQuery({
     queryKey: ["inscription-regions"],
     queryFn: () => inscriptionApi.getRegions("main"),
-    staleTime: 300000, // Cache for 5 minutes
+    staleTime: Number(import.meta.env.VITE_STATS_TTL_MS || 300000), // Cache for 5 minutes
   });
 
   const regions = regionsData?.data || [];
@@ -44,7 +44,7 @@ export default function InscriptionBrowser({
   } = useQuery({
     queryKey: ["inscriptions", queryParams],
     queryFn: () => inscriptionApi.list(queryParams),
-    staleTime: 60000, // Cache for 1 minute
+    staleTime: Number(import.meta.env.VITE_BROWSER_LIST_TTL_MS || 60000), // Cache for 1 minute
   });
 
   const inscriptions = inscriptionsData?.data || [];

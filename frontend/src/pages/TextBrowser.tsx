@@ -4,7 +4,7 @@ import { Link } from "react-router-dom";
 import { textApi } from "../services/api";
 import type { Text } from "../types";
 
-const PAGE_SIZE = 30;
+const PAGE_SIZE = Number(import.meta.env.VITE_TEXTS_PAGE_SIZE || 30);
 
 export default function TextBrowser() {
   const [search, setSearch] = useState("");

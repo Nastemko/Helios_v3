@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { Outlet, Link, useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
+import { LOGIN_PATH } from '../services/api';
 
 export default function Layout() {
   const { user, logout } = useAuth();
@@ -12,7 +13,7 @@ export default function Layout() {
   const handleLogout = async () => {
     setMobileMenuOpen(false);
     await logout();
-    navigate('/login');
+    navigate(LOGIN_PATH);
   };
 
   // Close mobile menu on route change

@@ -13,13 +13,21 @@ import type {
 
 type Language = 'greek' | 'latin';
 
+// Validated at the boundary: any value other than "latin" falls back to Greek.
+const _defaultLang: unknown = import.meta.env.VITE_DEFAULT_LANG;
+const DEFAULT_LANG: Language = _defaultLang === 'latin' ? 'latin' : 'greek';
+
 export default function InscriptionWorkbench() {
   // Input state
   const [inputText, setInputText] = useState('');
-  const [temperature, setTemperature] = useState(1.0);
+  const [temperature, setTemperature] = useState(
+    Number(import.meta.env.VITE_RESTORE_TEMP || 1.0)
+  );
   // Mirrors DEFAULT_MAX_RESTORATION_LEN on the server. Only affects '#' gaps.
-  const [maxRestorationLen, setMaxRestorationLen] = useState(15);
-  const [language, setLanguage] = useState<Language>('greek');
+  const [maxRestorationLen, setMaxRestorationLen] = useState(
+    Number(import.meta.env.VITE_MAX_RESTORATION_LEN || 15)
+  );
+  const [language, setLanguage] = useState<Language>(DEFAULT_LANG);
   
   // Results state
   const [restorationResult, setRestorationResult] = useState<RestorationResult | null>(null);
@@ -37,14 +45,14 @@ export default function InscriptionWorkbench() {
   const { data: modelStatus } = useQuery({
     queryKey: ['ithaca-model-status'],
     queryFn: () => inscriptionApi.getModelStatus(),
-    staleTime: 60000, // Cache for 1 minute
+    staleTime: Number(import.meta.env.VITE_MODEL_STATUS_TTL_MS || 60000), // Cache for 1 minute
   });
 
   // Fetch corpus stats
   const { data: statsData } = useQuery({
     queryKey: ['inscription-stats'],
     queryFn: () => inscriptionApi.getStats(),
-    staleTime: 300000, // Cache for 5 minutes
+    staleTime: Number(import.meta.env.VITE_STATS_TTL_MS || 300000), // Cache for 5 minutes
   });
 
   const stats = statsData?.data;
