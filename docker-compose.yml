@@ -1,14 +1,14 @@
 services:
   # PostgreSQL with pgvector
   postgres:
-    image: pgvector/pgvector:pg16
+    image: ${POSTGRES_IMAGE:-pgvector/pgvector:pg16}
     container_name: helios-postgres
     env_file: .env
     volumes:
       - postgres_data:/var/lib/postgresql/data
       - ./backend/src/scripts/init_db.sql:/docker-entrypoint-initdb.d/init_db.sql:ro
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U heliosuser -d helios"]
+      test: ["CMD-SHELL", "pg_isready -U ${DATABASE_USER:-heliosuser} -d ${DATABASE_DB:-helios}"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -19,49 +19,58 @@ services:
     build:
       context: ./backend/
       dockerfile: Dockerfile
+      args:
+        UBUNTU_VERSION: ${UBUNTU_VERSION:-24.04}
+        ITHACA_MODEL_BASE_URL: ${ITHACA_MODEL_BASE_URL:-https://storage.googleapis.com/ithaca-resources/models}
+        BACKEND_CPUS_LIMIT: ${BACKEND_CPUS_LIMIT:-5}
+        BACKEND_PORT: ${BACKEND_PORT:-8000}
     container_name: helios-backend
     env_file: .env
     volumes:
       - backend_logs:/app/logs
     ports:
-      - "8000:8000"
+      - "${BACKEND_PORT_HOST:-8000}:${BACKEND_PORT:-8000}"
     depends_on:
       postgres:
         condition: service_healthy
       ollama:
         condition: service_started
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://127.0.0.1:8000/health"]
+      test: ["CMD", "curl", "-f", "http://127.0.0.1:${BACKEND_PORT:-8000}/health"]
       interval: 30s
       timeout: 10s
       retries: 5
       # Startup re-scans 1612 XML files, 178k inscriptions, and loads three
-      # JAX checkpoints before /health is routed. uvicorn binds :8000 well
+      # JAX checkpoints before /health is routed. uvicorn binds the port well
       # before that finishes, so probes connect and fail until it does.
-      start_period: 10m
+      start_period: ${BACKEND_START_PERIOD:-10m}
     restart: unless-stopped
     # Ithaca beam search is CPU- and memory-hungry (a wide beam materializes
     # multi-GB attention tensors). Cap it so it cannot starve postgres/ollama or
-    # OOM the host. Keep cpus in sync with the *_NUM_THREADS values baked into
-    # backend/Dockerfile.
+    # OOM the host. BACKEND_CPUS_LIMIT is also forwarded as a build arg so the
+    # *_NUM_THREADS pools baked into backend/Dockerfile stay in sync (rebuild
+    # to apply a changed limit there).
     deploy:
       resources:
         limits:
-          cpus: "5"
-          memory: 10g
+          cpus: "${BACKEND_CPUS_LIMIT:-5}"
+          memory: "${BACKEND_MEMORY_LIMIT:-10g}"
 
-  # Frontend (React/Vite with nginx)
+  # Frontend (React/Vite with Caddy)
   frontend:
     build:
       context: ./frontend
       dockerfile: Dockerfile
+      args:
+        VITE_API_URL: ${VITE_API_URL:-http://backend:8000}
+        FRONTEND_PORT: ${FRONTEND_PORT:-8888}
     container_name: helios-frontend
     ports:
-      - "8888:8888"
+      - "${FRONTEND_PORT_HOST:-8888}:${FRONTEND_PORT:-8888}"
     depends_on:
       - backend
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://127.0.0.1:8888/health"]
+      test: ["CMD", "curl", "-f", "http://127.0.0.1:${FRONTEND_PORT:-8888}/health"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -71,12 +80,12 @@ services:
   # Note: This is a placeholder. Ollama needs to be installed on the host
   # or run with GPU support. For now, configure it to connect to host Ollama.
   ollama:
-    image: ollama/ollama:latest
+    image: ${OLLAMA_IMAGE:-ollama/ollama:latest}
     container_name: helios-ollama
     volumes:
       - ollama_data:/root/.ollama
     ports:
-      - "11434:11434"
+      - "${OLLAMA_PORT_HOST:-11434}:11434"
     environment:
       OLLAMA_HOST: 0.0.0.0
     restart: unless-stopped
@@ -94,7 +103,7 @@ services:
   # perseus/init/00-load-dumps.sh, which imports ~839MB of dumps. That takes a
   # while and the server does not accept external connections until it is done.
   perseus-db:
-    image: mariadb:11
+    image: ${PERSEUS_DB_IMAGE:-mariadb:11}
     container_name: helios-perseus-db
     environment:
       MYSQL_ROOT_PASSWORD: ${PERSEUS_MYSQL_ROOT_PASSWORD}
@@ -105,7 +114,7 @@ services:
       - ./perseus/init:/docker-entrypoint-initdb.d:ro,Z
       - perseus_data:/var/lib/mysql
     ports:
-      - "3307:3306"
+      - "${PERSEUS_PORT_HOST:-3307}:3306"
     healthcheck:
       test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
       interval: 30s
@@ -117,12 +126,12 @@ services:
 
   # Adminer (web UI for inspecting the Perseus database)
   adminer:
-    image: adminer:latest
+    image: ${ADMINER_IMAGE:-adminer:latest}
     container_name: helios-adminer
     environment:
       ADMINER_DEFAULT_SERVER: perseus-db
     ports:
-      - "8080:8080"
+      - "${ADMINER_PORT_HOST:-8080}:8080"
     depends_on:
       - perseus-db
     restart: unless-stopped
