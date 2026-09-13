@@ -8,19 +8,21 @@ interface Props {
   language: string;
   segmentId: number;
   textId: number;
+  context: string;
+  wordOccurrence: number;
   onClose: () => void;
   embedded?: boolean;
 }
 
-export default function WordAnalysisPanel({ word, language, segmentId, textId, onClose, embedded }: Props) {
+export default function WordAnalysisPanel({ word, language, segmentId, textId, context, wordOccurrence, onClose, embedded }: Props) {
   const [note, setNote] = useState('');
   const [showNoteForm, setShowNoteForm] = useState(false);
   const queryClient = useQueryClient();
   
   // Fetch word analysis
   const { data: analysis, isLoading: analysisLoading } = useQuery({
-    queryKey: ['word-analysis', word, language],
-    queryFn: () => analysisApi.analyzeWord(word, language),
+    queryKey: ['word-analysis', word, language, context, wordOccurrence],
+    queryFn: () => analysisApi.analyzeWord(word, language, context, wordOccurrence),
   });
   
   // Fetch user's annotations for this segment

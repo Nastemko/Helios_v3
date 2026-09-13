@@ -9,6 +9,8 @@ interface Props {
     word: string;
     language: string;
     segmentId: number;
+    context: string;
+    wordOccurrence: number;
   } | null;
   textId: number;
   onCloseWord: () => void;
@@ -167,6 +169,8 @@ export default function ToolsPanel({ selectedWord, textId, onCloseWord, onNoteCl
               language={selectedWord.language}
               segmentId={selectedWord.segmentId}
               textId={textId}
+              context={selectedWord.context}
+              wordOccurrence={selectedWord.wordOccurrence}
               onClose={onCloseWord}
               embedded={true}
             />

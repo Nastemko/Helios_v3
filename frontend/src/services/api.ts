@@ -86,8 +86,18 @@ export const textApi = {
 
 // Analysis API
 export const analysisApi = {
-  analyzeWord: (word: string, language: string, context?: string) =>
-    api.post<WordAnalysis>("/api/analyze/word", { word, language, context }),
+  analyzeWord: (
+    word: string,
+    language: string,
+    context?: string,
+    wordOccurrence?: number
+  ) =>
+    api.post<WordAnalysis>("/api/analyze/word", {
+      word,
+      language,
+      context,
+      word_occurrence: wordOccurrence ?? 0,
+    }),
 };
 
 
