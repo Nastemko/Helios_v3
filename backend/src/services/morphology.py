@@ -2,11 +2,53 @@
 
 import asyncio
 import logging
+import unicodedata
 from typing import Dict, List, Optional
 
 from cltk import NLP
 
 logger = logging.getLogger(__name__)
+
+_PUNCTUATION_TO_STRIP = ".,;:!?·[]()'\"“”‘’«»„—–…"
+
+
+def _normalize_for_match(s: str) -> str:
+    """Normalize a token for robust comparison.
+
+    NFC + casefold + final-sigma fold + punctuation strip.
+    Deliberately does NOT fold diacritics: καὶ (conjunction) and
+    καί (adverb) are different words and must not match each other.
+    """
+    if not s:
+        return ""
+    s = unicodedata.normalize("NFC", s)
+    s = s.replace("ς", "σ")
+    s = s.translate(str.maketrans("", "", _PUNCTUATION_TO_STRIP))
+    return s.casefold().strip()
+
+
+def _select_word_index(
+    token_strings: List[str], target: str, occurrence: int = 0
+) -> Optional[int]:
+    """Return index of the occurrence-th token matching target, or None.
+
+    Occurrence is clamped to the last available match: Stanza may
+    tokenize elided forms differently than the frontend's whitespace
+    split, shifting occurrence counts.
+    """
+    target_norm = _normalize_for_match(target)
+    if not target_norm:
+        return None
+    matches = [
+        i
+        for i, tok in enumerate(token_strings)
+        if _normalize_for_match(tok or "") == target_norm
+    ]
+    if not matches:
+        return None
+    if occurrence >= len(matches):
+        occurrence = len(matches) - 1
+    return matches[occurrence]
 
 
 class MorphologyService:
