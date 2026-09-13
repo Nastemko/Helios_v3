@@ -17,3 +17,10 @@ def test_question_mark_is_outside_the_vocabulary_but_hyphen_is_inside():
     assert alphabet.missing == "-"
     assert alphabet.missing_unk == "_"
     assert alphabet.pad == "#"
+
+
+def test_model_class_imports_from_new_home():
+    """The Flax model must be importable without the vendor tree."""
+    from services.ithaca.model.model import Model
+
+    assert Model is not None
