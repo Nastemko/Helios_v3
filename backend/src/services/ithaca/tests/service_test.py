@@ -36,3 +36,21 @@ def test_out_of_alphabet_character_maps_to_friendly_message():
         result = service.restore_sync("imp caesar j?", language="greek")
     assert result.available is False
     assert "Unsupported character" in (result.message or "")
+
+
+def test_busy_restore_raises_instead_of_queueing():
+    """A second concurrent restore must fail fast (router maps to 429)."""
+    import asyncio
+
+    from services.ithaca.service import BusyError
+
+    async def _run() -> None:
+        service = IthacaService()
+        await service._sem.acquire()
+        try:
+            with pytest.raises(BusyError):
+                await service.restore("εδοξεν τηι βουληι ????? αθηναιων")
+        finally:
+            service._sem.release()
+
+    asyncio.run(_run())

@@ -12,11 +12,14 @@ from database import get_db
 from middleware.auth import get_current_user
 from models.inscription import Inscription, InscriptionSegment
 from models.user import User
-from services.ithaca_service.ithaca_service import (
+import asyncio
+
+from services.ithaca.service import (
     DEFAULT_BEAM_WIDTH,
     DEFAULT_MAX_RESTORATION_LEN,
     MAX_BEAM_WIDTH,
     MAX_RESTORATION_LEN,
+    BusyError,
     get_ithaca_service,
     initialize_all_models,
 )
@@ -425,7 +428,7 @@ class ContextualizeResponse(BaseModel):
 
 
 @router.post("/restore", response_model=RestoreResponse)
-def restore_inscription(
+async def restore_inscription(
     request: RestoreRequest,
     current_user: User = Depends(get_current_user),
 ):
@@ -470,21 +473,19 @@ def restore_inscription(
     # beam_width and max_restoration_len are bounded by Field(ge=..., le=...) on
     # RestoreRequest, so an out-of-range value is a 422 rather than an unbounded
     # amount of CPU. Both were previously taken straight from the request body.
-    if not service._inference_lock.acquire(blocking=False):
-        raise HTTPException(
-            status_code=429,
-            detail="Another inference is already running; retry shortly.",
-        )
     try:
-        result = service.restore(
+        result = await service.restore(
             text=request.text,
             language=request.language,
             beam_width=request.beam_width,
             temperature=request.temperature,
             max_restoration_len=request.max_restoration_len,
         )
-    finally:
-        service._inference_lock.release()
+    except BusyError:
+        raise HTTPException(
+            status_code=429,
+            detail="Another inference is already running; retry shortly.",
+        )
 
     return RestoreResponse(
         input_text=result.input_text,
@@ -504,7 +505,7 @@ def restore_inscription(
 
 
 @router.post("/attribute", response_model=AttributeResponse)
-def attribute_inscription(
+async def attribute_inscription(
     request: AttributeRequest,
     current_user: User = Depends(get_current_user),
 ):
@@ -536,15 +537,13 @@ def attribute_inscription(
             message=f"{request.language.title()} model not loaded. Check /api/inscriptions/model/status",
         )
 
-    if not service._inference_lock.acquire(blocking=False):
+    try:
+        result = await service.attribute(request.text, language=request.language)
+    except BusyError:
         raise HTTPException(
             status_code=429,
             detail="Another inference is already running; retry shortly.",
         )
-    try:
-        result = service.attribute(request.text, language=request.language)
-    finally:
-        service._inference_lock.release()
 
     return AttributeResponse(
         input_text=result.input_text,
@@ -565,7 +564,7 @@ def attribute_inscription(
 
 
 @router.post("/contextualize", response_model=ContextualizeResponse)
-def contextualize_inscription(
+async def contextualize_inscription(
     request: ContextualizeRequest,
     current_user: User = Depends(get_current_user),
 ):
@@ -589,17 +588,15 @@ def contextualize_inscription(
             message=f"{request.language.title()} model not loaded. Check /api/inscriptions/model/status",
         )
 
-    if not service._inference_lock.acquire(blocking=False):
+    try:
+        result = await service.contextualize(
+            request.text, language=request.language, top_k=request.top_k
+        )
+    except BusyError:
         raise HTTPException(
             status_code=429,
             detail="Another inference is already running; retry shortly.",
         )
-    try:
-        result = service.contextualize(
-            request.text, language=request.language, top_k=request.top_k
-        )
-    finally:
-        service._inference_lock.release()
 
     return ContextualizeResponse(
         similar=[
@@ -656,7 +653,7 @@ async def initialize_models(
 
     if language:
         # Initialize specific language
-        success = service.initialize_model(language)
+        success = await asyncio.to_thread(service.initialize_model, language)
         if success:
             return {
                 "status": "success",
@@ -670,7 +667,7 @@ async def initialize_models(
             )
     else:
         # Initialize both
-        results = initialize_all_models()
+        results = await asyncio.to_thread(initialize_all_models)
         return {
             "status": "success" if any(results.values()) else "failed",
             "message": "Model initialization complete",
