@@ -54,7 +54,7 @@ class TextDetailResponse(BaseModel):
 
 
 @router.get("/authors/list")
-async def list_authors(db: Session = Depends(get_db)):
+def list_authors(db: Session = Depends(get_db)):
     """
     Get list of authors that have Greek or Latin texts.
 
@@ -75,7 +75,7 @@ async def list_authors(db: Session = Depends(get_db)):
 
 
 @router.get("/stats/summary")
-async def get_stats(db: Session = Depends(get_db)):
+def get_stats(db: Session = Depends(get_db)):
     """
     Get database statistics for Greek and Latin texts.
     """
@@ -114,7 +114,7 @@ async def get_stats(db: Session = Depends(get_db)):
 
 
 @router.get("/", response_model=List[TextResponse])
-async def list_texts(
+def list_texts(
     search: Optional[str] = Query(None, description="Search by author or title"),
     author: Optional[str] = Query(None, description="Filter by author name"),
     language: Optional[str] = Query(None, description="Filter by language (grc, lat)"),
@@ -198,7 +198,7 @@ async def list_texts(
 
 
 @router.get("/{text_id}", response_model=TextDetailResponse)
-async def get_text(
+def get_text(
     text_id: Annotated[int, Path()],
     skip: int = Query(0, ge=0, description="Skip segments (for pagination)"),
     limit: int = Query(1000, ge=1, le=5000, description="Limit segments"),
@@ -241,7 +241,7 @@ async def get_text(
 
 
 @router.get("/{text_id}/segment/{reference}")
-async def get_segment(
+def get_segment(
     text_id: Annotated[int, Path()],
     reference: str,
     db: Session = Depends(get_db),

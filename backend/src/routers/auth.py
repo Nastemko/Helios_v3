@@ -162,7 +162,7 @@ async def logout():
 
 
 @router.get("/status")
-async def auth_status(
+def auth_status(
     credentials: HTTPAuthorizationCredentials | None = Depends(optional_security),
     db: Session = Depends(get_db),
 ):

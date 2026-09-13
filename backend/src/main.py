@@ -1,5 +1,6 @@
 """Main FastAPI application"""
 
+import asyncio
 import logging
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -24,7 +25,7 @@ from routers import (
 from scripts.load_phi_inscriptions import initialize_phi_inscriptions
 from scripts.populate_database import populate_on_startup
 from scripts.populate_database_llm import llm_populate_on_startup, openrouter_config
-from services.ithaca_service.ithaca_service import initialize_all_models
+from services.ithaca.service import initialize_all_models
 from services.morphology import get_morphology_service
 
 # Configure logging
@@ -94,7 +95,7 @@ async def lifespan(app: FastAPI):
     # Initialize PHI inscriptions
     logger.info("Initializing PHI inscriptions...")
     try:
-        phi_stats = initialize_phi_inscriptions()
+        phi_stats = await asyncio.to_thread(initialize_phi_inscriptions)
         logger.info("PHI inscription initialization complete")
     except Exception as e:
         logger.error(f"Error during PHI inscription initialization: {e}")
@@ -102,14 +103,14 @@ async def lifespan(app: FastAPI):
 
     # Initialize Morphology service
     logger.info("Initializing CLTK morphology service...")
-    morphology_service = get_morphology_service()
+    morphology_service = await asyncio.to_thread(get_morphology_service)
     logger.info(f"Morphology service initialized: {morphology_service.initialized}")
 
     # Initialize Ithaca inscription models (Greek and Latin)
     logger.info("Initializing Ithaca inscription models...")
 
     try:
-        ithaca_results = initialize_all_models()
+        ithaca_results = await asyncio.to_thread(initialize_all_models)
         for lang, success in ithaca_results.items():
             if success:
                 logger.info(f"Ithaca {lang.title()} model initialized successfully")

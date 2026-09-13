@@ -1,5 +1,6 @@
 """Morphological analysis service for Greek and Latin words using CLTK"""
 
+import asyncio
 import logging
 from typing import Dict, List, Optional
 
@@ -68,7 +69,7 @@ class MorphologyService:
         try:
             # Analyze the word (or context if provided)
             text_to_analyze = context if context else word
-            doc = self.greek_nlp.analyze(text=text_to_analyze)
+            doc = await asyncio.to_thread(self.greek_nlp.analyze, text_to_analyze)
 
             # Find the target word in the analysis
             # If we analyzed just the word, use the first result
@@ -167,7 +168,7 @@ class MorphologyService:
 
         try:
             text_to_analyze = context if context else word
-            doc = self.latin_nlp.analyze(text=text_to_analyze)
+            doc = await asyncio.to_thread(self.latin_nlp.analyze, text_to_analyze)
 
             word_obj = None
             if context:

@@ -52,7 +52,7 @@ class AnnotationResponse(BaseModel):
 
 
 @router.post("/", response_model=AnnotationResponse, status_code=201)
-async def create_annotation(
+def create_annotation(
     annotation: AnnotationCreate,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
@@ -97,7 +97,7 @@ async def create_annotation(
 
 
 @router.get("/", response_model=List[AnnotationResponse])
-async def list_annotations(
+def list_annotations(
     lang_version_id: Optional[int] = Query(None, description="Filter by version ID"),
     segment_id: Optional[int] = Query(None, description="Filter by segment ID"),
     word: Optional[str] = Query(None, description="Filter by word"),
@@ -130,7 +130,7 @@ async def list_annotations(
 
 
 @router.get("/{annotation_id}", response_model=AnnotationResponse)
-async def get_annotation(
+def get_annotation(
     annotation_id: int,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
@@ -153,7 +153,7 @@ async def get_annotation(
 
 
 @router.put("/{annotation_id}", response_model=AnnotationResponse)
-async def update_annotation(
+def update_annotation(
     annotation_id: int,
     annotation_update: AnnotationUpdate,
     current_user: User = Depends(get_current_user),
@@ -182,7 +182,7 @@ async def update_annotation(
 
 
 @router.delete("/{annotation_id}", status_code=204)
-async def delete_annotation(
+def delete_annotation(
     annotation_id: int,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
@@ -208,7 +208,7 @@ async def delete_annotation(
 
 
 @router.get("/version/{version_id}/summary")
-async def get_version_annotations_summary(
+def get_version_annotations_summary(
     version_id: int,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),

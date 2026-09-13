@@ -1,5 +1,6 @@
 """API endpoints for browsing and querying PHI inscriptions"""
 
+import asyncio
 import logging
 from typing import Annotated, Any, Dict, List, Literal, Optional
 
@@ -12,7 +13,6 @@ from database import get_db
 from middleware.auth import get_current_user
 from models.inscription import Inscription, InscriptionSegment
 from models.user import User
-import asyncio
 
 from services.ithaca.service import (
     DEFAULT_BEAM_WIDTH,
@@ -97,7 +97,7 @@ def _get_full_text(db: Session, inscription_id: int) -> str:
 
 
 @router.get("/", response_model=List[TextListItem])
-async def list_inscriptions(
+def list_inscriptions(
     search: Optional[str] = Query(None, description="Search in text content"),
     region_main: Optional[str] = Query(None, description="Filter by main region"),
     region_sub: Optional[str] = Query(None, description="Filter by sub-region"),
@@ -175,7 +175,7 @@ async def list_inscriptions(
 
 
 @router.get("/regions", response_model=List[RegionCount])
-async def list_regions(
+def list_regions(
     level: str = Query("main", description="Region level: 'main' or 'sub'"),
     db: Session = Depends(get_db),
 ):
@@ -215,7 +215,7 @@ async def list_regions(
 
 
 @router.get("/stats", response_model=TextStats)
-async def get_inscription_stats(db: Session = Depends(get_db)):
+def get_inscription_stats(db: Session = Depends(get_db)):
     """
     Get statistics about the inscription corpus.
     """
@@ -263,9 +263,7 @@ async def get_inscription_stats(db: Session = Depends(get_db)):
 
 
 @router.get("/{text_id}", response_model=TextResponse)
-async def get_inscription(
-    text_id: Annotated[int, Path()], db: Session = Depends(get_db)
-):
+def get_inscription(text_id: Annotated[int, Path()], db: Session = Depends(get_db)):
     """
     Get a specific inscription by its text ID.
     """
