@@ -16,6 +16,7 @@ class WordAnalysisRequest(BaseModel):
     word: str
     language: str  # 'grc' or 'lat'
     context: Optional[str] = None
+    word_occurrence: int = 0  # 0-based ordinal of the clicked occurrence
 
 
 class WordAnalysisResponse(BaseModel):
@@ -51,7 +52,10 @@ async def analyze_word(
     ```
     """
     result = await morphology_service.analyze_word(
-        word=request.word, language=request.language, context=request.context
+        word=request.word,
+        language=request.language,
+        context=request.context,
+        word_occurrence=request.word_occurrence,
     )
 
     return WordAnalysisResponse(**result)

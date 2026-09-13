@@ -109,3 +109,84 @@ class TestBuildAnalysis:
         assert result["lemma"] == "ξίφος"
         assert result["pos"] == "Unknown"
         assert result["language"] == "lat"
+
+
+import unittest
+
+
+class _FakeDoc:
+    def __init__(self, words) -> None:
+        self.words = words
+
+
+class _FakeNLP:
+    """Records analyze() calls; returns queued docs in order"""
+
+    def __init__(self, docs) -> None:
+        self.queued = list(docs)
+        self.calls: list[str] = []
+
+    def analyze(self, text: str):
+        self.calls.append(text)
+        return self.queued.pop(0)
+
+
+class TestContextFlow(unittest.IsolatedAsyncioTestCase):
+    def _svc(self, greek) -> MorphologyService:
+        svc = object.__new__(MorphologyService)
+        svc.greek_nlp = greek
+        svc.latin_nlp = None
+        svc.initialized = True
+        return svc
+
+    async def test_context_sent_analyzes_context_and_matches_word(self):
+        doc = _FakeDoc(
+            [
+                _FakeWord("μῆνιν", "μῆνις", "NOUN"),
+                _FakeWord("ἄειδε", "ἄειδε", "VERB"),
+                _FakeWord("θεά", "θεά", "NOUN"),
+            ]
+        )
+        nlp = _FakeNLP([doc])
+        svc = self._svc(nlp)
+        result = await svc.analyze_word("θεά", "grc", context="μῆνιν ἄειδε θεά")
+        assert nlp.calls == ["μῆνιν ἄειδε θεά"]
+        assert result["lemma"] == "θεά"
+
+    async def test_second_occurrence_selected(self):
+        doc = _FakeDoc(
+            [
+                _FakeWord("καὶ", "καί", "CCONJ"),
+                _FakeWord("λόγος", "λόγος", "NOUN"),
+                _FakeWord("καὶ", "καί", "ADV"),
+            ]
+        )
+        nlp = _FakeNLP([doc])
+        svc = self._svc(nlp)
+        result = await svc.analyze_word(
+            "καὶ", "grc", context="καὶ λόγος καὶ", word_occurrence=1
+        )
+        assert result["pos"] == "Adverb"  # second token, not the conjunction
+
+    async def test_word_missing_from_context_falls_back_to_word_alone(self):
+        context_doc = _FakeDoc([_FakeWord("μῆνιν", "μῆνις", "NOUN")])
+        word_doc = _FakeDoc([_FakeWord("ξίφος", "ξίφος", "NOUN")])
+        nlp = _FakeNLP([context_doc, word_doc])
+        svc = self._svc(nlp)
+        result = await svc.analyze_word("ξίφος", "grc", context="μῆνιν")
+        assert nlp.calls == ["μῆνιν", "ξίφος"]
+        assert result["lemma"] == "ξίφος"
+
+    async def test_no_context_analyzes_word_only(self):
+        word_doc = _FakeDoc([_FakeWord("ξίφος", "ξίφος", "NOUN")])
+        nlp = _FakeNLP([word_doc])
+        svc = self._svc(nlp)
+        result = await svc.analyze_word("ξίφος", "grc")
+        assert nlp.calls == ["ξίφος"]
+        assert result["lemma"] == "ξίφος"
+
+    async def test_word_alone_doc_empty_returns_fallback(self):
+        nlp = _FakeNLP([_FakeDoc([]), _FakeDoc([])])
+        svc = self._svc(nlp)
+        result = await svc.analyze_word("ξίφος", "grc", context="μῆνιν")
+        assert result["pos"] == "Unknown"

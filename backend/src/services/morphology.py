@@ -39,6 +39,7 @@ def _select_word_index(
     target_norm = _normalize_for_match(target)
     if not target_norm:
         return None
+    occurrence = max(occurrence, 0)
     matches = [
         i
         for i, tok in enumerate(token_strings)
@@ -77,7 +78,11 @@ class MorphologyService:
             logger.warning("Morphology service will run in fallback mode")
 
     async def analyze_word(
-        self, word: str, language: str, context: Optional[str] = None
+        self,
+        word: str,
+        language: str,
+        context: Optional[str] = None,
+        word_occurrence: int = 0,
     ) -> Dict:
         """
         Analyze a Greek or Latin word
@@ -86,80 +91,85 @@ class MorphologyService:
             word: The word to analyze
             language: Language code ('grc' for Greek, 'lat' for Latin)
             context: Optional context text for disambiguation
+            word_occurrence: 0-based ordinal of the clicked occurrence
+                within the context (for repeated words)
 
         Returns:
             Dictionary with morphological analysis
         """
-        # Clean the word (remove punctuation)
-        word_clean = word.strip(".,;:!?·")
+        # Clean the word (remove punctuation, normalize Unicode form)
+        word_clean = (
+            unicodedata.normalize("NFC", word).strip(_PUNCTUATION_TO_STRIP).strip()
+        )
 
         if not self.initialized:
             return self._fallback_response(word_clean, language)
 
         if language == "grc":
-            return await self._analyze_greek_word(word_clean, context)
+            return await self._analyze_greek_word(word_clean, context, word_occurrence)
         elif language == "lat":
-            return await self._analyze_latin_word(word_clean, context)
+            return await self._analyze_latin_word(word_clean, context, word_occurrence)
         else:
             return self._fallback_response(word_clean, language)
 
-    async def _analyze_greek_word(self, word: str, context: Optional[str]) -> Dict:
+    async def _analyze_greek_word(
+        self, word: str, context: Optional[str], word_occurrence: int = 0
+    ) -> Dict:
         """Analyze a Greek word using CLTK"""
         if not self.greek_nlp:
             return self._fallback_response(word, "grc")
-
         try:
-            # Analyze the word (or context if provided)
-            text_to_analyze = context if context else word
-            doc = await asyncio.to_thread(self.greek_nlp.analyze, text_to_analyze)
-
-            # Find the target word in the analysis
-            # If we analyzed just the word, use the first result
-            # If we analyzed context, find the matching word
-            word_obj = None
             if context:
-                for w in doc.words:
-                    if w.string and w.string.lower() == word.lower():
-                        word_obj = w
-                        break
-            if word_obj is None and doc.words:
-                word_obj = doc.words[0]
-
-            if not word_obj:
-                return self._fallback_response(word, "grc")
-
-            return self._build_analysis(word_obj, word, "grc")
-
+                return await self._analyze_with_context(
+                    self.greek_nlp, word, "grc", context, word_occurrence
+                )
+            return await self._analyze_word_alone(self.greek_nlp, word, "grc")
         except Exception as e:
             logger.error(f"Error analyzing Greek word '{word}': {e}")
             return self._fallback_response(word, "grc")
 
-    async def _analyze_latin_word(self, word: str, context: Optional[str]) -> Dict:
+    async def _analyze_latin_word(
+        self, word: str, context: Optional[str], word_occurrence: int = 0
+    ) -> Dict:
         """Analyze a Latin word using CLTK"""
         if not self.latin_nlp:
             return self._fallback_response(word, "lat")
-
         try:
-            text_to_analyze = context if context else word
-            doc = await asyncio.to_thread(self.latin_nlp.analyze, text_to_analyze)
-
-            word_obj = None
             if context:
-                for w in doc.words:
-                    if w.string and w.string.lower() == word.lower():
-                        word_obj = w
-                        break
-            if word_obj is None and doc.words:
-                word_obj = doc.words[0]
-
-            if not word_obj:
-                return self._fallback_response(word, "lat")
-
-            return self._build_analysis(word_obj, word, "lat")
-
+                return await self._analyze_with_context(
+                    self.latin_nlp, word, "lat", context, word_occurrence
+                )
+            return await self._analyze_word_alone(self.latin_nlp, word, "lat")
         except Exception as e:
             logger.error(f"Error analyzing Latin word '{word}': {e}")
             return self._fallback_response(word, "lat")
+
+    async def _analyze_with_context(
+        self, nlp: object, word: str, language: str, context: str, word_occurrence: int
+    ) -> Dict:
+        """Analyze word inside its sentence context; disambiguate by occurrence.
+
+        Falls back to word-alone analysis when the word cannot be located in
+        the context — never silently returns another token's morphology.
+        """
+        doc = await asyncio.to_thread(nlp.analyze, context)  # type: ignore[attr-defined]
+        token_strings = [w.string or "" for w in doc.words]
+        idx = _select_word_index(token_strings, word, word_occurrence)
+        if idx is None:
+            logger.warning(
+                "Word '%s' (occurrence %d) not found in context; "
+                "falling back to word-alone analysis",
+                word,
+                word_occurrence,
+            )
+            return await self._analyze_word_alone(nlp, word, language)
+        return self._build_analysis(doc.words[idx], word, language)
+
+    async def _analyze_word_alone(self, nlp: object, word: str, language: str) -> Dict:
+        doc = await asyncio.to_thread(nlp.analyze, word)  # type: ignore[attr-defined]
+        if not doc.words or not doc.words[0]:
+            return self._fallback_response(word, language)
+        return self._build_analysis(doc.words[0], word, language)
 
     def _build_analysis(self, word_obj, word: str, language: str) -> Dict:
         """Build the response dict from a CLTK Word object"""
