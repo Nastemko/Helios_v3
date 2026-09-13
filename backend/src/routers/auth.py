@@ -32,7 +32,7 @@ oauth.register(
     name="google",
     client_id=settings.auth.GOOGLE_CLIENT_ID,
     client_secret=settings.auth.GOOGLE_CLIENT_SECRET,
-    server_metadata_url="https://accounts.google.com/.well-known/openid-configuration",
+    server_metadata_url=settings.auth.SERVER_METADATA_URL,
     client_kwargs={"scope": "openid email profile"},
 )
 
@@ -119,7 +119,7 @@ async def auth_google_callback(request: Request, db: Session = Depends(get_db)):
         frontend_url = (
             settings.misc.CORS_ORIGINS[0]
             if settings.misc.CORS_ORIGINS
-            else "http://localhost:3000"
+            else settings.auth.FRONTEND_FALLBACK_URL
         )
         redirect_url = f"{frontend_url}/#token={access_token}"
 
@@ -135,7 +135,7 @@ async def auth_google_callback(request: Request, db: Session = Depends(get_db)):
         frontend_url = (
             settings.misc.CORS_ORIGINS[0]
             if settings.misc.CORS_ORIGINS
-            else "http://localhost:3000"
+            else settings.auth.FRONTEND_FALLBACK_URL
         )
         return RedirectResponse(url=f"{frontend_url}/?error=auth_failed")
 

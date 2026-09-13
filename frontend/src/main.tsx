@@ -11,8 +11,8 @@ const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
       refetchOnWindowFocus: false,
-      retry: 1,
-      staleTime: 5 * 60 * 1000, // 5 minutes
+      retry: Number(import.meta.env.VITE_QUERY_RETRY || 1),
+      staleTime: Number(import.meta.env.VITE_QUERY_STALE_MS || 5 * 60 * 1000), // 5 minutes
     },
   },
 });

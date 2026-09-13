@@ -8,6 +8,7 @@ from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import case, func, select
 from sqlalchemy.orm import Session
 
+from config import settings
 from database import get_db
 from middleware.auth import get_current_user
 from models.inscription import Inscription, InscriptionSegment
@@ -101,7 +102,12 @@ async def list_inscriptions(
     date_min: Optional[int] = Query(None, description="Minimum date (negative = BC)"),
     date_max: Optional[int] = Query(None, description="Maximum date (negative = BC)"),
     skip: int = Query(0, ge=0, description="Number of records to skip"),
-    limit: int = Query(50, ge=1, le=200, description="Maximum number of records"),
+    limit: int = Query(
+        settings.pagination.DEFAULT_INSCRIPTIONS_LIMIT,
+        ge=1,
+        le=settings.pagination.MAX_INSCRIPTIONS_LIMIT,
+        description="Maximum number of records",
+    ),
     db: Session = Depends(get_db),
 ):
     """
@@ -152,8 +158,13 @@ async def list_inscriptions(
             .limit(1)
         )
 
-        if first_segment_content and len(first_segment_content) > 150:
-            first_segment_content = first_segment_content[:150] + "..."
+        if (
+            first_segment_content
+            and len(first_segment_content) > settings.pagination.LIST_PREVIEW_CHARS
+        ):
+            first_segment_content = (
+                first_segment_content[: settings.pagination.LIST_PREVIEW_CHARS] + "..."
+            )
 
         results.append(
             TextListItem(
@@ -322,7 +333,7 @@ class RestoreRequest(_InscriptionTextRequest):
     """Request for text restoration"""
 
     language: Language = "greek"
-    temperature: float = 1.0
+    temperature: float = settings.ithaca.DEFAULT_TEMPERATURE
     beam_width: int = Field(
         DEFAULT_BEAM_WIDTH,
         ge=1,
@@ -399,7 +410,7 @@ class ContextualizeRequest(_InscriptionTextRequest):
     """Request for finding similar inscriptions"""
 
     language: Language = "greek"
-    top_k: int = 20
+    top_k: int = settings.ithaca.CONTEXT_TOP_K
 
 
 class SimilarText(BaseModel):

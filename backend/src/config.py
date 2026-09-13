@@ -41,6 +41,11 @@ class DatabaseSettings(BaseSettings):
     DB: str = "helios"
     USER: str = "heliosuser"
     PASSWORD: str = ""
+    POOL_SIZE: int = 20
+    MAX_OVERFLOW: int = 40
+    POOL_TIMEOUT: int = 30
+    POOL_RECYCLE: int = 3600
+    CONNECT_TIMEOUT: int = 10
 
     model_config = SettingsConfigDict(
         env_file=".env",
@@ -81,6 +86,10 @@ class AuthSettings(BaseSettings):
     GOOGLE_CLIENT_ID: str = ""
     GOOGLE_CLIENT_SECRET: str = ""
     GOOGLE_REDIRECT_URI: str = "http://localhost:8000/api/auth/callback/google"
+    SERVER_METADATA_URL: str = (
+        "https://accounts.google.com/.well-known/openid-configuration"
+    )
+    FRONTEND_FALLBACK_URL: str = "http://localhost:3000"
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",
@@ -101,6 +110,11 @@ class MiscSettings(BaseSettings):
         "http://127.0.0.1:3000",
     ]
 
+    HOST: str = "0.0.0.0"
+    PORT: int = 8000
+    SESSION_MAX_AGE: int = 3600
+    SLOW_REQUEST_THRESHOLD: float = 0.5
+
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",
@@ -117,11 +131,67 @@ class IthacaSettings(BaseSettings):
     # _inference_lock, so this also bounds how long every other restore waits.
     TIME_BUDGET: float = 180.0
 
+    BEAM_WIDTH: int = 35
+    MAX_BEAM_WIDTH: int = 100
+    DEFAULT_MAX_RESTORATION_LEN: int = 15
+    MAX_RESTORATION_LEN: int = 20
+    TOP_CHARS: int = 8
+    DEFAULT_TEMPERATURE: float = 1.0
+    CONTEXT_TOP_K: int = 20
+    ATTRIBUTION_LOCATIONS_KEPT: int = 20
+    DATE_WINDOW_FRACTION: float = 0.5
+    MODEL_GREEK_CKPT: str = "ithaca_153143996_2.pkl"
+    MODEL_LATIN_CKPT: str = "aeneas_117149994_2.pkl"
+    DATASET_GREEK: str = "iphi.json"
+    DATASET_LATIN: str = "led.json"
+
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",
         case_sensitive=True,
         env_prefix="ITHACA_",
+    )
+
+
+class PaginationSettings(BaseSettings):
+    """Pagination defaults and maxima for list endpoints."""
+
+    DEFAULT_TEXTS_LIMIT: int = 50
+    MAX_TEXTS_LIMIT: int = 100
+    DEFAULT_SEGMENTS_LIMIT: int = 1000
+    MAX_SEGMENTS_LIMIT: int = 5000
+    DEFAULT_INSCRIPTIONS_LIMIT: int = 50
+    MAX_INSCRIPTIONS_LIMIT: int = 200
+    DEFAULT_ANNOTATIONS_LIMIT: int = 100
+    MAX_ANNOTATIONS_LIMIT: int = 500
+    MOST_ANNOTATED_TOP_N: int = 10
+    LIST_PREVIEW_CHARS: int = 150
+
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        env_file_encoding="utf-8",
+        case_sensitive=True,
+        env_prefix="PAGINATION_",
+    )
+
+
+class AssistSettings(BaseSettings):
+    """Translate-assist, lexicon and loader tunables."""
+
+    MAX_TEXT_CHARS: int = 600
+    TRANSLATION_MAX_CHARS: int = 300
+    LEXICON_BASE_URL: str = "https://logeion.uchicago.edu"
+    PERSEUS_COMMIT_BATCH: int = 100
+    LLM_COMMIT_BATCH: int = 50
+    HEADER_CHUNK_MAX: int = 4000
+    BODY_CHUNK_MAX: int = 6000
+    PHI_BATCH_SIZE: int = 500
+
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        env_file_encoding="utf-8",
+        case_sensitive=True,
+        env_prefix="ASSIST_",
     )
 
 
@@ -133,6 +203,8 @@ class Settings:
         self.database = DatabaseSettings()
         self.assets = AssetSettings()
         self.ithaca = IthacaSettings()
+        self.pagination = PaginationSettings()
+        self.assist = AssistSettings()
 
     def validate_production(self) -> None:
         """

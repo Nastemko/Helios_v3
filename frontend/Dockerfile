@@ -37,6 +37,14 @@ RUN npm run build
 # Stage 2: Production stage with Caddy
 FROM caddy:2-alpine
 
+# Tunable serve port (build arg; mirrored to the runtime environment so the
+# HEALTHCHECK probe below resolves at container runtime, where ARGs no longer
+# exist). NOTE: changing the container-side port also requires updating the
+# `:8888` site address in Caddyfile, which has no env templating — the host-side
+# port (FRONTEND_PORT_HOST in compose) is freely tunable without a rebuild.
+ARG FRONTEND_PORT=8888
+ENV FRONTEND_PORT=${FRONTEND_PORT}
+
 # Install curl for health checks
 RUN apk add --no-cache curl
 
@@ -47,8 +55,8 @@ COPY Caddyfile /etc/caddy/Caddyfile
 COPY --from=builder /app/dist /usr/share/caddy/html
 
 # Expose port
-EXPOSE 8888
+EXPOSE ${FRONTEND_PORT}
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
-    CMD curl -f http://127.0.0.1:8888/health || exit 1
+    CMD curl -f http://127.0.0.1:${FRONTEND_PORT:-8888}/health || exit 1

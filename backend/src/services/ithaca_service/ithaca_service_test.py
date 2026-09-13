@@ -4,6 +4,7 @@ from unittest.mock import MagicMock, patch
 from config import settings
 
 from .ithaca_service import IthacaModel, IthacaService
+from .models import AttributionResult as ServiceAttribution
 
 
 class _StubModel:
@@ -240,6 +241,193 @@ class TestRestoreTimeBudgetFromSettings(unittest.TestCase):
         mock_restore.assert_called_once()
         kwargs = mock_restore.call_args.kwargs
         self.assertEqual(kwargs["time_budget"], 1600.0)
+
+
+class TestRestoreKnobsFromSettings(unittest.TestCase):
+    """restore()/contextualize() must resolve inference knobs from settings."""
+
+    def _service_with_available_model(self) -> IthacaService:
+        service = IthacaService()
+        loaded = MagicMock()
+        loaded.is_available = True
+        service._models["greek"] = loaded
+        return service
+
+    def _inference_result(self) -> MagicMock:
+        inference_result = MagicMock()
+        inference_result.input_text = "εδοξ?ν"
+        inference_result.top_prediction = "εδοξεν"
+        inference_result.missing = []
+        inference_result.predictions = []
+        inference_result.prediction_saliency = []
+        return inference_result
+
+    def test_restore_uses_settings_knobs_when_not_given(self):
+        service = self._service_with_available_model()
+        with patch(
+            "src.services.ithaca_service.ithaca_service.inference.restore",
+            return_value=self._inference_result(),
+        ) as mock_restore, patch.object(
+            settings.ithaca, "BEAM_WIDTH", 21
+        ), patch.object(
+            settings.ithaca, "DEFAULT_TEMPERATURE", 0.7
+        ), patch.object(
+            settings.ithaca, "DEFAULT_MAX_RESTORATION_LEN", 8
+        ), patch.object(
+            settings.ithaca, "TOP_CHARS", 4
+        ):
+            service.restore("εδοξ?ν", language="greek")
+
+        mock_restore.assert_called_once()
+        kwargs = mock_restore.call_args.kwargs
+        self.assertEqual(kwargs["beam_width"], 21)
+        self.assertEqual(kwargs["temperature"], 0.7)
+        self.assertEqual(kwargs["unk_restoration_max_len"], 8)
+        self.assertEqual(kwargs["top_chars"], 4)
+
+    def test_restore_explicit_knobs_passthrough(self):
+        service = self._service_with_available_model()
+        with patch(
+            "src.services.ithaca_service.ithaca_service.inference.restore",
+            return_value=self._inference_result(),
+        ) as mock_restore, patch.object(
+            settings.ithaca, "BEAM_WIDTH", 21
+        ), patch.object(
+            settings.ithaca, "DEFAULT_TEMPERATURE", 0.7
+        ):
+            service.restore(
+                "εδοξ?ν",
+                language="greek",
+                beam_width=10,
+                temperature=0.5,
+                max_restoration_len=5,
+                top_chars=3,
+            )
+
+        mock_restore.assert_called_once()
+        kwargs = mock_restore.call_args.kwargs
+        self.assertEqual(kwargs["beam_width"], 10)
+        self.assertEqual(kwargs["temperature"], 0.5)
+        self.assertEqual(kwargs["unk_restoration_max_len"], 5)
+        self.assertEqual(kwargs["top_chars"], 3)
+
+    def test_restore_explicit_none_top_chars_stays_exhaustive(self):
+        """None is meaningful for top_chars (exhaustive) and must not resolve."""
+        service = self._service_with_available_model()
+        with patch(
+            "src.services.ithaca_service.ithaca_service.inference.restore",
+            return_value=self._inference_result(),
+        ) as mock_restore, patch.object(settings.ithaca, "TOP_CHARS", 4):
+            service.restore("εδοξ?ν", language="greek", top_chars=None)
+
+        mock_restore.assert_called_once()
+        self.assertIsNone(mock_restore.call_args.kwargs["top_chars"])
+
+    def test_restore_defaults_match_hardcoded(self):
+        """Defaults preserve the previously hardcoded values."""
+        service = self._service_with_available_model()
+        with patch(
+            "src.services.ithaca_service.ithaca_service.inference.restore",
+            return_value=self._inference_result(),
+        ) as mock_restore, patch.object(
+            settings.ithaca, "BEAM_WIDTH", 35
+        ), patch.object(
+            settings.ithaca, "DEFAULT_TEMPERATURE", 1.0
+        ), patch.object(
+            settings.ithaca, "DEFAULT_MAX_RESTORATION_LEN", 15
+        ), patch.object(
+            settings.ithaca, "TOP_CHARS", 8
+        ):
+            service.restore("εδοξ?ν", language="greek")
+
+        kwargs = mock_restore.call_args.kwargs
+        self.assertEqual(kwargs["beam_width"], 35)
+        self.assertEqual(kwargs["temperature"], 1.0)
+        self.assertEqual(kwargs["unk_restoration_max_len"], 15)
+        self.assertEqual(kwargs["top_chars"], 8)
+
+    def test_contextualize_uses_settings_top_k_when_not_given(self):
+        service = self._service_with_available_model()
+        inference_result = MagicMock()
+        inference_result.ids = []
+        inference_result.ids_alt = []
+        inference_result.text = []
+        inference_result.location_ids = []
+        inference_result.date_min = []
+        inference_result.date_max = []
+        inference_result.score = []
+        inference_result.partner_link = []
+        with patch(
+            "src.services.ithaca_service.ithaca_service.inference.contextualize",
+            return_value=inference_result,
+        ) as mock_contextualize, patch.object(settings.ithaca, "CONTEXT_TOP_K", 7):
+            service.contextualize("εδοξεν", language="greek")
+
+        mock_contextualize.assert_called_once()
+        self.assertEqual(mock_contextualize.call_args.kwargs["top_k"], 7)
+
+    def test_contextualize_explicit_top_k_passthrough(self):
+        service = self._service_with_available_model()
+        inference_result = MagicMock()
+        inference_result.ids = []
+        inference_result.ids_alt = []
+        inference_result.text = []
+        inference_result.location_ids = []
+        inference_result.date_min = []
+        inference_result.date_max = []
+        inference_result.score = []
+        inference_result.partner_link = []
+        with patch(
+            "src.services.ithaca_service.ithaca_service.inference.contextualize",
+            return_value=inference_result,
+        ) as mock_contextualize, patch.object(settings.ithaca, "CONTEXT_TOP_K", 7):
+            service.contextualize("εδοξεν", language="greek", top_k=3)
+
+        mock_contextualize.assert_called_once()
+        self.assertEqual(mock_contextualize.call_args.kwargs["top_k"], 3)
+
+    def test_attribute_locations_kept_from_settings(self):
+        """Only the first ATTRIBUTION_LOCATIONS_KEPT locations are returned."""
+        service = self._service_with_available_model()
+        loaded = service._models["greek"]
+        loaded.region_map = {"names": []}
+
+        locations = [MagicMock(location_id=i, score=1.0 / (i + 1)) for i in range(25)]
+        inference_result = MagicMock()
+        inference_result.input_text = "εδοξεν"
+        inference_result.locations = locations
+        inference_result.year_scores = [0.0] * 160
+        inference_result.date_saliency = []
+        inference_result.location_saliency = []
+
+        with patch(
+            "src.services.ithaca_service.ithaca_service.inference.attribute",
+            return_value=inference_result,
+        ), patch.object(settings.ithaca, "ATTRIBUTION_LOCATIONS_KEPT", 5):
+            result: ServiceAttribution = service.attribute("εδοξεν", language="greek")
+
+        self.assertEqual(len(result.locations), 5)
+
+    def test_date_window_fraction_from_settings(self):
+        """predicted_date_range threshold tracks DATE_WINDOW_FRACTION."""
+        scores = [0.0] * 160
+        scores[80] = 1.0
+        scores[81] = 0.4
+        result = ServiceAttribution(
+            input_text="x",
+            locations=[],
+            year_scores=scores,
+            date_saliency=[],
+            location_saliency=[],
+        )
+        with patch.object(settings.ithaca, "DATE_WINDOW_FRACTION", 0.5):
+            narrow = result.predicted_date_range
+        with patch.object(settings.ithaca, "DATE_WINDOW_FRACTION", 0.25):
+            wide = result.predicted_date_range
+
+        # 0.4 clears a 0.25 window but not a 0.5 one.
+        self.assertEqual(narrow["min"], narrow["max"])
+        self.assertLess(wide["min"], wide["max"])
 
 
 if __name__ == "__main__":

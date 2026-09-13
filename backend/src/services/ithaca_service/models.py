@@ -1,6 +1,8 @@
 from dataclasses import dataclass, field
 from typing import Any, Optional
 
+from config import settings
+
 
 @dataclass
 class LocationPrediction:
@@ -61,8 +63,8 @@ class AttributionResult:
         max_idx = self.year_scores.index(max(self.year_scores))
         max_score = self.year_scores[max_idx]
 
-        # Find range where score > 50% of max
-        threshold = max_score * 0.5
+        # Find range where score >= fraction of max
+        threshold = max_score * settings.ithaca.DATE_WINDOW_FRACTION
         indices_above = [i for i, s in enumerate(self.year_scores) if s >= threshold]
 
         if indices_above:

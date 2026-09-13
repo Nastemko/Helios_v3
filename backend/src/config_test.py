@@ -4,7 +4,7 @@ from unittest.mock import patch
 
 # To run this test, it's expected that the `src` directory is in the Python path.
 # For example, by running `pytest` from the `backend` directory, or by setting PYTHONPATH.
-from config import IthacaSettings, Settings
+from config import AssistSettings, IthacaSettings, PaginationSettings, Settings
 
 
 class TestConfig(unittest.TestCase):
@@ -195,3 +195,249 @@ class TestIthacaSettings(unittest.TestCase):
     def test_composed_settings_exposes_ithaca(self):
         with patch.dict(os.environ, {}, clear=True):
             self.assertEqual(Settings().ithaca.TIME_BUDGET, 180.0)
+
+
+class TestIthacaExtended(unittest.TestCase):
+    """Ithaca/Aeneas inference knobs preserve hardcoded defaults and load env."""
+
+    def test_ithaca_extended_defaults(self):
+        with patch.dict(os.environ, {}, clear=True):
+            ithaca = IthacaSettings()
+
+            self.assertEqual(ithaca.BEAM_WIDTH, 35)
+            self.assertEqual(ithaca.MAX_BEAM_WIDTH, 100)
+            self.assertEqual(ithaca.DEFAULT_MAX_RESTORATION_LEN, 15)
+            self.assertEqual(ithaca.MAX_RESTORATION_LEN, 20)
+            self.assertEqual(ithaca.TOP_CHARS, 8)
+            self.assertEqual(ithaca.DEFAULT_TEMPERATURE, 1.0)
+            self.assertEqual(ithaca.CONTEXT_TOP_K, 20)
+            self.assertEqual(ithaca.ATTRIBUTION_LOCATIONS_KEPT, 20)
+            self.assertEqual(ithaca.DATE_WINDOW_FRACTION, 0.5)
+            self.assertEqual(ithaca.MODEL_GREEK_CKPT, "ithaca_153143996_2.pkl")
+            self.assertEqual(ithaca.MODEL_LATIN_CKPT, "aeneas_117149994_2.pkl")
+            self.assertEqual(ithaca.DATASET_GREEK, "iphi.json")
+            self.assertEqual(ithaca.DATASET_LATIN, "led.json")
+
+    @patch.dict(
+        os.environ,
+        {
+            "ITHACA_BEAM_WIDTH": "20",
+            "ITHACA_MAX_BEAM_WIDTH": "50",
+            "ITHACA_DEFAULT_MAX_RESTORATION_LEN": "8",
+            "ITHACA_MAX_RESTORATION_LEN": "10",
+            "ITHACA_TOP_CHARS": "4",
+            "ITHACA_DEFAULT_TEMPERATURE": "0.7",
+            "ITHACA_CONTEXT_TOP_K": "5",
+            "ITHACA_ATTRIBUTION_LOCATIONS_KEPT": "5",
+            "ITHACA_DATE_WINDOW_FRACTION": "0.25",
+            "ITHACA_MODEL_GREEK_CKPT": "custom_greek.pkl",
+            "ITHACA_MODEL_LATIN_CKPT": "custom_latin.pkl",
+            "ITHACA_DATASET_GREEK": "custom_iphi.json",
+            "ITHACA_DATASET_LATIN": "custom_led.json",
+        },
+    )
+    def test_ithaca_extended_env_override(self):
+        ithaca = IthacaSettings()
+
+        self.assertEqual(ithaca.BEAM_WIDTH, 20)
+        self.assertEqual(ithaca.MAX_BEAM_WIDTH, 50)
+        self.assertEqual(ithaca.DEFAULT_MAX_RESTORATION_LEN, 8)
+        self.assertEqual(ithaca.MAX_RESTORATION_LEN, 10)
+        self.assertEqual(ithaca.TOP_CHARS, 4)
+        self.assertEqual(ithaca.DEFAULT_TEMPERATURE, 0.7)
+        self.assertEqual(ithaca.CONTEXT_TOP_K, 5)
+        self.assertEqual(ithaca.ATTRIBUTION_LOCATIONS_KEPT, 5)
+        self.assertEqual(ithaca.DATE_WINDOW_FRACTION, 0.25)
+        self.assertEqual(ithaca.MODEL_GREEK_CKPT, "custom_greek.pkl")
+        self.assertEqual(ithaca.MODEL_LATIN_CKPT, "custom_latin.pkl")
+        self.assertEqual(ithaca.DATASET_GREEK, "custom_iphi.json")
+        self.assertEqual(ithaca.DATASET_LATIN, "custom_led.json")
+
+
+class TestServerSettings(unittest.TestCase):
+    """Tests for server/session/perf/DB-pool tunables."""
+
+    def test_server_defaults_preserve_hardcoded_behavior(self):
+        """Defaults match the previously hardcoded values."""
+        with patch.dict(os.environ, {}, clear=True):
+            settings = Settings()
+
+            self.assertEqual(settings.misc.HOST, "0.0.0.0")
+            self.assertEqual(settings.misc.PORT, 8000)
+            self.assertEqual(settings.misc.SESSION_MAX_AGE, 3600)
+            self.assertEqual(settings.misc.SLOW_REQUEST_THRESHOLD, 0.5)
+            self.assertEqual(settings.database.POOL_SIZE, 20)
+            self.assertEqual(settings.database.MAX_OVERFLOW, 40)
+            self.assertEqual(settings.database.POOL_TIMEOUT, 30)
+            self.assertEqual(settings.database.POOL_RECYCLE, 3600)
+            self.assertEqual(settings.database.CONNECT_TIMEOUT, 10)
+
+    @patch.dict(
+        os.environ,
+        {
+            "HOST": "127.0.0.1",
+            "PORT": "9000",
+            "SESSION_MAX_AGE": "7200",
+            "SLOW_REQUEST_THRESHOLD": "1.5",
+            "DATABASE_POOL_SIZE": "5",
+            "DATABASE_MAX_OVERFLOW": "10",
+            "DATABASE_POOL_TIMEOUT": "60",
+            "DATABASE_POOL_RECYCLE": "1800",
+            "DATABASE_CONNECT_TIMEOUT": "5",
+        },
+    )
+    def test_server_settings_load_from_env(self):
+        """Env vars override server/session/perf/DB-pool tunables."""
+        settings = Settings()
+
+        self.assertEqual(settings.misc.HOST, "127.0.0.1")
+        self.assertEqual(settings.misc.PORT, 9000)
+        self.assertEqual(settings.misc.SESSION_MAX_AGE, 7200)
+        self.assertEqual(settings.misc.SLOW_REQUEST_THRESHOLD, 1.5)
+        self.assertEqual(settings.database.POOL_SIZE, 5)
+        self.assertEqual(settings.database.MAX_OVERFLOW, 10)
+        self.assertEqual(settings.database.POOL_TIMEOUT, 60)
+        self.assertEqual(settings.database.POOL_RECYCLE, 1800)
+        self.assertEqual(settings.database.CONNECT_TIMEOUT, 5)
+
+
+class TestPaginationSettings(unittest.TestCase):
+    """Tests for pagination defaults/maxima tunables."""
+
+    def test_pagination_defaults_preserve_hardcoded_behavior(self):
+        """Defaults match the previously hardcoded values."""
+        with patch.dict(os.environ, {}, clear=True):
+            settings = Settings()
+
+            self.assertEqual(settings.pagination.DEFAULT_TEXTS_LIMIT, 50)
+            self.assertEqual(settings.pagination.MAX_TEXTS_LIMIT, 100)
+            self.assertEqual(settings.pagination.DEFAULT_SEGMENTS_LIMIT, 1000)
+            self.assertEqual(settings.pagination.MAX_SEGMENTS_LIMIT, 5000)
+            self.assertEqual(settings.pagination.DEFAULT_INSCRIPTIONS_LIMIT, 50)
+            self.assertEqual(settings.pagination.MAX_INSCRIPTIONS_LIMIT, 200)
+            self.assertEqual(settings.pagination.DEFAULT_ANNOTATIONS_LIMIT, 100)
+            self.assertEqual(settings.pagination.MAX_ANNOTATIONS_LIMIT, 500)
+            self.assertEqual(settings.pagination.MOST_ANNOTATED_TOP_N, 10)
+            self.assertEqual(settings.pagination.LIST_PREVIEW_CHARS, 150)
+
+    def test_pagination_settings_direct_defaults(self):
+        """PaginationSettings alone carries the same defaults."""
+        with patch.dict(os.environ, {}, clear=True):
+            pagination = PaginationSettings()
+
+            self.assertEqual(pagination.DEFAULT_TEXTS_LIMIT, 50)
+            self.assertEqual(pagination.MAX_TEXTS_LIMIT, 100)
+            self.assertEqual(pagination.DEFAULT_SEGMENTS_LIMIT, 1000)
+            self.assertEqual(pagination.MAX_SEGMENTS_LIMIT, 5000)
+            self.assertEqual(pagination.DEFAULT_INSCRIPTIONS_LIMIT, 50)
+            self.assertEqual(pagination.MAX_INSCRIPTIONS_LIMIT, 200)
+            self.assertEqual(pagination.DEFAULT_ANNOTATIONS_LIMIT, 100)
+            self.assertEqual(pagination.MAX_ANNOTATIONS_LIMIT, 500)
+            self.assertEqual(pagination.MOST_ANNOTATED_TOP_N, 10)
+            self.assertEqual(pagination.LIST_PREVIEW_CHARS, 150)
+
+    @patch.dict(
+        os.environ,
+        {
+            "PAGINATION_DEFAULT_TEXTS_LIMIT": "25",
+            "PAGINATION_MAX_TEXTS_LIMIT": "75",
+            "PAGINATION_DEFAULT_SEGMENTS_LIMIT": "500",
+            "PAGINATION_MAX_SEGMENTS_LIMIT": "2500",
+            "PAGINATION_DEFAULT_INSCRIPTIONS_LIMIT": "30",
+            "PAGINATION_MAX_INSCRIPTIONS_LIMIT": "150",
+            "PAGINATION_DEFAULT_ANNOTATIONS_LIMIT": "60",
+            "PAGINATION_MAX_ANNOTATIONS_LIMIT": "300",
+            "PAGINATION_MOST_ANNOTATED_TOP_N": "5",
+            "PAGINATION_LIST_PREVIEW_CHARS": "100",
+        },
+    )
+    def test_pagination_settings_load_from_env(self):
+        """Env vars override pagination tunables."""
+        settings = Settings()
+
+        self.assertEqual(settings.pagination.DEFAULT_TEXTS_LIMIT, 25)
+        self.assertEqual(settings.pagination.MAX_TEXTS_LIMIT, 75)
+        self.assertEqual(settings.pagination.DEFAULT_SEGMENTS_LIMIT, 500)
+        self.assertEqual(settings.pagination.MAX_SEGMENTS_LIMIT, 2500)
+        self.assertEqual(settings.pagination.DEFAULT_INSCRIPTIONS_LIMIT, 30)
+        self.assertEqual(settings.pagination.MAX_INSCRIPTIONS_LIMIT, 150)
+        self.assertEqual(settings.pagination.DEFAULT_ANNOTATIONS_LIMIT, 60)
+        self.assertEqual(settings.pagination.MAX_ANNOTATIONS_LIMIT, 300)
+        self.assertEqual(settings.pagination.MOST_ANNOTATED_TOP_N, 5)
+        self.assertEqual(settings.pagination.LIST_PREVIEW_CHARS, 100)
+
+
+class TestAssistSettings(unittest.TestCase):
+    """Tests for assist/auth-lexicon/loader tunables."""
+
+    def test_assist_defaults_preserve_hardcoded_behavior(self):
+        """Defaults match the previously hardcoded values."""
+        with patch.dict(os.environ, {}, clear=True):
+            settings = Settings()
+
+            self.assertEqual(settings.assist.MAX_TEXT_CHARS, 600)
+            self.assertEqual(settings.assist.TRANSLATION_MAX_CHARS, 300)
+            self.assertEqual(
+                settings.assist.LEXICON_BASE_URL, "https://logeion.uchicago.edu"
+            )
+            self.assertEqual(settings.assist.PERSEUS_COMMIT_BATCH, 100)
+            self.assertEqual(settings.assist.LLM_COMMIT_BATCH, 50)
+            self.assertEqual(settings.assist.HEADER_CHUNK_MAX, 4000)
+            self.assertEqual(settings.assist.BODY_CHUNK_MAX, 6000)
+            self.assertEqual(settings.assist.PHI_BATCH_SIZE, 500)
+            self.assertEqual(
+                settings.auth.SERVER_METADATA_URL,
+                "https://accounts.google.com/.well-known/openid-configuration",
+            )
+            self.assertEqual(
+                settings.auth.FRONTEND_FALLBACK_URL, "http://localhost:3000"
+            )
+
+    def test_assist_settings_direct_defaults(self):
+        """AssistSettings alone carries the same defaults."""
+        with patch.dict(os.environ, {}, clear=True):
+            assist = AssistSettings()
+
+            self.assertEqual(assist.MAX_TEXT_CHARS, 600)
+            self.assertEqual(assist.TRANSLATION_MAX_CHARS, 300)
+            self.assertEqual(assist.LEXICON_BASE_URL, "https://logeion.uchicago.edu")
+            self.assertEqual(assist.PERSEUS_COMMIT_BATCH, 100)
+            self.assertEqual(assist.LLM_COMMIT_BATCH, 50)
+            self.assertEqual(assist.HEADER_CHUNK_MAX, 4000)
+            self.assertEqual(assist.BODY_CHUNK_MAX, 6000)
+            self.assertEqual(assist.PHI_BATCH_SIZE, 500)
+
+    @patch.dict(
+        os.environ,
+        {
+            "ASSIST_MAX_TEXT_CHARS": "800",
+            "ASSIST_TRANSLATION_MAX_CHARS": "400",
+            "ASSIST_LEXICON_BASE_URL": "https://example.com/lexicon",
+            "ASSIST_PERSEUS_COMMIT_BATCH": "25",
+            "ASSIST_LLM_COMMIT_BATCH": "10",
+            "ASSIST_HEADER_CHUNK_MAX": "1000",
+            "ASSIST_BODY_CHUNK_MAX": "2000",
+            "ASSIST_PHI_BATCH_SIZE": "100",
+            "SERVER_METADATA_URL": "https://example.com/.well-known/openid-configuration",
+            "FRONTEND_FALLBACK_URL": "https://app.example.com",
+        },
+    )
+    def test_assist_settings_load_from_env(self):
+        """Env vars override assist/auth-lexicon/loader tunables."""
+        settings = Settings()
+
+        self.assertEqual(settings.assist.MAX_TEXT_CHARS, 800)
+        self.assertEqual(settings.assist.TRANSLATION_MAX_CHARS, 400)
+        self.assertEqual(
+            settings.assist.LEXICON_BASE_URL, "https://example.com/lexicon"
+        )
+        self.assertEqual(settings.assist.PERSEUS_COMMIT_BATCH, 25)
+        self.assertEqual(settings.assist.LLM_COMMIT_BATCH, 10)
+        self.assertEqual(settings.assist.HEADER_CHUNK_MAX, 1000)
+        self.assertEqual(settings.assist.BODY_CHUNK_MAX, 2000)
+        self.assertEqual(settings.assist.PHI_BATCH_SIZE, 100)
+        self.assertEqual(
+            settings.auth.SERVER_METADATA_URL,
+            "https://example.com/.well-known/openid-configuration",
+        )
+        self.assertEqual(settings.auth.FRONTEND_FALLBACK_URL, "https://app.example.com")

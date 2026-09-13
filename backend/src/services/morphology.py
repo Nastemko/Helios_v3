@@ -5,6 +5,8 @@ from typing import Dict, List, Optional
 
 from cltk import NLP
 
+from config import settings
+
 logger = logging.getLogger(__name__)
 
 
@@ -353,7 +355,7 @@ class MorphologyService:
 
     def get_lexicon_url(self, lemma: str, language: str) -> str:
         """Generate lexicon URL for a lemma"""
-        return f"https://logeion.uchicago.edu/{lemma}"
+        return f"{settings.assist.LEXICON_BASE_URL}/{lemma}"
 
 
 # Global service instance

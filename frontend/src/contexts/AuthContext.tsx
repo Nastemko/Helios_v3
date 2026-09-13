@@ -1,6 +1,6 @@
 import { createContext, useContext, useEffect, useState, ReactNode } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
-import { authApi } from '../services/api';
+import { authApi, AUTH_TOKEN_KEY } from '../services/api';
 import type { User } from '../types';
 
 interface AuthContextType {
@@ -27,14 +27,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const token = tokenMatch ? tokenMatch[1] : null;
 
       if (token) {
-        localStorage.setItem('auth_token', token);
+        localStorage.setItem(AUTH_TOKEN_KEY, token);
         // Remove token from URL
         window.history.replaceState({}, '', window.location.pathname);
       }
 
       // Load user if a token is now present (from the redirect or from a
       // previous session)
-      if (localStorage.getItem('auth_token')) {
+      if (localStorage.getItem(AUTH_TOKEN_KEY)) {
         try {
           const response = await authApi.me();
           setUser(response.data);
@@ -46,7 +46,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           // if the backend has auth disabled, a stale token must not lock
           // the user out.
           console.error('[Auth] Token validation failed:', error);
-          localStorage.removeItem('auth_token');
+          localStorage.removeItem(AUTH_TOKEN_KEY);
         }
       }
 

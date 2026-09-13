@@ -142,7 +142,7 @@ app = FastAPI(
 app.add_middleware(
     SessionMiddleware,
     secret_key=settings.auth.SECRET_KEY,
-    max_age=3600,  # Session expires after 1 hour
+    max_age=settings.misc.SESSION_MAX_AGE,  # Session lifetime; tunable via SESSION_MAX_AGE
     same_site="lax",
     https_only=not settings.misc.DEBUG,  # Secure in production, HTTP-safe in dev
 )
@@ -178,4 +178,9 @@ app.include_router(translate_assist.router)
 if __name__ == "__main__":
     import uvicorn
 
-    uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=settings.misc.DEBUG)
+    uvicorn.run(
+        "main:app",
+        host=settings.misc.HOST,
+        port=settings.misc.PORT,
+        reload=settings.misc.DEBUG,
+    )

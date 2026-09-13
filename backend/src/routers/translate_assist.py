@@ -28,7 +28,7 @@ class TranslateRequest(BaseModel):
     text: str = Field(
         ...,
         min_length=1,
-        max_length=600,
+        max_length=settings.assist.MAX_TEXT_CHARS,
         description="Greek text to translate (max ~1 paragraph)",
     )
     language: str = Field(
@@ -93,5 +93,5 @@ async def translation_status():
     return {
         "enabled": settings.llm.ENABLED,
         "model": settings.llm.MODEL if settings.llm.ENABLED else None,
-        "max_chars": 600,
+        "max_chars": settings.assist.MAX_TEXT_CHARS,
     }

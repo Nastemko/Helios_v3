@@ -74,10 +74,18 @@ export default function InscriptionInput({
 }: InscriptionInputProps) {
   const [showExamples, setShowExamples] = useState(false);
 
+  const MIN_TEXT_LEN = Number(import.meta.env.VITE_MIN_TEXT_LEN || 25);
+  const MAX_TEXT_LEN = Number(import.meta.env.VITE_MAX_TEXT_LEN || 760);
+  const TEMP_MIN = Number(import.meta.env.VITE_TEMP_MIN || 0.1);
+  const TEMP_MAX = Number(import.meta.env.VITE_TEMP_MAX || 2.0);
+  const TEMP_STEP = Number(import.meta.env.VITE_TEMP_STEP || 0.1);
+  const GAP_MIN = Number(import.meta.env.VITE_GAP_MIN || 1);
+  const GAP_MAX = Number(import.meta.env.VITE_GAP_MAX || 20);
+
   // The model rejects anything shorter than MIN_TEXT_LEN=25 after it strips
   // accents and collapses whitespace, so anything below that never reaches it.
   const charCount = value.length;
-  const isValidLength = charCount >= 25 && charCount <= 760;
+  const isValidLength = charCount >= MIN_TEXT_LEN && charCount <= MAX_TEXT_LEN;
   // '-' is deliberately absent: the API rejects it, so it must not enable Restore.
   const hasGaps = value.includes('?') || value.includes('#');
   // '#' searches over gap length as well as content, so it is far slower than
@@ -119,7 +127,7 @@ Use # when you don't know how many are missing (e.g., imp caesar # augustus)`;
         <div className={`absolute bottom-3 right-3 text-sm ${
           !isValidLength && value.length > 0 ? 'text-red-500' : 'text-stone-400'
         }`}>
-          {charCount}/760 (min 25)
+          {charCount}/{MAX_TEXT_LEN} (min {MIN_TEXT_LEN})
         </div>
       </div>
 
@@ -134,9 +142,9 @@ Use # when you don't know how many are missing (e.g., imp caesar # augustus)`;
       {/* Length Warning */}
       {value.length > 0 && !isValidLength && (
         <div className="mt-2 text-sm text-red-600">
-          {charCount < 25
-            ? `Text too short — the model needs at least 25 characters, currently ${charCount}`
-            : `Text too long (maximum 760 characters, currently ${charCount})`
+          {charCount < MIN_TEXT_LEN
+            ? `Text too short — the model needs at least ${MIN_TEXT_LEN} characters, currently ${charCount}`
+            : `Text too long (maximum ${MAX_TEXT_LEN} characters, currently ${charCount})`
           }
         </div>
       )}
@@ -148,9 +156,9 @@ Use # when you don't know how many are missing (e.g., imp caesar # augustus)`;
         </label>
         <input
           type="range"
-          min="0.1"
-          max="2.0"
-          step="0.1"
+          min={TEMP_MIN}
+          max={TEMP_MAX}
+          step={TEMP_STEP}
           value={temperature}
           onChange={(e) => onTemperatureChange(parseFloat(e.target.value))}
           className="flex-1 h-2 bg-stone-200 rounded-lg appearance-none cursor-pointer accent-helios-teal"
@@ -168,8 +176,8 @@ Use # when you don't know how many are missing (e.g., imp caesar # augustus)`;
             </label>
             <input
               type="range"
-              min="1"
-              max="20"
+              min={GAP_MIN}
+              max={GAP_MAX}
               step="1"
               value={maxRestorationLen}
               onChange={(e) => onMaxRestorationLenChange(parseInt(e.target.value, 10))}

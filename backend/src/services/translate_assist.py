@@ -11,6 +11,7 @@ from typing import Any, Optional
 
 from pydantic import BaseModel, Field, ValidationError
 
+from config import settings
 from services.llm import LLMProvider, get_llm_provider
 
 logger = logging.getLogger(__name__)
@@ -43,8 +44,8 @@ class TranslationResult(BaseModel):
 
 class TranslationResponse(BaseModel):
     translation: str = Field(
-        description="A clear, readable English translation (max 300 characters)",
-        max_length=300,
+        description="A clear, readable English translation",
+        max_length=settings.assist.TRANSLATION_MAX_CHARS,
     )
     literal_gloss: str = Field(
         description="A more literal word-by-word rendering (optional, can be empty)"
@@ -62,7 +63,7 @@ class TranslationResponse(BaseModel):
 class TranslateAssistService:
     """Service for translating freeform Greek text passages."""
 
-    MAX_TEXT_CHARS = 600  # ~1 paragraph limit
+    MAX_TEXT_CHARS = settings.assist.MAX_TEXT_CHARS  # ~1 paragraph limit
 
     SYSTEM_PROMPT = (
         "You are Helios, an expert in Classical Greek. "

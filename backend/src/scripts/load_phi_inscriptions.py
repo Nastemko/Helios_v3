@@ -147,7 +147,7 @@ class PHIConfig:
     phi_json_path: Optional[str] = None
     limit: Optional[int] = None
     dry_run: bool = False
-    batch_size: int = 500
+    batch_size: int = settings.assist.PHI_BATCH_SIZE
     fail_fast: bool = True
 
 
@@ -447,7 +447,7 @@ def load_phi_inscriptions(
     phi_json_path: Optional[str] = None,
     limit: Optional[int] = None,
     dry_run: bool = False,
-    batch_size: int = 500,
+    batch_size: int = settings.assist.PHI_BATCH_SIZE,
     fail_fast: bool = True,
 ) -> PHIStats:
     """
@@ -519,7 +519,7 @@ def initialize_phi_inscriptions():
             phi_json_path=None,  # Use default path
             limit=None,  # No limits for production
             dry_run=False,
-            batch_size=500,  # Default batch size
+            batch_size=settings.assist.PHI_BATCH_SIZE,  # Default batch size
             fail_fast=False,  # Continue on errors during startup
         )
         logger.info("PHI inscriptions initialized successfully")
