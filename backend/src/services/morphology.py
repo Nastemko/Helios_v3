@@ -128,76 +128,7 @@ class MorphologyService:
             if not word_obj:
                 return self._fallback_response(word, "grc")
 
-            # Extract morphological features (safely handle lists and missing attributes)
-            morphology = {}
-
-            def safe_get_feature(obj, attr_name):
-                """Safely get a morphological feature, handling CLTK types"""
-                try:
-                    if hasattr(obj, attr_name):
-                        value = getattr(obj, attr_name, None)
-                        if value is None:
-                            return None
-                        # Handle CLTK MorphosyntacticFeature and similar objects
-                        if hasattr(value, "name"):
-                            return str(value.name)
-                        if hasattr(value, "tag"):
-                            return str(value.tag)
-                        # If it's a list, extract names/tags
-                        if isinstance(value, list):
-                            parts = []
-                            for v in value:
-                                if hasattr(v, "name"):
-                                    parts.append(str(v.name))
-                                elif hasattr(v, "tag"):
-                                    parts.append(str(v.tag))
-                                else:
-                                    parts.append(str(v))
-                            return ", ".join(parts) if parts else None
-                        return str(value)
-                except Exception:
-                    pass
-                return None
-
-            # Extract morphological features from CLTK's UDFeatureTagSet
-            # CLTK stores features in word.features.features as a list of UDFeatureTag objects
-            if hasattr(word_obj, "features") and word_obj.features:
-                feature_set = word_obj.features
-                # Access the list of feature tags
-                if hasattr(feature_set, "features"):
-                    feature_list = feature_set.features
-                    for f in feature_list:
-                        # Each UDFeatureTag has key (e.g., "Case") and value_label (e.g., "Genitive")
-                        if hasattr(f, "key") and hasattr(f, "value_label"):
-                            key = str(f.key).lower()
-                            value = str(f.value_label)
-                            if value and value.lower() not in ["none", "unknown", "_"]:
-                                morphology[key] = value
-
-            # Get lemma and POS (CLTK uses 'upos' for Universal POS)
-            lemma = safe_get_feature(word_obj, "lemma") or word
-            pos = (
-                safe_get_feature(word_obj, "upos")
-                or safe_get_feature(word_obj, "pos")
-                or "unknown"
-            )
-
-            # Format POS for readability
-            pos_display = self._format_pos(pos)
-
-            # Build definitions based on morphology
-            definitions = self._build_definitions(lemma, pos_display, morphology, "grc")
-
-            return {
-                "word": word,
-                "language": "grc",
-                "lemma": lemma,
-                "pos": pos_display,
-                "morphology": morphology,
-                "definitions": definitions,
-                "lexicon_url": "",  # Removed external links per user request
-                "perseus_url": "",  # Removed external links per user request
-            }
+            return self._build_analysis(word_obj, word, "grc")
 
         except Exception as e:
             logger.error(f"Error analyzing Greek word '{word}': {e}")
@@ -224,71 +155,84 @@ class MorphologyService:
             if not word_obj:
                 return self._fallback_response(word, "lat")
 
-            # Extract morphological features (safely handle lists and missing attributes)
-            morphology = {}
-
-            def safe_get_feature(obj, attr_name):
-                """Safely get a morphological feature, handling CLTK types"""
-                try:
-                    if hasattr(obj, attr_name):
-                        value = getattr(obj, attr_name, None)
-                        if value is None:
-                            return None
-                        if hasattr(value, "name"):
-                            return str(value.name)
-                        if hasattr(value, "tag"):
-                            return str(value.tag)
-                        if isinstance(value, list):
-                            parts = []
-                            for v in value:
-                                if hasattr(v, "name"):
-                                    parts.append(str(v.name))
-                                elif hasattr(v, "tag"):
-                                    parts.append(str(v.tag))
-                                else:
-                                    parts.append(str(v))
-                            return ", ".join(parts) if parts else None
-                        return str(value)
-                except Exception:
-                    pass
-                return None
-
-            # Extract morphological features from CLTK's UDFeatureTagSet
-            if hasattr(word_obj, "features") and word_obj.features:
-                feature_set = word_obj.features
-                if hasattr(feature_set, "features"):
-                    feature_list = feature_set.features
-                    for f in feature_list:
-                        if hasattr(f, "key") and hasattr(f, "value_label"):
-                            key = str(f.key).lower()
-                            value = str(f.value_label)
-                            if value and value.lower() not in ["none", "unknown", "_"]:
-                                morphology[key] = value
-
-            lemma = safe_get_feature(word_obj, "lemma") or word
-            pos = (
-                safe_get_feature(word_obj, "upos")
-                or safe_get_feature(word_obj, "pos")
-                or "unknown"
-            )
-            pos_display = self._format_pos(pos)
-
-            definitions = self._build_definitions(lemma, pos_display, morphology, "lat")
-
-            return {
-                "word": word,
-                "language": "lat",
-                "lemma": lemma,
-                "pos": pos_display,
-                "morphology": morphology,
-                "definitions": definitions,
-                "lexicon_url": "",  # Removed external links per user request
-                "perseus_url": "",  # Removed external links per user request
-            }
+            return self._build_analysis(word_obj, word, "lat")
 
         except Exception as e:
             logger.error(f"Error analyzing Latin word '{word}': {e}")
             return self._fallback_response(word, "lat")
+
+    def _build_analysis(self, word_obj, word: str, language: str) -> Dict:
+        """Build the response dict from a CLTK Word object"""
+        # Extract morphological features (safely handle lists and missing attributes)
+        morphology = {}
+
+        def safe_get_feature(obj, attr_name):
+            """Safely get a morphological feature, handling CLTK types"""
+            try:
+                if hasattr(obj, attr_name):
+                    value = getattr(obj, attr_name, None)
+                    if value is None:
+                        return None
+                    # Handle CLTK MorphosyntacticFeature and similar objects
+                    if hasattr(value, "name"):
+                        return str(value.name)
+                    if hasattr(value, "tag"):
+                        return str(value.tag)
+                    # If it's a list, extract names/tags
+                    if isinstance(value, list):
+                        parts = []
+                        for v in value:
+                            if hasattr(v, "name"):
+                                parts.append(str(v.name))
+                            elif hasattr(v, "tag"):
+                                parts.append(str(v.tag))
+                            else:
+                                parts.append(str(v))
+                        return ", ".join(parts) if parts else None
+                    return str(value)
+            except Exception:
+                pass
+            return None
+
+        # Extract morphological features from CLTK's UDFeatureTagSet
+        # CLTK stores features in word.features.features as a list of UDFeatureTag objects
+        if hasattr(word_obj, "features") and word_obj.features:
+            feature_set = word_obj.features
+            # Access the list of feature tags
+            if hasattr(feature_set, "features"):
+                feature_list = feature_set.features
+                for f in feature_list:
+                    # Each UDFeatureTag has key (e.g., "Case") and value_label (e.g., "Genitive")
+                    if hasattr(f, "key") and hasattr(f, "value_label"):
+                        key = str(f.key).lower()
+                        value = str(f.value_label)
+                        if value and value.lower() not in ["none", "unknown", "_"]:
+                            morphology[key] = value
+
+        # Get lemma and POS (CLTK uses 'upos' for Universal POS)
+        lemma = safe_get_feature(word_obj, "lemma") or word
+        pos = (
+            safe_get_feature(word_obj, "upos")
+            or safe_get_feature(word_obj, "pos")
+            or "unknown"
+        )
+
+        # Format POS for readability
+        pos_display = self._format_pos(pos)
+
+        # Build definitions based on morphology
+        definitions = self._build_definitions(lemma, pos_display, morphology, language)
+
+        return {
+            "word": word,
+            "language": language,
+            "lemma": lemma,
+            "pos": pos_display,
+            "morphology": morphology,
+            "definitions": definitions,
+            "lexicon_url": "",  # Removed external links per user request
+            "perseus_url": "",  # Removed external links per user request
+        }
 
     def _format_pos(self, pos: str) -> str:
         """Format part of speech for display"""
