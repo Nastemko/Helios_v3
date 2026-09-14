@@ -299,7 +299,7 @@ class _InscriptionTextRequest(BaseModel):
     """Shared gap-notation validation for the model endpoints.
 
     The model takes '?' for one missing character and '#' for a gap of unknown
-    length (vendor/predictingthepast/eval/inference.py:199-200). '-' is the
+    length (services/ithaca/inference.py:203-212). '-' is the
     model's *internal* spelling of '?', not user notation: it is in the
     vocabulary, so it tokenizes without error but never enters
     ``restore_mask_idx`` and is therefore never filled. Rejecting it here turns
@@ -333,8 +333,8 @@ class RestoreRequest(_InscriptionTextRequest):
             "cost is roughly linear in this value."
         ),
     )
-    # Upper bound matches UNK_RESTORATION_MAX_LEN in the vendored inference
-    # module, which raises above it.
+    # Upper bound matches UNK_RESTORATION_MAX_LEN in services.ithaca.inference,
+    # which raises above it.
     max_restoration_len: int = Field(
         DEFAULT_MAX_RESTORATION_LEN,
         ge=1,

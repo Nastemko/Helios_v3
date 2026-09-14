@@ -38,7 +38,7 @@ Language = Literal["greek", "latin"]
 # prediction for every fixture. Note that a wider beam is NOT automatically
 # better here -- beam search is non-monotonic in width, because candidates are
 # pruned by length-normalised score (logprob / (1+len)^a_penalty, see
-# util/eval.py) while the score returned to callers is raw exp(logprob). Beam
+# services/ithaca/beam_search.py) while the score returned to callers is raw exp(logprob). Beam
 # 100 came last or tied-last on all three fixtures.
 #
 # Caveat: those fixtures are synthetic and scored by the model's own likelihood,
@@ -97,7 +97,7 @@ class BusyError(RuntimeError):
 def _failure_message(error: Exception, language: Language) -> str:
     """Turn an inference exception into something a reader can act on.
 
-    The vendored tokenizer looks characters up in ``alphabet.char2idx`` with no
+    The model tokenizer looks characters up in ``alphabet.char2idx`` with no
     fallback, so anything outside the model's alphabet raises KeyError rather
     than a descriptive ValueError. Latin in particular has no 'j' or 'w', and
     neither alphabet has ',' or ';'.

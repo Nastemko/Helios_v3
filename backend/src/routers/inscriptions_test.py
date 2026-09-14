@@ -116,7 +116,7 @@ def test_text_without_gaps_is_accepted(model):
 
 @pytest.mark.parametrize("bad_length", [0, 21])
 def test_max_restoration_len_is_bounded(bad_length):
-    """Out-of-range values raise inside the vendored code, which the service
+    """Out-of-range values raise inside the model code, which the service
     swallows into an empty result — so reject them at the boundary instead."""
     with pytest.raises(ValidationError):
         RestoreRequest(text=GREEK_WITH_GAPS, max_restoration_len=bad_length)

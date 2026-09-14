@@ -13,12 +13,13 @@ Runs standalone (no database needed). Inside the backend image:
 """
 
 import argparse
+import asyncio
 import json
 import logging
 import time
 from typing import Any
 
-from services.ithaca_service.ithaca_service import (
+from services.ithaca.service import (
     DEFAULT_BEAM_WIDTH,
     IthacaService,
     get_ithaca_service,
@@ -28,7 +29,8 @@ logger = logging.getLogger(__name__)
 
 # Each fixture must be >= MIN_TEXT_LEN (25 chars) after accent stripping, or
 # _prepare_text raises "Input text too short". The '#' fixture exercises the
-# unknown-length expansion path in beam search (util/eval.py:211-263), which is
+# unknown-length expansion path in beam search (services/ithaca/beam_search.py),
+# which is
 # the case most likely to break under shape bucketing.
 FIXTURES: list[dict[str, str]] = [
     {
@@ -69,7 +71,9 @@ def run_fixture(
 ) -> dict[str, Any]:
     """Run one restoration, recording timing and full prediction output."""
     start = time.perf_counter()
-    result = service.restore(fixture["text"], language="greek", beam_width=beam_width)
+    result = asyncio.run(
+        service.restore(fixture["text"], language="greek", beam_width=beam_width)
+    )
     elapsed = time.perf_counter() - start
 
     candidates = result.predictions if result else []
