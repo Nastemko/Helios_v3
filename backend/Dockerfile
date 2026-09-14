@@ -1,6 +1,4 @@
 # Backend Dockerfile - Ubuntu base
-# NOTE: This Dockerfile expects to be built from the repo ROOT directory, not backend/
-# Build with: docker build -f backend/Dockerfile .
 FROM ubuntu:24.04
 
 # Environment variables for Python and debian non-interactive mode
