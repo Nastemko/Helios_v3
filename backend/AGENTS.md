@@ -211,6 +211,46 @@ class ServiceSettings(BaseSettings):
 
 ## Testing Standards
 
+### TDD Is Mandatory
+
+No production code without a failing test written and run first:
+
+1. **Red** — write the failing test, run it, confirm it fails for the
+   expected reason (not an import error or typo).
+2. **Green** — write the minimal implementation that makes it pass.
+3. **Refactor** — clean up, keeping the tests green.
+4. **Commit** — small, frequent commits (one behavior per commit).
+
+```bash
+# Red: confirm the new test fails
+pytest src/routers/analysis_test.py::test_word_occurrence_reaches_service -v
+# ... implement ...
+# Green: confirm it passes, then run the whole suite
+pytest
+```
+
+### Test Layers (All Required)
+
+Unit tests alone are not sufficient. Every change must be covered at the
+layer where its behavior is visible:
+
+| Layer | Where | What it must cover |
+|-------|-------|--------------------|
+| Unit | `*_test.py` next to the module | Pure logic, helpers, validation edge cases (fast, no I/O) |
+| Integration | `src/routers/*_test.py`, `src/services/*_test.py` | Every router change via `TestClient`: status codes, 422 validation bounds, error mapping (404/429/500). Override the DB (`get_db` → in-memory SQLite with `StaticPool`), auth (`get_current_user` → fixture user, never `DEBUG=True`), and heavy services (CLTK, Ithaca) with fakes — see `src/routers/texts_test.py` and `src/routers/analysis_test.py` for the pattern |
+| E2E | `frontend/e2e/*.spec.ts` (Playwright) | Every user-visible flow: stub `/api/*` with `page.route`, then assert the **request body** the UI sends (not just rendered output) — see `frontend/e2e/inscriptions.spec.ts` and `frontend/e2e/text-reader.spec.ts` |
+
+Rules:
+
+- A new/changed endpoint without a `TestClient` test is incomplete.
+- A new/changed user flow without a Playwright test is incomplete.
+- Never rely on `DEBUG=True` auth bypass in tests — override
+  `get_current_user` explicitly so cross-user behavior is actually exercised
+  (see `src/routers/annotations_test.py`).
+- SQLite cannot render PostgreSQL `JSONB` at DDL time — tests that create
+  inscription tables must temporarily swap the column type to generic `JSON`
+  (see `src/routers/inscriptions_db_test.py`).
+
 ### Test Structure
 ```python
 import unittest
@@ -269,6 +309,9 @@ Before submitting code, verify:
 
 - [ ] Code formatted with `uv run black .`
 - [ ] All tests pass: `pytest`
+- [ ] Tests written before implementation (TDD: red → green → refactor)
+- [ ] New/changed endpoints have integration tests (`TestClient`)
+- [ ] New/changed user flows have e2e coverage (`frontend/e2e/`)
 - [ ] Type hints on all function signatures
 - [ ] Error handling with proper logging
 - [ ] Documentation for public functions

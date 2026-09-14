@@ -6,15 +6,23 @@ not coerce — every detail request 500'd once the loader started populating the
 column with residual PHI fields.
 """
 
+from unittest.mock import MagicMock
+
 import pytest
+from fastapi import FastAPI
+from fastapi.testclient import TestClient
 from pydantic import ValidationError
 
+from middleware.auth import get_current_user
 from routers.inscriptions import (
     AttributeRequest,
     ContextualizeRequest,
     RestoreRequest,
     TextResponse,
+    router,
 )
+from services.ithaca.schemas import RestorationResult
+from services.ithaca.service import BusyError
 
 # Long enough to clear the model's 25-character minimum.
 GREEK_WITH_GAPS = "εδοξεν τηι βουληι και τωι δημωι ????? αθηναιων"
@@ -128,3 +136,113 @@ def test_max_restoration_len_accepts_the_supported_range(good_length):
     request = RestoreRequest(text=GREEK_WITH_GAPS, max_restoration_len=good_length)
 
     assert request.max_restoration_len == good_length
+
+
+# --- Router-level tests for the async model endpoints ---
+#
+# The endpoints call get_ithaca_service() inline (not via Depends), so the
+# singleton is patched in the routers.inscriptions namespace. Auth is
+# overridden — these tests pin routing/error-mapping, not ownership.
+
+
+def _mock_service(**methods):
+    """An IthacaService stand-in with an available model and stubbed methods."""
+    service = MagicMock()
+    service.is_available.return_value = True
+    for name, fn in methods.items():
+        setattr(service, name, fn)
+    return service
+
+
+@pytest.fixture
+def model_client(monkeypatch):
+    """TestClient with auth stubbed; service installed per-test via `use`."""
+
+    def use(service):
+        monkeypatch.setattr("routers.inscriptions.get_ithaca_service", lambda: service)
+
+    app = FastAPI()
+    app.include_router(router)  # router already declares prefix="/api/inscriptions"
+    app.dependency_overrides[get_current_user] = lambda: MagicMock(id=1)
+
+    return TestClient(app), use
+
+
+def test_restore_success_response_shape(model_client):
+    """A good result passes through with available=True and the prediction."""
+    client, use = model_client
+
+    async def succeed(**kwargs):
+        return RestorationResult(
+            input_text=GREEK_WITH_GAPS,
+            top_prediction="εδοξεν τηι βουληι FULL αθηναιων",
+            missing_indices=[32, 33, 34, 35, 36],
+            predictions=[],
+            prediction_saliency=[],
+            available=True,
+            message=None,
+        )
+
+    use(_mock_service(restore=succeed))
+
+    resp = client.post(
+        "/api/inscriptions/restore",
+        json={"text": GREEK_WITH_GAPS, "language": "greek"},
+    )
+
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["available"] is True
+    assert body["top_prediction"] == "εδοξεν τηι βουληι FULL αθηναιων"
+    assert body["missing_indices"] == [32, 33, 34, 35, 36]
+
+
+def test_restore_unavailable_model_short_circuits(model_client):
+    """No model → available=False with a status hint; inference never runs."""
+    client, use = model_client
+
+    async def must_not_run(**kwargs):
+        raise AssertionError("inference must not be called without a model")
+
+    service = _mock_service(restore=must_not_run)
+    service.is_available.return_value = False
+    use(service)
+
+    resp = client.post(
+        "/api/inscriptions/restore",
+        json={"text": GREEK_WITH_GAPS, "language": "greek"},
+    )
+
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["available"] is False
+    assert "not loaded" in (body["message"] or "")
+
+
+@pytest.mark.parametrize(
+    "endpoint,method",
+    [
+        ("restore", "restore"),
+        ("attribute", "attribute"),
+        ("contextualize", "contextualize"),
+    ],
+)
+def test_busy_model_maps_to_429_on_every_endpoint(model_client, endpoint, method):
+    """A second concurrent inference fails fast instead of queueing.
+
+    The service raises BusyError; every model endpoint must map it to 429.
+    """
+    client, use = model_client
+
+    async def busy(*args, **kwargs):
+        raise BusyError("An inference is already running; try again later.")
+
+    use(_mock_service(**{method: busy}))
+
+    resp = client.post(
+        f"/api/inscriptions/{endpoint}",
+        json={"text": GREEK_WITH_GAPS, "language": "greek"},
+    )
+
+    assert resp.status_code == 429
+    assert "already running" in resp.json()["detail"]
